@@ -39,13 +39,10 @@ func (b *Bot) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("telegram: shutting down")
 			return
 		case alert := <-b.alertCh:
 			if err := b.sendMessage(alert.Message); err != nil {
 				log.Printf("telegram: failed to send message: %v", err)
-			} else {
-				log.Printf("telegram: sent alert #%d", alert.ID)
 			}
 		}
 	}

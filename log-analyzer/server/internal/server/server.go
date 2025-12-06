@@ -216,7 +216,7 @@ func (s *Server) handleClient(client *Client) {
 		client.LastBatch = time.Now()
 
 		// Process batch
-		processed, blacklistHits, err := s.analyzer.ProcessBatch(ctx, &batch)
+		processed, _, err := s.analyzer.ProcessBatch(ctx, &batch)
 		if err != nil {
 			log.Printf("server: process error: %v", err)
 		}
@@ -417,7 +417,6 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("server: deleted node %s via API", nodeID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "node_id": nodeID})
 }
