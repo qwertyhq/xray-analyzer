@@ -179,20 +179,23 @@ func (s *Server) handleDashboardWebSocket(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Create dashboard client wrapper
+	client := &DashboardClient{Conn: conn}
+
 	// Register client
 	s.dashboardClientsMu.Lock()
-	s.dashboardClients[conn] = true
+	s.dashboardClients[client] = true
 	s.dashboardClientsMu.Unlock()
 
 	log.Printf("server: dashboard client connected, total: %d", len(s.dashboardClients))
 
 	// Send initial data
-	s.sendFullDashboardData(conn)
+	s.sendFullDashboardData(client)
 
 	// Handle incoming messages (for ping/pong)
 	defer func() {
 		s.dashboardClientsMu.Lock()
-		delete(s.dashboardClients, conn)
+		delete(s.dashboardClients, client)
 		s.dashboardClientsMu.Unlock()
 		conn.Close()
 		log.Printf("server: dashboard client disconnected, total: %d", len(s.dashboardClients))
@@ -217,14 +220,16 @@ func (s *Server) handleDashboardWebSocket(w http.ResponseWriter, r *http.Request
 }
 
 // sendFullDashboardData sends all dashboard data to a single client
-func (s *Server) sendFullDashboardData(conn *websocket.Conn) {
+func (s *Server) sendFullDashboardData(client *DashboardClient) {
 	ctx := context.Background()
 
 	// Stats
 	if stats, err := s.storage.GetGlobalStats(ctx); err == nil {
 		connectedNodes := s.GetConnectedClients()
 		stats.NodesConnected = len(connectedNodes)
-		conn.WriteJSON(&DashboardUpdate{Type: "stats", Data: stats})
+		client.mu.Lock()
+		client.Conn.WriteJSON(&DashboardUpdate{Type: "stats", Data: stats})
+		client.mu.Unlock()
 	}
 
 	// Nodes
@@ -237,32 +242,42 @@ func (s *Server) sendFullDashboardData(conn *websocket.Conn) {
 		for _, n := range nodes {
 			n.IsConnected = connectedMap[n.NodeID]
 		}
-		conn.WriteJSON(&DashboardUpdate{Type: "nodes", Data: nodes})
+		client.mu.Lock()
+		client.Conn.WriteJSON(&DashboardUpdate{Type: "nodes", Data: nodes})
+		client.mu.Unlock()
 	}
 
 	// Users (top 500 for dashboard)
 	if users, err := s.storage.GetAllUsers(ctx, 500); err == nil {
-		conn.WriteJSON(&DashboardUpdate{Type: "users", Data: users})
+		client.mu.Lock()
+		client.Conn.WriteJSON(&DashboardUpdate{Type: "users", Data: users})
+		client.mu.Unlock()
 	}
 
 	// Hourly stats (24h)
 	if hourly, err := s.storage.GetHourlyStats(ctx, 24); err == nil {
-		conn.WriteJSON(&DashboardUpdate{Type: "hourly", Data: hourly})
+		client.mu.Lock()
+		client.Conn.WriteJSON(&DashboardUpdate{Type: "hourly", Data: hourly})
+		client.mu.Unlock()
 	}
 
 	// Anomalies
 	if anomalies := s.getAnomalies(ctx); anomalies != nil {
-		conn.WriteJSON(&DashboardUpdate{Type: "anomalies", Data: anomalies})
+		client.mu.Lock()
+		client.Conn.WriteJSON(&DashboardUpdate{Type: "anomalies", Data: anomalies})
+		client.mu.Unlock()
 	}
 
 	// Blacklist analytics
 	since := time.Now().Add(-24 * time.Hour)
 	if analytics, err := s.storage.GetBlacklistAnalytics(ctx, since); err == nil {
-		conn.WriteJSON(&DashboardUpdate{Type: "blacklist", Data: analytics})
+		client.mu.Lock()
+		client.Conn.WriteJSON(&DashboardUpdate{Type: "blacklist", Data: analytics})
+		client.mu.Unlock()
 	}
 
 	// Threat intelligence
-	s.sendThreatIntelUpdate(conn)
+	s.sendThreatIntelUpdate(client)
 }
 
 // BroadcastDashboardUpdate triggers a broadcast to all dashboard clients
@@ -304,9 +319,9 @@ func (s *Server) startPeriodicBroadcast(ctx context.Context) {
 // broadcastToDashboards sends current data to all connected dashboard clients
 func (s *Server) broadcastToDashboards() {
 	s.dashboardClientsMu.RLock()
-	clients := make([]*websocket.Conn, 0, len(s.dashboardClients))
-	for conn := range s.dashboardClients {
-		clients = append(clients, conn)
+	clients := make([]*DashboardClient, 0, len(s.dashboardClients))
+	for client := range s.dashboardClients {
+		clients = append(clients, client)
 	}
 	s.dashboardClientsMu.RUnlock()
 
@@ -364,13 +379,15 @@ func (s *Server) broadcastToDashboards() {
 	}
 
 	// Send to all clients
-	for _, conn := range clients {
+	for _, client := range clients {
+		client.mu.Lock()
 		for _, update := range updates {
-			if err := conn.WriteJSON(&update); err != nil {
+			if err := client.Conn.WriteJSON(&update); err != nil {
 				// Client will be removed on next read error
-				continue
+				break
 			}
 		}
+		client.mu.Unlock()
 	}
 }
 
@@ -427,7 +444,7 @@ func (s *Server) getAnomalies(ctx context.Context) []models.Anomaly {
 }
 
 // sendThreatIntelUpdate sends threat intel data to a single client
-func (s *Server) sendThreatIntelUpdate(conn *websocket.Conn) {
+func (s *Server) sendThreatIntelUpdate(client *DashboardClient) {
 	if s.threatIntel == nil {
 		return
 	}
@@ -443,5 +460,7 @@ func (s *Server) sendThreatIntelUpdate(conn *websocket.Conn) {
 		"topUsers": tiTopUsers,
 	}
 
-	conn.WriteJSON(&DashboardUpdate{Type: "threatintel", Data: threatData})
+	client.mu.Lock()
+	client.Conn.WriteJSON(&DashboardUpdate{Type: "threatintel", Data: threatData})
+	client.mu.Unlock()
 }
