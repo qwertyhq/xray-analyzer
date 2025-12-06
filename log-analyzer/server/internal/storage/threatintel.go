@@ -7,7 +7,10 @@ import (
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
-// SaveThreatMatch saves a threat match to the database
+// MaxThreatMatches is the maximum number of threat matches to keep in the database
+const MaxThreatMatches = 20
+
+// SaveThreatMatch saves a threat match to the database and cleans up old records
 func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.ThreatMatch) error {
 	now := time.Now().Format(time.RFC3339)
 
@@ -20,19 +23,36 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 		string(match.ThreatType), string(match.Source), match.Confidence,
 		match.Description, now)
 
+	if err != nil {
+		return err
+	}
+
+	// Delete old records keeping only MaxThreatMatches most recent
+	_, err = s.db.ExecContext(ctx, `
+		DELETE FROM threat_matches 
+		WHERE id NOT IN (
+			SELECT id FROM threat_matches 
+			ORDER BY matched_at DESC 
+			LIMIT ?
+		)
+	`, MaxThreatMatches)
+
 	return err
 }
 
-// GetThreatMatches returns threat matches since a given time
-func (s *Storage) GetThreatMatches(ctx context.Context, since time.Time, limit int) ([]*threatintel.ThreatMatch, error) {
+// GetThreatMatches returns all threat matches (limited by MaxThreatMatches)
+func (s *Storage) GetThreatMatches(ctx context.Context, limit int) ([]*threatintel.ThreatMatch, error) {
+	if limit <= 0 || limit > MaxThreatMatches {
+		limit = MaxThreatMatches
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, user_email, node_id, source_ip, destination,
 			   threat_type, source, confidence, description, matched_at
 		FROM threat_matches
-		WHERE matched_at >= ?
 		ORDER BY matched_at DESC
 		LIMIT ?
-	`, since.Format(time.RFC3339), limit)
+	`, limit)
 	if err != nil {
 		return nil, err
 	}

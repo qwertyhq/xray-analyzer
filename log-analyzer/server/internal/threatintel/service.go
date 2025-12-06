@@ -20,7 +20,7 @@ type Service struct {
 // Storage interface for threat intel persistence
 type Storage interface {
 	SaveThreatMatch(ctx context.Context, match *ThreatMatch) error
-	GetThreatMatches(ctx context.Context, since time.Time, limit int) ([]*ThreatMatch, error)
+	GetThreatMatches(ctx context.Context, limit int) ([]*ThreatMatch, error)
 	GetThreatMatchesByUser(ctx context.Context, userEmail string, limit int) ([]*ThreatMatch, error)
 	GetThreatStats(ctx context.Context) (*ThreatStats, error)
 	GetTopUsersByCategory(ctx context.Context, category string, limit int) ([]*CategoryUserStats, error)
@@ -176,8 +176,7 @@ func (s *Service) GetRecentMatches(ctx context.Context, limit int) ([]*ThreatMat
 	if s.storage == nil {
 		return nil, nil
 	}
-	since := time.Now().Add(-24 * time.Hour)
-	return s.storage.GetThreatMatches(ctx, since, limit)
+	return s.storage.GetThreatMatches(ctx, limit)
 }
 
 // GetUserMatches returns threat matches for a specific user
