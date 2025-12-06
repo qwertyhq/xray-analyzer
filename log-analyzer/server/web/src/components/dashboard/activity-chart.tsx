@@ -22,19 +22,32 @@ export function ActivityChart({
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
     
-    // Fill in missing hours
+    // Create a map of existing data by hour
     const hourMap = new Map<string, HourlyStats>();
     data.forEach(d => {
       const hourKey = format(new Date(d.hour), "yyyy-MM-dd HH:00");
       hourMap.set(hourKey, d);
     });
 
-    return data.map(d => ({
-      hour: format(new Date(d.hour), "HH:mm"),
-      date: format(new Date(d.hour), "MMM d"),
-      requests: d.total_requests,
-      blacklist: d.blacklist_hits,
-    }));
+    // Generate all hours for the last 24 hours
+    const result = [];
+    const now = new Date();
+    now.setMinutes(0, 0, 0);
+    
+    for (let i = 23; i >= 0; i--) {
+      const hourDate = new Date(now.getTime() - i * 60 * 60 * 1000);
+      const hourKey = format(hourDate, "yyyy-MM-dd HH:00");
+      const existing = hourMap.get(hourKey);
+      
+      result.push({
+        hour: format(hourDate, "HH:mm"),
+        date: format(hourDate, "MMM d"),
+        requests: existing?.total_requests || 0,
+        blacklist: existing?.blacklist_hits || 0,
+      });
+    }
+
+    return result;
   }, [data]);
 
   const maxValue = useMemo(() => {
