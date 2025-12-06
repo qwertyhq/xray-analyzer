@@ -308,9 +308,9 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 			user_email, 
 			COALESCE(SUM(total_requests), 0) as total_requests, 
 			COALESCE(SUM(blacklist_hits), 0) as blacklist_hits, 
-			MAX(last_seen) as last_seen, 
+			COALESCE(MAX(last_seen), '') as last_seen, 
 			COALESCE(MAX(last_ip), '') as last_ip,
-			MAX(last_blacklist_hit) as last_blacklist_hit, 
+			COALESCE(MAX(last_blacklist_hit), '') as last_blacklist_hit, 
 			COALESCE(MAX(last_blacklist_domain), '') as last_blacklist_domain
 		FROM user_stats
 		GROUP BY user_email
@@ -325,17 +325,28 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 	var users []*models.UserStats
 	for rows.Next() {
 		u := &models.UserStats{}
-		var lastSeen sql.NullTime
-		var lastHit sql.NullTime
-		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &lastSeen, &u.LastIP, &lastHit, &u.LastBlacklistDomain)
+		var lastSeenStr, lastHitStr string
+		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &lastSeenStr, &u.LastIP, &lastHitStr, &u.LastBlacklistDomain)
 		if err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
-		if lastSeen.Valid {
-			u.LastSeen = lastSeen.Time
+		if lastSeenStr != "" {
+			if t, err := time.Parse("2006-01-02 15:04:05.999999999-07:00", lastSeenStr); err == nil {
+				u.LastSeen = t
+			} else if t, err := time.Parse("2006-01-02 15:04:05", lastSeenStr); err == nil {
+				u.LastSeen = t
+			} else if t, err := time.Parse(time.RFC3339, lastSeenStr); err == nil {
+				u.LastSeen = t
+			}
 		}
-		if lastHit.Valid {
-			u.LastBlacklistHit = lastHit.Time
+		if lastHitStr != "" {
+			if t, err := time.Parse("2006-01-02 15:04:05.999999999-07:00", lastHitStr); err == nil {
+				u.LastBlacklistHit = t
+			} else if t, err := time.Parse("2006-01-02 15:04:05", lastHitStr); err == nil {
+				u.LastBlacklistHit = t
+			} else if t, err := time.Parse(time.RFC3339, lastHitStr); err == nil {
+				u.LastBlacklistHit = t
+			}
 		}
 		users = append(users, u)
 	}
