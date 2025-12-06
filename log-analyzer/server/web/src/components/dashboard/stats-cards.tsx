@@ -7,20 +7,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Activity, Server, Users, ShieldAlert } from "lucide-react";
+import { Stats } from "@/lib/types";
 
 interface StatsCardsProps {
-  totalRequests: number;
-  totalBlacklist: number;
-  nodesConnected: number;
-  nodesTotal: number;
+  stats: Stats;
 }
 
-export function StatsCards({
-  totalRequests,
-  totalBlacklist,
-  nodesConnected,
-  nodesTotal,
-}: StatsCardsProps) {
+export function StatsCards({ stats }: StatsCardsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <Card>
@@ -30,7 +23,7 @@ export function StatsCards({
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">
-            {totalRequests.toLocaleString()}
+            {stats.total_requests.toLocaleString()}
           </div>
           <p className="text-xs text-muted-foreground">
             Processed log entries
@@ -45,7 +38,7 @@ export function StatsCards({
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold text-destructive">
-            {totalBlacklist.toLocaleString()}
+            {stats.total_blacklist.toLocaleString()}
           </div>
           <p className="text-xs text-muted-foreground">
             Suspicious destinations
@@ -60,10 +53,13 @@ export function StatsCards({
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">
-            {nodesConnected} / {nodesTotal}
+            {stats.nodes_connected}
+            <span className="text-sm font-normal text-muted-foreground">
+              {" "}/ {stats.nodes_total}
+            </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Active node agents
+            Active connections
           </p>
         </CardContent>
       </Card>

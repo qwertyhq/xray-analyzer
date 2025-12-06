@@ -347,6 +347,60 @@ func (s *Storage) CleanupOldData(ctx context.Context, olderThan time.Duration) e
 	return nil
 }
 
+// DeleteNode removes a node and all its related data
+func (s *Storage) DeleteNode(ctx context.Context, nodeID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Delete from all related tables
+	tx.ExecContext(ctx, "DELETE FROM user_stats WHERE node_id = ?", nodeID)
+	tx.ExecContext(ctx, "DELETE FROM blacklist_matches WHERE node_id = ?", nodeID)
+	tx.ExecContext(ctx, "DELETE FROM alerts WHERE node_id = ?", nodeID)
+	tx.ExecContext(ctx, "DELETE FROM hourly_stats WHERE node_id = ?", nodeID)
+	tx.ExecContext(ctx, "DELETE FROM node_stats WHERE node_id = ?", nodeID)
+
+	return tx.Commit()
+}
+
+// CleanupInactiveNodes removes nodes that haven't been seen for a while
+func (s *Storage) CleanupInactiveNodes(ctx context.Context, olderThan time.Duration) (int, error) {
+	cutoff := time.Now().Add(-olderThan)
+
+	// Get inactive node IDs
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT node_id FROM node_stats WHERE last_seen < ?
+	`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var nodeIDs []string
+	for rows.Next() {
+		var nodeID string
+		if err := rows.Scan(&nodeID); err != nil {
+			return 0, err
+		}
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+
+	// Delete each node
+	for _, nodeID := range nodeIDs {
+		if err := s.DeleteNode(ctx, nodeID); err != nil {
+			log.Printf("storage: failed to delete node %s: %v", nodeID, err)
+		}
+	}
+
+	if len(nodeIDs) > 0 {
+		log.Printf("storage: cleaned up %d inactive nodes", len(nodeIDs))
+	}
+
+	return len(nodeIDs), nil
+}
+
 // Close closes the database connection
 func (s *Storage) Close() error {
 	return s.db.Close()

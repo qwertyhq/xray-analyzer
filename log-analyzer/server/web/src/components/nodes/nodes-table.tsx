@@ -9,14 +9,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { NodeStats } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
+import { Trash2, RefreshCw } from "lucide-react";
 
 interface NodesTableProps {
   nodes: NodeStats[];
+  onDelete?: (nodeId: string) => void;
+  showActions?: boolean;
 }
 
-export function NodesTable({ nodes }: NodesTableProps) {
+export function NodesTable({ nodes, onDelete, showActions = false }: NodesTableProps) {
   return (
     <Table>
       <TableHeader>
@@ -27,6 +31,8 @@ export function NodesTable({ nodes }: NodesTableProps) {
           <TableHead className="text-right">Blacklist</TableHead>
           <TableHead className="text-right">Users</TableHead>
           <TableHead>Last Seen</TableHead>
+          <TableHead>Last Batch</TableHead>
+          {showActions && <TableHead className="w-[100px]">Actions</TableHead>}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -51,17 +57,39 @@ export function NodesTable({ nodes }: NodesTableProps) {
               )}
             </TableCell>
             <TableCell className="text-right">{node.unique_users}</TableCell>
-            <TableCell className="text-muted-foreground">
+            <TableCell className="text-muted-foreground text-sm">
               {formatDistanceToNow(new Date(node.last_seen), {
                 addSuffix: true,
               })}
             </TableCell>
+            <TableCell className="text-muted-foreground text-sm">
+              {node.last_batch_count > 0 ? (
+                <span>
+                  {node.last_batch_count} entries
+                </span>
+              ) : (
+                "—"
+              )}
+            </TableCell>
+            {showActions && (
+              <TableCell>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  onClick={() => onDelete?.(node.node_id)}
+                  title="Delete node"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TableCell>
+            )}
           </TableRow>
         ))}
         {nodes.length === 0 && (
           <TableRow>
-            <TableCell colSpan={6} className="text-center text-muted-foreground">
-              No nodes connected
+            <TableCell colSpan={showActions ? 8 : 7} className="text-center text-muted-foreground">
+              No nodes found
             </TableCell>
           </TableRow>
         )}

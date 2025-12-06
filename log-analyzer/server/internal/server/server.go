@@ -59,9 +59,24 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/nodes", s.handleNodes)
+	mux.HandleFunc("/api/nodes/delete", s.handleDeleteNode)
 	mux.HandleFunc("/api/users", s.handleUsers)
 	mux.HandleFunc("/api/users/all", s.handleAllUsers)
 	mux.HandleFunc("/health", s.handleHealth)
+
+	// Start cleanup job for inactive nodes (older than 24 hours)
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.storage.CleanupInactiveNodes(context.Background(), 24*time.Hour)
+			}
+		}
+	}()
 
 	server := &http.Server{
 		Addr:    s.addr,
@@ -295,6 +310,38 @@ func (s *Server) handleAllUsers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleDeleteNode deletes a node and its data
+func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	nodeID := r.URL.Query().Get("node_id")
+	if nodeID == "" {
+		http.Error(w, "node_id required", http.StatusBadRequest)
+		return
+	}
+
+	// Don't delete connected nodes
+	s.clientsMu.RLock()
+	_, isConnected := s.clients[nodeID]
+	s.clientsMu.RUnlock()
+	if isConnected {
+		http.Error(w, "cannot delete connected node", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.storage.DeleteNode(r.Context(), nodeID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("server: deleted node %s via API", nodeID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "node_id": nodeID})
 }
 
 // GetConnectedClients returns list of connected node IDs
