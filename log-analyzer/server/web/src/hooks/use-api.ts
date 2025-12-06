@@ -183,7 +183,10 @@ export function useHourlyStats(hours = 24) {
     const fetchStats = async () => {
       try {
         const res = await fetch(`/api/hourly?hours=${hours}`);
-        if (res.ok) setStats(await res.json());
+        if (res.ok) {
+          const data = await res.json();
+          setStats(data || []);
+        }
       } catch {
         // ignore
       } finally {
@@ -269,7 +272,10 @@ export function useHourlyStatsWithRange(range: TimeRange = "24h") {
         if (params.to) searchParams.set("to", params.to);
         
         const res = await fetch(`/api/hourly?${searchParams.toString()}`);
-        if (res.ok) setStats(await res.json());
+        if (res.ok) {
+          const data = await res.json();
+          setStats(data || []);
+        }
       } catch {
         // ignore
       } finally {
