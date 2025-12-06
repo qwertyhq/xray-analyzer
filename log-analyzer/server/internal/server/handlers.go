@@ -649,3 +649,46 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
+
+// handleIPInfo returns geolocation info for IP addresses
+func (s *Server) handleIPInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Single IP lookup
+	if ip := r.URL.Query().Get("ip"); ip != "" {
+		info, err := s.ipInfo.Lookup(ctx, ip)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(info)
+		return
+	}
+
+	// Batch lookup via POST
+	if r.Method == http.MethodPost {
+		var ips []string
+		if err := json.NewDecoder(r.Body).Decode(&ips); err != nil {
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			return
+		}
+
+		result, err := s.ipInfo.LookupBatch(ctx, ips)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+
+	http.Error(w, "IP address required", http.StatusBadRequest)
+}

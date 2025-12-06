@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TimeRangeSelector } from "@/components/dashboard/time-range-selector";
+import { IPInfoBadge } from "@/components/ui/ip-info-badge";
 import {
   Table,
   TableBody,
@@ -333,8 +334,12 @@ export default function BlacklistPage() {
                           <ExternalLink className="h-3 w-3 flex-shrink-0" />
                         </Link>
                       </TableCell>
-                      <TableCell className="font-mono text-sm text-muted-foreground hidden lg:table-cell">
-                        {user.last_ip || "—"}
+                      <TableCell className="hidden lg:table-cell">
+                        {user.last_ip ? (
+                          <IPInfoBadge ip={user.last_ip} />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <Badge variant="destructive">{user.hit_count}</Badge>

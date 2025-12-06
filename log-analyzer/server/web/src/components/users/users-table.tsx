@@ -17,6 +17,7 @@ import { UserStats } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { Search, ExternalLink } from "lucide-react";
 import { isValidDate } from "@/lib/utils/date";
+import { IPInfoBadge } from "@/components/ui/ip-info-badge";
 
 interface UsersTableProps {
   users: UserStats[];
@@ -107,8 +108,12 @@ export function UsersTable({
                   <TableCell className="hidden sm:table-cell">
                     <Badge variant="outline" className="whitespace-nowrap">{user.node_id}</Badge>
                   </TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground hidden lg:table-cell">
-                    {user.last_ip || "—"}
+                  <TableCell className="hidden lg:table-cell">
+                    {user.last_ip ? (
+                      <IPInfoBadge ip={user.last_ip} />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right hidden md:table-cell">
                     {user.total_requests.toLocaleString()}

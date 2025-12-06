@@ -189,3 +189,21 @@ export interface CategoryUserStats {
 }
 
 export type CategoryTopUsers = Record<string, CategoryUserStats[]>;
+
+// IP Info types
+export interface IPInfo {
+  ip: string;
+  country: string;
+  country_code: string;
+  region: string;
+  city: string;
+  isp: string;
+  org: string;
+  as: string;
+  mobile: boolean;
+  proxy: boolean;
+  hosting: boolean;
+  lat: number;
+  lon: number;
+  cached_at: string;
+}

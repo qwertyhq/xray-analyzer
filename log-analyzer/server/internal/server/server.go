@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/xray-log-analyzer/server/internal/analyzer"
 	"github.com/xray-log-analyzer/server/internal/blacklist"
+	"github.com/xray-log-analyzer/server/internal/ipinfo"
 	"github.com/xray-log-analyzer/server/internal/storage"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
@@ -21,6 +22,7 @@ type Server struct {
 	storage     *storage.Storage
 	blacklist   *blacklist.Blacklist
 	threatIntel *threatintel.Service
+	ipInfo      *ipinfo.Service
 	clients     map[string]*Client
 	clientsMu   sync.RWMutex
 
@@ -65,6 +67,7 @@ func New(addr string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl 
 		analyzer:         analyzer,
 		storage:          storage,
 		blacklist:        bl,
+		ipInfo:           ipinfo.NewService(),
 		clients:          make(map[string]*Client),
 		dashboardClients: make(map[*DashboardClient]bool),
 		broadcastChan:    make(chan *DashboardUpdate, 100),
@@ -100,6 +103,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/threatintel/matches", s.handleThreatIntelMatches)
 	mux.HandleFunc("/api/threatintel/feeds", s.handleThreatIntelFeeds)
 	mux.HandleFunc("/api/threatintel/top-users", s.handleThreatIntelTopUsers)
+	mux.HandleFunc("/api/ipinfo", s.handleIPInfo)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	// User-specific endpoints (must be registered before /api/users/)

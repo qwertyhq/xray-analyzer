@@ -730,6 +730,23 @@ func (f *FeedLoader) loadTorrentTrackersFromURL(ctx context.Context, trackerURL 
 		// Format: udp://tracker.example.com:6969/announce or http://tracker.example.com/announce
 		u, err := url.Parse(line)
 		if err != nil {
+			// Maybe it's just an IP address
+			if isIP(line) {
+				if _, exists := f.indicators[line]; !exists {
+					f.indicators[line] = &ThreatIndicator{
+						Indicator:   line,
+						Type:        "ip",
+						ThreatType:  ThreatTypeTorrent,
+						Source:      SourceTorrent,
+						Confidence:  85,
+						Description: "BitTorrent tracker IP",
+						FirstSeen:   time.Now(),
+						LastSeen:    time.Now(),
+						CreatedAt:   time.Now(),
+					}
+					count++
+				}
+			}
 			continue
 		}
 
@@ -738,23 +755,26 @@ func (f *FeedLoader) loadTorrentTrackersFromURL(ctx context.Context, trackerURL 
 			continue
 		}
 
-		// Skip IP addresses - only use domain names
-		if isIP(host) {
-			continue
-		}
-
 		// Skip if already exists
 		if _, exists := f.indicators[host]; exists {
 			continue
 		}
 
+		// Determine type based on whether it's an IP or domain
+		indicatorType := "domain"
+		description := "BitTorrent tracker"
+		if isIP(host) {
+			indicatorType = "ip"
+			description = "BitTorrent tracker IP"
+		}
+
 		indicator := &ThreatIndicator{
 			Indicator:   strings.ToLower(host),
-			Type:        "domain",
+			Type:        indicatorType,
 			ThreatType:  ThreatTypeTorrent,
 			Source:      SourceTorrent,
 			Confidence:  85, // High confidence - these are known tracker domains
-			Description: "BitTorrent tracker",
+			Description: description,
 			FirstSeen:   time.Now(),
 			LastSeen:    time.Now(),
 			CreatedAt:   time.Now(),
@@ -780,28 +800,80 @@ func (f *FeedLoader) addTorrentPatterns() {
 		"router.utorrent.com",
 		"dht.transmissionbt.com",
 		"dht.aelitis.com",
-		// Popular torrent sites (for detection, not blocking)
+		// Popular torrent sites (for detection)
 		"thepiratebay.org",
+		"www.thepiratebay.org",
+		"thepiratebay.se",
+		"pirateproxy.live",
 		"1337x.to",
+		"www.1337x.to",
+		"1337x.st",
+		"1337x.is",
 		"rarbg.to",
+		"rarbgmirror.org",
 		"nyaa.si",
+		"sukebei.nyaa.si",
 		"rutracker.org",
+		"rutracker.net",
+		"rutracker.cc",
 		"rutor.info",
 		"rutor.is",
+		"rutor.org",
 		"nnmclub.to",
+		"nnm-club.me",
 		"kinozal.tv",
+		"kinozal.guru",
 		"rustorka.com",
 		"pornolab.net",
 		"torrentgalaxy.to",
+		"torrentgalaxy.mx",
 		"limetorrents.info",
+		"limetorrents.cc",
 		"torrentdownloads.me",
 		"torrentz2.eu",
+		"torrentz2.is",
 		"bt4g.org",
 		"bitsearch.to",
-		// Torrent client APIs
+		"yts.mx",
+		"yts.am",
+		"yts.lt",
+		"eztv.re",
+		"eztv.io",
+		"eztv.ag",
+		"zooqle.com",
+		"magnetdl.com",
+		"idope.se",
+		"torlock.com",
+		"torlock2.com",
+		"yourbittorrent.com",
+		"glodls.to",
+		// Russian torrent sites
+		"nnmclub.to",
+		"rutor.info",
+		"tfile.me",
+		"torrent-games.net",
+		"fast-torrent.ru",
+		"bitru.org",
+		"seedoff.cc",
+		"underverse.me",
+		// Torrent client domains
 		"check.utorrent.com",
 		"update.utorrent.com",
 		"update.bittorrent.com",
+		"www.utorrent.com",
+		"www.bittorrent.com",
+		"www.qbittorrent.org",
+		"www.transmissionbt.com",
+		"deluge-torrent.org",
+		"www.tixati.com",
+		// Torrent search engines
+		"btdig.com",
+		"snowfl.com",
+		"solidtorrents.to",
+		"torrends.to",
+		"torrentfunk.com",
+		"monova.org",
+		"torrentproject.se",
 	}
 
 	f.mu.Lock()
@@ -942,23 +1014,48 @@ func (f *FeedLoader) addTorDomains() {
 		"metrics.torproject.org",
 		"blog.torproject.org",
 		"support.torproject.org",
+		"community.torproject.org",
+		"tb-manual.torproject.org",
+		"forum.torproject.org",
+		"gitlab.torproject.org",
+		"trac.torproject.org",
 		// Tor directory authorities
 		"authority.torproject.org",
 		// Tor Browser update servers
 		"aus1.torproject.org",
 		"aus2.torproject.org",
-		// Onion routing related
+		// Onion routing / Tor2Web gateways
 		"onion.ws",
 		"onion.pet",
 		"onion.ly",
 		"onion.cab",
 		"onion.to",
+		"onion.sh",
+		"onion.link",
+		"onion.plus",
 		"tor2web.org",
 		"tor2web.io",
-		// Tor relay search
+		"tor2web.fi",
+		"onion.city",
+		"onion.direct",
+		"darknet.to",
+		// Tor relay search and monitoring
 		"relay.love",
 		"torstatus.blutmagie.de",
 		"atlas.torproject.org",
+		"exonerator.torproject.org",
+		"collector.torproject.org",
+		// Tor mirrors and alternative domains
+		"tor.eff.org",
+		"torservers.net",
+		"torrelay.de",
+		// VPN services often used with Tor
+		"mullvad.net",
+		"www.mullvad.net",
+		// I2P (similar anonymous network)
+		"geti2p.net",
+		"www.i2p2.de",
+		"i2pd.website",
 	}
 
 	f.mu.Lock()
