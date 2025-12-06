@@ -329,78 +329,63 @@ export function ThreatIntelPage() {
             const totalCount = users.reduce((sum, u) => sum + u.match_count, 0);
             
             return (
-              <Card key={category} className="overflow-hidden">
-                <CardHeader className={`${config.color} text-white py-3`}>
+              <Card key={category}>
+                <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      {config.icon}
-                      <CardTitle className="text-base">{config.label}</CardTitle>
+                      <div className={`p-1.5 rounded-md ${config.color}`}>
+                        <span className="text-white">{config.icon}</span>
+                      </div>
+                      <CardTitle className="text-sm font-medium">{config.label}</CardTitle>
                     </div>
                     {totalCount > 0 && (
-                      <Badge variant="secondary" className="bg-white/20 text-white border-0">
-                        {totalCount}
-                      </Badge>
+                      <span className="text-xl font-bold">{totalCount}</span>
                     )}
                   </div>
                 </CardHeader>
-                <CardContent className="p-0">
+                <CardContent className="pt-0">
                   {users.length > 0 ? (
-                    <div className="divide-y">
+                    <div className="space-y-3">
                       {users.map((user, idx) => (
-                        <div key={user.user_email} className="p-3 hover:bg-muted/50 transition-colors">
-                          <div className="flex items-start gap-3">
-                            {/* Rank badge */}
-                            <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                              idx === 0 ? "bg-yellow-500 text-white" :
-                              idx === 1 ? "bg-gray-400 text-white" :
-                              idx === 2 ? "bg-amber-700 text-white" :
-                              "bg-muted text-muted-foreground"
-                            }`}>
-                              {idx + 1}
+                        <div key={user.user_email} className="flex items-start gap-2.5">
+                          {/* Rank */}
+                          <span className={`text-sm font-medium w-4 ${
+                            idx === 0 ? "text-yellow-500" :
+                            idx === 1 ? "text-gray-400" :
+                            idx === 2 ? "text-amber-600" :
+                            "text-muted-foreground"
+                          }`}>
+                            {idx + 1}.
+                          </span>
+                          
+                          <div className="flex-1 min-w-0">
+                            {/* User info */}
+                            <div className="flex items-center justify-between gap-2">
+                              <Link
+                                href={`/users/${encodeURIComponent(user.user_email)}`}
+                                className="text-sm hover:underline truncate"
+                                title={user.user_email}
+                              >
+                                {user.user_email}
+                              </Link>
+                              <Badge variant="secondary" className="text-xs font-mono">
+                                {user.match_count}
+                              </Badge>
                             </div>
                             
-                            <div className="flex-1 min-w-0">
-                              {/* User info */}
-                              <div className="flex items-center justify-between gap-2">
-                                <Link
-                                  href={`/users/${encodeURIComponent(user.user_email)}`}
-                                  className="font-medium text-sm hover:underline text-primary truncate"
-                                  title={user.user_email}
-                                >
-                                  {user.user_email}
-                                </Link>
-                                <span className="flex-shrink-0 text-sm font-semibold text-muted-foreground">
-                                  {user.match_count}
-                                </span>
+                            {/* Domains */}
+                            {user.domains && user.domains.length > 0 && (
+                              <div className="mt-1 text-xs text-muted-foreground truncate" title={user.domains.join(", ")}>
+                                {user.domains.slice(0, 2).join(", ")}
+                                {user.domains.length > 2 && ` +${user.domains.length - 2}`}
                               </div>
-                              
-                              {/* Domains */}
-                              {user.domains && user.domains.length > 0 && (
-                                <div className="mt-1.5 flex flex-wrap gap-1">
-                                  {user.domains.slice(0, 3).map((domain) => (
-                                    <span
-                                      key={domain}
-                                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-muted text-muted-foreground truncate max-w-[140px]"
-                                      title={domain}
-                                    >
-                                      {domain}
-                                    </span>
-                                  ))}
-                                  {user.domains.length > 3 && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-muted/50 text-muted-foreground">
-                                      +{user.domains.length - 3}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
+                            )}
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="p-6 text-center text-sm text-muted-foreground">
-                      <div className="opacity-40 mb-1">{config.icon}</div>
+                    <div className="py-6 text-center text-sm text-muted-foreground">
                       Нет данных
                     </div>
                   )}
