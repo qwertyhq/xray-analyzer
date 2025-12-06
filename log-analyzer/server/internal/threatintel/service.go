@@ -23,6 +23,15 @@ type Storage interface {
 	GetThreatMatches(ctx context.Context, since time.Time, limit int) ([]*ThreatMatch, error)
 	GetThreatMatchesByUser(ctx context.Context, userEmail string, limit int) ([]*ThreatMatch, error)
 	GetThreatStats(ctx context.Context) (*ThreatStats, error)
+	GetTopUsersByCategory(ctx context.Context, category string, limit int) ([]*CategoryUserStats, error)
+	GetTopUsersByAllCategories(ctx context.Context, limit int) (map[string][]*CategoryUserStats, error)
+}
+
+// CategoryUserStats represents user stats for a content category
+type CategoryUserStats struct {
+	UserEmail  string `json:"user_email"`
+	Category   string `json:"category"`
+	MatchCount int64  `json:"match_count"`
 }
 
 // NewService creates a new threat intelligence service
@@ -182,4 +191,20 @@ func (s *Service) GetUserMatches(ctx context.Context, userEmail string, limit in
 func (s *Service) ForceUpdate(ctx context.Context) error {
 	log.Println("threatintel: forcing feed update")
 	return s.loader.LoadAllFeeds(ctx)
+}
+
+// GetTopUsersByCategory returns top users for a specific content category
+func (s *Service) GetTopUsersByCategory(ctx context.Context, category string, limit int) ([]*CategoryUserStats, error) {
+	if s.storage == nil {
+		return nil, nil
+	}
+	return s.storage.GetTopUsersByCategory(ctx, category, limit)
+}
+
+// GetTopUsersByAllCategories returns top users for all content categories
+func (s *Service) GetTopUsersByAllCategories(ctx context.Context, limit int) (map[string][]*CategoryUserStats, error) {
+	if s.storage == nil {
+		return nil, nil
+	}
+	return s.storage.GetTopUsersByAllCategories(ctx, limit)
 }

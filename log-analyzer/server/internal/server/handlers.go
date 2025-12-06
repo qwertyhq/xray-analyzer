@@ -611,3 +611,41 @@ func (s *Server) handleThreatIntelFeeds(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(feeds)
 }
+
+// handleThreatIntelTopUsers returns top users by content category violations
+func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Request) {
+	if s.threatIntel == nil {
+		http.Error(w, "Threat intelligence not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	limit := 10
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 50 {
+			limit = parsed
+		}
+	}
+
+	// Check if category-specific query
+	category := r.URL.Query().Get("category")
+
+	var result interface{}
+	var err error
+
+	if category != "" {
+		result, err = s.threatIntel.GetTopUsersByCategory(ctx, category, limit)
+	} else {
+		result, err = s.threatIntel.GetTopUsersByAllCategories(ctx, limit)
+	}
+
+	if err != nil {
+		log.Printf("Error getting top users: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}

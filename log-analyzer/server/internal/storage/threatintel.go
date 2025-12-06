@@ -168,3 +168,46 @@ func (s *Storage) CleanupOldThreatMatches(ctx context.Context, retention time.Du
 
 	return result.RowsAffected()
 }
+
+// GetTopUsersByCategory returns top users by content category violations
+func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, limit int) ([]*threatintel.CategoryUserStats, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_email, threat_type, COUNT(*) as cnt
+		FROM threat_matches
+		WHERE threat_type = ?
+		GROUP BY user_email
+		ORDER BY cnt DESC
+		LIMIT ?
+	`, category, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []*threatintel.CategoryUserStats
+	for rows.Next() {
+		var st threatintel.CategoryUserStats
+		if err := rows.Scan(&st.UserEmail, &st.Category, &st.MatchCount); err != nil {
+			return nil, err
+		}
+		stats = append(stats, &st)
+	}
+
+	return stats, rows.Err()
+}
+
+// GetTopUsersByAllCategories returns top users for all content categories (porn, gambling, social, fakenews)
+func (s *Storage) GetTopUsersByAllCategories(ctx context.Context, limit int) (map[string][]*threatintel.CategoryUserStats, error) {
+	categories := []string{"porn", "gambling", "social", "fakenews"}
+	result := make(map[string][]*threatintel.CategoryUserStats)
+
+	for _, cat := range categories {
+		stats, err := s.GetTopUsersByCategory(ctx, cat, limit)
+		if err != nil {
+			return nil, err
+		}
+		result[cat] = stats
+	}
+
+	return result, nil
+}

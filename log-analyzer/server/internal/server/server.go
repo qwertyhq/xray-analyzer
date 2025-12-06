@@ -86,6 +86,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/threatintel/stats", s.handleThreatIntelStats)
 	mux.HandleFunc("/api/threatintel/matches", s.handleThreatIntelMatches)
 	mux.HandleFunc("/api/threatintel/feeds", s.handleThreatIntelFeeds)
+	mux.HandleFunc("/api/threatintel/top-users", s.handleThreatIntelTopUsers)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	// User-specific endpoints (must be registered before /api/users/)

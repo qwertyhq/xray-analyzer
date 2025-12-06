@@ -563,7 +563,7 @@ func (f *FeedLoader) loadCategoryHosts(ctx context.Context, url string, source T
 func (f *FeedLoader) loadPornBlocklist(ctx context.Context) (int, error) {
 	return f.loadCategoryHosts(
 		ctx,
-		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/porn/clefspeare13/hosts",
+		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/porn/sinfonietta/hosts",
 		SourcePorn,
 		ThreatTypePorn,
 		"Adult/Porn content",
@@ -575,7 +575,7 @@ func (f *FeedLoader) loadPornBlocklist(ctx context.Context) (int, error) {
 func (f *FeedLoader) loadGamblingBlocklist(ctx context.Context) (int, error) {
 	return f.loadCategoryHosts(
 		ctx,
-		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/gambling/hosts",
+		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/gambling/sinfonietta/hosts",
 		SourceGambling,
 		ThreatTypeGambling,
 		"Gambling/Casino site",
@@ -587,7 +587,7 @@ func (f *FeedLoader) loadGamblingBlocklist(ctx context.Context) (int, error) {
 func (f *FeedLoader) loadSocialBlocklist(ctx context.Context) (int, error) {
 	return f.loadCategoryHosts(
 		ctx,
-		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/social/hosts",
+		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/social/sinfonietta/hosts",
 		SourceSocial,
 		ThreatTypeSocial,
 		"Social media site",
