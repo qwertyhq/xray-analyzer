@@ -14,6 +14,11 @@ import (
 	"time"
 )
 
+const (
+	maxRetries    = 3
+	retryBaseWait = 5 * time.Second
+)
+
 // FeedLoader handles loading threat intelligence feeds
 type FeedLoader struct {
 	client     *http.Client
@@ -31,6 +36,44 @@ func NewFeedLoader() *FeedLoader {
 		indicators: make(map[string]*ThreatIndicator),
 		feedStatus: make(map[ThreatSource]*FeedStatus),
 	}
+}
+
+// loadWithRetry wraps a loader function with retry logic
+func (f *FeedLoader) loadWithRetry(ctx context.Context, source ThreatSource, loader func(context.Context) (int, error)) (int, error) {
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		count, err := loader(ctx)
+
+		// Success with data
+		if err == nil && count > 0 {
+			return count, nil
+		}
+
+		// Error occurred
+		if err != nil {
+			lastErr = err
+			log.Printf("threatintel: %s attempt %d/%d failed: %v", source, attempt, maxRetries, err)
+		} else if count == 0 {
+			// No error but zero results - treat as temporary failure
+			lastErr = fmt.Errorf("received 0 indicators")
+			log.Printf("threatintel: %s attempt %d/%d returned 0 indicators, retrying...", source, attempt, maxRetries)
+		}
+
+		// Don't sleep after last attempt
+		if attempt < maxRetries {
+			wait := retryBaseWait * time.Duration(attempt)
+			log.Printf("threatintel: %s waiting %v before retry...", source, wait)
+
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-time.After(wait):
+			}
+		}
+	}
+
+	return 0, fmt.Errorf("failed after %d attempts: %w", maxRetries, lastErr)
 }
 
 // LoadAllFeeds loads all threat intelligence feeds
@@ -66,7 +109,8 @@ func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 			f.updateFeedStatus(source, "updating", "", 0)
 			start := time.Now()
 
-			count, err := loader(ctx)
+			// Use retry wrapper
+			count, err := f.loadWithRetry(ctx, source, loader)
 			if err != nil {
 				f.updateFeedStatus(source, "error", err.Error(), 0)
 				errChan <- fmt.Errorf("%s: %w", source, err)
@@ -613,9 +657,28 @@ func (f *FeedLoader) loadFakeNewsBlocklist(ctx context.Context) (int, error) {
 
 // loadTorrentTrackers loads BitTorrent tracker domains from ngosang/trackerslist
 func (f *FeedLoader) loadTorrentTrackers(ctx context.Context) (int, error) {
-	// Load from multiple sources for comprehensive coverage
+	// Load from multiple ngosang/trackerslist sources for comprehensive coverage
+	// All lists are automatically updated daily
 	trackerURLs := []string{
+		// Main comprehensive list (121 trackers)
 		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt",
+		// Best/most popular trackers (20 trackers)
+		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt",
+		// UDP trackers (50 trackers)
+		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_udp.txt",
+		// HTTP trackers (53 trackers)
+		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_http.txt",
+		// HTTPS trackers (18 trackers)
+		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_https.txt",
+		// WebSocket/WebTorrent trackers (4 trackers)
+		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_ws.txt",
+		// I2P trackers (10 trackers) - anonymous network
+		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_i2p.txt",
+		// Yggdrasil network trackers
+		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_yggdrasil.txt",
+		// IP-based lists (for when DNS resolution is needed)
+		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_ip.txt",
+		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best_ip.txt",
 	}
 
 	count := 0
