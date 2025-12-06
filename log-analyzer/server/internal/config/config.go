@@ -13,8 +13,9 @@ type Config struct {
 	DBPath     string
 
 	// Analysis settings
-	BlacklistPath   string
-	BlacklistReload time.Duration
+	BlacklistPath      string
+	BlacklistReload    time.Duration
+	BlacklistRemoteURL string // URL to fetch additional blocked domains
 
 	// Telegram settings
 	TelegramEnabled bool
@@ -33,6 +34,7 @@ func Load() *Config {
 		DBPath:                 getEnv("DB_PATH", "./data/analyzer.db"),
 		BlacklistPath:          getEnv("BLACKLIST_PATH", "./blacklist.txt"),
 		BlacklistReload:        getDurationEnv("BLACKLIST_RELOAD", 5*time.Minute),
+		BlacklistRemoteURL:     getEnv("BLACKLIST_REMOTE_URL", ""),
 		TelegramEnabled:        getBoolEnv("TELEGRAM_ENABLED", false),
 		TelegramToken:          getEnv("TELEGRAM_TOKEN", ""),
 		TelegramChatID:         getEnv("TELEGRAM_CHAT_ID", ""),

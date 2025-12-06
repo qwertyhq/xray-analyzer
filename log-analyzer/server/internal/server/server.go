@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/xray-log-analyzer/server/internal/analyzer"
+	"github.com/xray-log-analyzer/server/internal/blacklist"
 	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/storage"
 )
@@ -34,6 +35,7 @@ type Server struct {
 	addr      string
 	analyzer  *analyzer.Analyzer
 	storage   *storage.Storage
+	blacklist *blacklist.Blacklist
 	clients   map[string]*Client
 	clientsMu sync.RWMutex
 }
@@ -48,12 +50,13 @@ type Client struct {
 }
 
 // New creates a new Server
-func New(addr string, analyzer *analyzer.Analyzer, storage *storage.Storage) *Server {
+func New(addr string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl *blacklist.Blacklist) *Server {
 	return &Server{
-		addr:     addr,
-		analyzer: analyzer,
-		storage:  storage,
-		clients:  make(map[string]*Client),
+		addr:      addr,
+		analyzer:  analyzer,
+		storage:   storage,
+		blacklist: bl,
+		clients:   make(map[string]*Client),
 	}
 }
 
@@ -70,6 +73,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/hourly", s.handleHourlyStats)
 	mux.HandleFunc("/api/anomalies", s.handleAnomalies)
 	mux.HandleFunc("/api/alerts", s.handleAlerts)
+	mux.HandleFunc("/api/blacklist/stats", s.handleBlacklistStats)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	// Start cleanup job for inactive nodes (older than 24 hours)
@@ -305,6 +309,18 @@ func (s *Server) handleAllUsers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleBlacklistStats returns blacklist statistics
+func (s *Server) handleBlacklistStats(w http.ResponseWriter, r *http.Request) {
+	exact, wildcards, lastRemote := s.blacklist.Stats()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"exact_domains":      exact,
+		"wildcard_rules":     wildcards,
+		"total":              exact + wildcards,
+		"last_remote_update": lastRemote,
+	})
 }
 
 // handleDeleteNode deletes a node and its data

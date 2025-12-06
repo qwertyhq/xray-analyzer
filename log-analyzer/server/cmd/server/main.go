@@ -40,6 +40,10 @@ func main() {
 
 	// Initialize blacklist
 	bl := blacklist.New(cfg.BlacklistPath, cfg.BlacklistReload)
+	if cfg.BlacklistRemoteURL != "" {
+		bl.SetRemoteURL(cfg.BlacklistRemoteURL)
+		log.Printf("blacklist: remote URL configured: %s", cfg.BlacklistRemoteURL)
+	}
 	if err := bl.Start(ctx); err != nil {
 		log.Fatalf("failed to load blacklist: %v", err)
 	}
@@ -102,7 +106,7 @@ func main() {
 	}()
 
 	// Initialize and start server
-	srv := server.New(cfg.ListenAddr, anal, store)
+	srv := server.New(cfg.ListenAddr, anal, store, bl)
 	go func() {
 		if err := srv.Start(ctx); err != nil {
 			log.Printf("server error: %v", err)

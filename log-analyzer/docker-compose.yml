@@ -21,6 +21,7 @@ services:
       - DB_PATH=/app/data/analyzer.db
       - BLACKLIST_PATH=/app/blacklist.txt
       - BLACKLIST_RELOAD=5m
+      - BLACKLIST_REMOTE_URL=https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/domains_all.lst
       - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-false}
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
