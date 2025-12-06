@@ -31,6 +31,7 @@ services:
       start_period: 10s
     networks:
       - analyzer-net
+      - remnawave-network
 
   # Web UI (optional, for future)
   # analyzer-ui:
@@ -54,3 +55,5 @@ volumes:
 networks:
   analyzer-net:
     driver: bridge
+  remnawave-network:
+    external: true
