@@ -123,6 +123,7 @@ type GlobalStats struct {
 	TotalNodes         int   `json:"nodes_total"`
 	NodesConnected     int   `json:"nodes_connected"`
 	TotalUniqueUsers   int   `json:"total_unique_users"`
+	OnlineUsers        int   `json:"online_users"`
 }
 
 // Anomaly represents a detected anomaly

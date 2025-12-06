@@ -6,6 +6,7 @@ export interface Stats {
   nodes_total: number;
   nodes_connected: number;
   total_unique_users: number;
+  online_users: number;
 }
 
 export interface NodeStats {

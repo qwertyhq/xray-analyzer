@@ -532,6 +532,15 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 		return nil, err
 	}
 
+	// Online users (active in last 5 minutes)
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT user_email) FROM user_stats
+		WHERE last_seen > datetime('now', '-5 minutes')
+	`).Scan(&stats.OnlineUsers)
+	if err != nil {
+		return nil, err
+	}
+
 	return stats, nil
 }
 

@@ -17,6 +17,7 @@ const defaultStats: Stats = {
   nodes_total: 0,
   nodes_connected: 0,
   total_unique_users: 0,
+  online_users: 0,
 };
 
 export function useApi(refreshInterval = 5000) {

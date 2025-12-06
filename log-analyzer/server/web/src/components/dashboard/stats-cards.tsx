@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Activity, Server, Users, ShieldAlert } from "lucide-react";
+import { Activity, Server, Users, ShieldAlert, UserCheck } from "lucide-react";
 import { Stats } from "@/lib/types";
 
 interface StatsCardsProps {
@@ -15,7 +15,7 @@ interface StatsCardsProps {
 
 export function StatsCards({ stats }: StatsCardsProps) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
@@ -48,25 +48,40 @@ export function StatsCards({ stats }: StatsCardsProps) {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Nodes Connected</CardTitle>
+          <CardTitle className="text-sm font-medium">Nodes</CardTitle>
           <Server className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">
-            {stats.nodes_connected}
+            <span className="text-green-500">{stats.nodes_connected}</span>
             <span className="text-sm font-normal text-muted-foreground">
               {" "}/ {stats.nodes_total}
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Active connections
+            Online / Total
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Unique Users</CardTitle>
+          <CardTitle className="text-sm font-medium">Online Users</CardTitle>
+          <UserCheck className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold text-green-500">
+            {stats.online_users || 0}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Active in last 5 min
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Total Users</CardTitle>
           <Users className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
