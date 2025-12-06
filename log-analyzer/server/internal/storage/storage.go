@@ -300,11 +300,20 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 	return users, nil
 }
 
-// GetAllUsers gets all users sorted by requests
+// GetAllUsers gets all users sorted by requests (aggregated across nodes)
 func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserStats, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT node_id, user_email, total_requests, blacklist_hits, last_seen, last_ip, last_blacklist_hit, last_blacklist_domain
+		SELECT 
+			GROUP_CONCAT(DISTINCT node_id) as nodes,
+			user_email, 
+			SUM(total_requests) as total_requests, 
+			SUM(blacklist_hits) as blacklist_hits, 
+			MAX(last_seen) as last_seen, 
+			MAX(last_ip) as last_ip,
+			MAX(last_blacklist_hit) as last_blacklist_hit, 
+			(SELECT last_blacklist_domain FROM user_stats u2 WHERE u2.user_email = user_stats.user_email ORDER BY last_blacklist_hit DESC LIMIT 1) as last_blacklist_domain
 		FROM user_stats
+		GROUP BY user_email
 		ORDER BY total_requests DESC
 		LIMIT ?
 	`, limit)
@@ -317,10 +326,13 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 	for rows.Next() {
 		u := &models.UserStats{}
 		var lastHit sql.NullTime
-		var lastDomain, lastIP sql.NullString
-		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &u.LastSeen, &lastIP, &lastHit, &lastDomain)
+		var lastDomain, lastIP, nodes sql.NullString
+		err := rows.Scan(&nodes, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &u.LastSeen, &lastIP, &lastHit, &lastDomain)
 		if err != nil {
 			return nil, err
+		}
+		if nodes.Valid {
+			u.NodeID = nodes.String
 		}
 		if lastHit.Valid {
 			u.LastBlacklistHit = lastHit.Time

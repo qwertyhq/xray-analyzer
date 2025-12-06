@@ -1,6 +1,6 @@
 "use client";
 
-import { useUsers } from "@/hooks/use-api";
+import { useUsers, useApi } from "@/hooks/use-api";
 import { UsersTable } from "@/components/users/users-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 
 export default function UsersPage() {
   const { users, loading } = useUsers();
+  const { stats } = useApi();
 
   if (loading) {
     return (
@@ -38,7 +39,7 @@ export default function UsersPage() {
             <CardTitle className="text-sm font-medium">Total Users</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{users.length}</div>
+            <div className="text-2xl font-bold">{(stats.total_unique_users || users.length).toLocaleString()}</div>
           </CardContent>
         </Card>
         <Card>
