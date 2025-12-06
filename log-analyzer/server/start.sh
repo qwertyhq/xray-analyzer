@@ -19,6 +19,6 @@ for i in $(seq 1 30); do
 done
 
 # Start Next.js frontend
-echo "Starting Web UI on port 3000..."
+echo "Starting Web UI on port 3925..."
 cd /app/web
-HOSTNAME=0.0.0.0 PORT=3000 NODE_ENV=production node server.js
+HOSTNAME=0.0.0.0 PORT=3925 NODE_ENV=production node server.js
