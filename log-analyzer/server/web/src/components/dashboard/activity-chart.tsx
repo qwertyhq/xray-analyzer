@@ -5,6 +5,16 @@ import { HourlyStats } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
 
 interface ActivityChartProps {
   data: HourlyStats[];
@@ -20,14 +30,14 @@ export function ActivityChart({
   loading = false,
 }: ActivityChartProps) {
   const chartData = useMemo(() => {
-    if (!data || data.length === 0) return [];
-    
     // Create a map of existing data by hour
     const hourMap = new Map<string, HourlyStats>();
-    data.forEach(d => {
-      const hourKey = format(new Date(d.hour), "yyyy-MM-dd HH:00");
-      hourMap.set(hourKey, d);
-    });
+    if (data && data.length > 0) {
+      data.forEach(d => {
+        const hourKey = format(new Date(d.hour), "yyyy-MM-dd HH:00");
+        hourMap.set(hourKey, d);
+      });
+    }
 
     // Generate all hours for the last 24 hours
     const result = [];
@@ -41,7 +51,7 @@ export function ActivityChart({
       
       result.push({
         hour: format(hourDate, "HH:mm"),
-        date: format(hourDate, "MMM d"),
+        fullDate: format(hourDate, "MMM d, HH:mm"),
         requests: existing?.total_requests || 0,
         blacklist: existing?.blacklist_hits || 0,
       });
@@ -49,11 +59,6 @@ export function ActivityChart({
 
     return result;
   }, [data]);
-
-  const maxValue = useMemo(() => {
-    if (chartData.length === 0) return 100;
-    return Math.max(...chartData.map(d => d.requests), 100);
-  }, [chartData]);
 
   if (loading) {
     return (
@@ -63,23 +68,7 @@ export function ActivityChart({
           <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Skeleton className="h-[200px] w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (chartData.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[200px] flex items-center justify-center text-muted-foreground">
-            No data available
-          </div>
+          <Skeleton className="h-[300px] w-full" />
         </CardContent>
       </Card>
     );
@@ -92,46 +81,76 @@ export function ActivityChart({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-[200px] flex items-end gap-1">
-          {chartData.map((d, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <div className="w-full flex flex-col gap-0.5" style={{ height: "160px" }}>
-                {/* Blacklist bar (on top) */}
-                {d.blacklist > 0 && (
-                  <div
-                    className="w-full bg-destructive/80 rounded-t-sm"
-                    style={{
-                      height: `${(d.blacklist / maxValue) * 100}%`,
-                      minHeight: d.blacklist > 0 ? "2px" : "0",
-                    }}
-                    title={`Blacklist: ${d.blacklist}`}
-                  />
-                )}
-                {/* Requests bar */}
-                <div
-                  className="w-full bg-primary/60 rounded-sm"
-                  style={{
-                    height: `${((d.requests - d.blacklist) / maxValue) * 100}%`,
-                    minHeight: d.requests > 0 ? "2px" : "0",
-                  }}
-                  title={`Requests: ${d.requests}`}
-                />
-              </div>
-              <span className="text-[10px] text-muted-foreground">
-                {i % 4 === 0 ? d.hour : ""}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-4 mt-4 justify-center text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-primary/60 rounded-sm" />
-            <span className="text-muted-foreground">Requests</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-destructive/80 rounded-sm" />
-            <span className="text-muted-foreground">Blacklist</span>
-          </div>
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart
+              data={chartData}
+              margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+            >
+              <defs>
+                <linearGradient id="colorRequests" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.1}/>
+                </linearGradient>
+                <linearGradient id="colorBlacklist" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(var(--destructive))" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="hsl(var(--destructive))" stopOpacity={0.1}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <XAxis 
+                dataKey="hour" 
+                tick={{ fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
+                className="text-muted-foreground"
+                interval="preserveStartEnd"
+                tickFormatter={(value, index) => index % 4 === 0 ? value : ""}
+              />
+              <YAxis 
+                tick={{ fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
+                className="text-muted-foreground"
+                tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}
+              />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                }}
+                labelStyle={{ color: "hsl(var(--foreground))" }}
+                labelFormatter={(_, payload) => payload?.[0]?.payload?.fullDate || ""}
+                formatter={(value: number, name: string) => [
+                  value.toLocaleString(),
+                  name === "requests" ? "Requests" : "Blacklist"
+                ]}
+              />
+              <Legend 
+                verticalAlign="top"
+                height={36}
+                formatter={(value) => value === "requests" ? "Requests" : "Blacklist Hits"}
+              />
+              <Area
+                type="monotone"
+                dataKey="requests"
+                stroke="hsl(var(--primary))"
+                fillOpacity={1}
+                fill="url(#colorRequests)"
+                strokeWidth={2}
+              />
+              <Area
+                type="monotone"
+                dataKey="blacklist"
+                stroke="hsl(var(--destructive))"
+                fillOpacity={1}
+                fill="url(#colorBlacklist)"
+                strokeWidth={2}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
       </CardContent>
     </Card>
