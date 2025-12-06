@@ -100,10 +100,10 @@ func (f *FeedLoader) updateFeedStatus(source ThreatSource, status, errMsg string
 	}
 }
 
-// loadURLhaus loads malware URLs from URLhaus
+// loadURLhaus loads malware URLs from URLhaus plain text feed (no API key required)
 func (f *FeedLoader) loadURLhaus(ctx context.Context) (int, error) {
-	// Get recent malware hosts
-	resp, err := f.client.Get("https://urlhaus-api.abuse.ch/v1/urls/recent/limit/10000/")
+	// Use plain text feed instead of JSON API (no auth required)
+	resp, err := f.client.Get("https://urlhaus.abuse.ch/downloads/text_online/")
 	if err != nil {
 		return 0, fmt.Errorf("fetch urlhaus: %w", err)
 	}
@@ -113,53 +113,40 @@ func (f *FeedLoader) loadURLhaus(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("urlhaus returned status %d", resp.StatusCode)
 	}
 
-	var result URLhausResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("decode urlhaus: %w", err)
-	}
-
 	count := 0
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	for _, entry := range result.URLs {
-		if entry.URLStatus != "online" {
+	scanner := bufio.NewScanner(resp.Body)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip comments and empty lines
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		// Extract host from URL
-		host := entry.Host
-		if host == "" {
-			if u, err := url.Parse(entry.URL); err == nil {
-				host = u.Hostname()
-			}
-		}
-
-		if host == "" {
+		// Parse URL and extract host
+		u, err := url.Parse(line)
+		if err != nil {
 			continue
 		}
 
-		// Determine threat type from tags
-		threatType := ThreatTypeMalware
-		for _, tag := range entry.Tags {
-			switch strings.ToLower(tag) {
-			case "phishing":
-				threatType = ThreatTypePhishing
-			case "ransomware":
-				threatType = ThreatTypeRansomware
-			case "c2", "c&c":
-				threatType = ThreatTypeC2
-			}
+		host := u.Hostname()
+		if host == "" {
+			continue
 		}
 
 		indicator := &ThreatIndicator{
 			Indicator:   strings.ToLower(host),
 			Type:        "domain",
-			ThreatType:  threatType,
+			ThreatType:  ThreatTypeMalware,
 			Source:      SourceURLhaus,
 			Confidence:  80,
-			Description: entry.Threat,
-			Tags:        entry.Tags,
+			Description: "Malware distribution host",
 			FirstSeen:   time.Now(),
 			LastSeen:    time.Now(),
 			CreatedAt:   time.Now(),
@@ -167,6 +154,10 @@ func (f *FeedLoader) loadURLhaus(ctx context.Context) (int, error) {
 
 		f.indicators[indicator.Indicator] = indicator
 		count++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return count, fmt.Errorf("scan urlhaus: %w", err)
 	}
 
 	return count, nil
@@ -225,18 +216,10 @@ func (f *FeedLoader) loadFeodoTracker(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-// loadThreatFox loads IOCs from ThreatFox
+// loadThreatFox loads IOCs from ThreatFox plain text feed (no API key required)
 func (f *FeedLoader) loadThreatFox(ctx context.Context) (int, error) {
-	// Query for recent IOCs (domains and IPs)
-	payload := strings.NewReader(`{"query": "get_iocs", "days": 7}`)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://threatfox-api.abuse.ch/api/v1/", payload)
-	if err != nil {
-		return 0, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := f.client.Do(req)
+	// Use plain text CSV feed instead of JSON API (no auth required)
+	resp, err := f.client.Get("https://threatfox.abuse.ch/export/csv/recent/")
 	if err != nil {
 		return 0, fmt.Errorf("fetch threatfox: %w", err)
 	}
@@ -246,59 +229,67 @@ func (f *FeedLoader) loadThreatFox(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("threatfox returned status %d", resp.StatusCode)
 	}
 
-	var result ThreatFoxResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("decode threatfox: %w", err)
-	}
-
-	if result.QueryStatus != "ok" {
-		return 0, fmt.Errorf("threatfox query failed: %s", result.QueryStatus)
-	}
-
 	count := 0
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	for _, ioc := range result.Data {
+	scanner := bufio.NewScanner(resp.Body)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip comments and empty lines
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// CSV format: first_seen_utc,ioc_id,ioc_value,ioc_type,threat_type,fk_malware,malware_alias,malware_printable,last_seen_utc,confidence_level,reference,tags,anonymous,reporter
+		parts := strings.Split(line, ",")
+		if len(parts) < 8 {
+			continue
+		}
+
+		// Remove quotes from fields
+		iocValue := strings.Trim(parts[2], `"`)
+		iocType := strings.Trim(parts[3], `"`)
+		threatType := strings.Trim(parts[4], `"`)
+		malware := strings.Trim(parts[7], `"`)
+
 		// Only process domain and IP IOCs
-		iocType := ""
-		switch ioc.IOCType {
+		var indicatorType string
+		switch iocType {
 		case "domain":
-			iocType = "domain"
+			indicatorType = "domain"
 		case "ip:port":
-			iocType = "ip"
+			indicatorType = "ip"
 			// Extract IP from ip:port format
-			if idx := strings.Index(ioc.IOC, ":"); idx > 0 {
-				ioc.IOC = ioc.IOC[:idx]
+			if idx := strings.Index(iocValue, ":"); idx > 0 {
+				iocValue = iocValue[:idx]
 			}
 		default:
 			continue
 		}
 
 		// Map threat type
-		threatType := ThreatTypeMalware
-		switch strings.ToLower(ioc.ThreatType) {
+		threat := ThreatTypeMalware
+		switch strings.ToLower(threatType) {
 		case "botnet_cc":
-			threatType = ThreatTypeBotnet
+			threat = ThreatTypeBotnet
 		case "cc":
-			threatType = ThreatTypeC2
+			threat = ThreatTypeC2
 		case "payload_delivery":
-			threatType = ThreatTypeMalware
-		}
-
-		confidence := ioc.Confidence
-		if confidence == 0 {
-			confidence = 70
+			threat = ThreatTypeMalware
 		}
 
 		indicator := &ThreatIndicator{
-			Indicator:   strings.ToLower(ioc.IOC),
-			Type:        iocType,
-			ThreatType:  threatType,
+			Indicator:   strings.ToLower(iocValue),
+			Type:        indicatorType,
+			ThreatType:  threat,
 			Source:      SourceThreatFox,
-			Confidence:  confidence,
-			Description: ioc.MalwarePrintable,
-			Tags:        ioc.Tags,
+			Confidence:  75,
+			Description: malware,
 			FirstSeen:   time.Now(),
 			LastSeen:    time.Now(),
 			CreatedAt:   time.Now(),
@@ -306,6 +297,10 @@ func (f *FeedLoader) loadThreatFox(ctx context.Context) (int, error) {
 
 		f.indicators[indicator.Indicator] = indicator
 		count++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return count, fmt.Errorf("scan threatfox: %w", err)
 	}
 
 	return count, nil

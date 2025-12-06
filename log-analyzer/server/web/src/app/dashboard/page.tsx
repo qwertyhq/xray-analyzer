@@ -74,13 +74,10 @@ export default function DashboardPage() {
             timeRange="24h"
           />
         </div>
-        <div className="space-y-6">
-          <AnomaliesCard anomalies={anomalies} loading={false} />
-          <ThreatIntelCard />
-        </div>
+        <AnomaliesCard anomalies={anomalies} loading={false} />
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Active Nodes</CardTitle>
@@ -104,10 +101,12 @@ export default function DashboardPage() {
             <RecentBlocks 
               matches={blacklist?.recent_matches || []} 
               loading={false}
-              limit={12}
+              limit={10}
             />
           </CardContent>
         </Card>
+
+        <ThreatIntelCard />
       </div>
     </div>
   );
