@@ -201,3 +201,12 @@ type PaginatedAlertsResponse struct {
 	PageSize   int     `json:"page_size"`
 	TotalPages int     `json:"total_pages"`
 }
+
+// PaginatedBlacklistMatchesResponse represents paginated blacklist matches response
+type PaginatedBlacklistMatchesResponse struct {
+	Matches    []BlacklistMatchInfo `json:"matches"`
+	Total      int                  `json:"total"`
+	Page       int                  `json:"page"`
+	PageSize   int                  `json:"page_size"`
+	TotalPages int                  `json:"total_pages"`
+}

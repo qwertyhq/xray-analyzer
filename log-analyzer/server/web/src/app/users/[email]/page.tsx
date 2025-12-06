@@ -16,10 +16,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ArrowLeft, User, Activity, ShieldAlert, Globe } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import { isValidDate } from "@/lib/utils/date";
 import { UserDestinationsTable } from "@/components/users/user-destinations-table";
-import { UserAlertsTable } from "@/components/users/user-alerts-table";
+import { UserBlacklistMatches } from "@/components/users/user-blacklist-matches";
 
 export default function UserDetailsPage() {
   const params = useParams();
@@ -179,59 +179,13 @@ export default function UserDetailsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-destructive">Alerts History</CardTitle>
-          <CardDescription>All alerts generated for this user</CardDescription>
+          <CardTitle className="text-destructive">Blacklist Matches</CardTitle>
+          <CardDescription>Blocked requests for this user</CardDescription>
         </CardHeader>
         <CardContent>
-          <UserAlertsTable email={email} />
+          <UserBlacklistMatches email={email} />
         </CardContent>
       </Card>
-
-      {details.recent_matches && details.recent_matches.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">Recent Blacklist Matches</CardTitle>
-            <CardDescription>Last 50 blocked requests</CardDescription>
-          </CardHeader>
-          <CardContent className="max-h-[400px] overflow-y-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Node</TableHead>
-                  <TableHead>Source IP</TableHead>
-                  <TableHead>Destination</TableHead>
-                  <TableHead>Matched Rule</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {details.recent_matches.map((match, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {isValidDate(match.timestamp)
-                        ? format(new Date(match.timestamp), "MMM d, HH:mm:ss")
-                        : "—"
-                      }
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{match.node_id}</Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {match.source_ip}
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate font-mono text-sm">
-                      {match.destination}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {match.matched_rule}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

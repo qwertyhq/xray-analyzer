@@ -215,3 +215,56 @@ func (s *Storage) GetUserBlacklistDetails(ctx context.Context, userEmail string,
 	}
 	return matches, nil
 }
+
+// GetUserBlacklistMatches returns paginated blacklist matches for a user
+func (s *Storage) GetUserBlacklistMatches(ctx context.Context, userEmail string, since time.Time, page, pageSize int) (*models.PaginatedBlacklistMatchesResponse, error) {
+	sinceStr := since.UTC().Format(time.RFC3339)
+	offset := (page - 1) * pageSize
+
+	// Get total count
+	var total int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM blacklist_matches
+		WHERE user_email = ? AND timestamp > ?
+	`, userEmail, sinceStr).Scan(&total)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get paginated results
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT node_id, source_ip, destination, matched_rule, COALESCE(timestamp, '') as timestamp
+		FROM blacklist_matches
+		WHERE user_email = ? AND timestamp > ?
+		ORDER BY timestamp DESC
+		LIMIT ? OFFSET ?
+	`, userEmail, sinceStr, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var matches []models.BlacklistMatchInfo
+	for rows.Next() {
+		var m models.BlacklistMatchInfo
+		var tsStr string
+		if err := rows.Scan(&m.NodeID, &m.SourceIP, &m.Destination, &m.MatchedRule, &tsStr); err != nil {
+			return nil, err
+		}
+		m.Timestamp = parseDateTime(tsStr)
+		matches = append(matches, m)
+	}
+
+	totalPages := (total + pageSize - 1) / pageSize
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
+	return &models.PaginatedBlacklistMatchesResponse{
+		Matches:    matches,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+	}, nil
+}

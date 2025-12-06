@@ -105,6 +105,12 @@ func (s *Server) handleUserRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for /api/users/{email}/blacklist
+	if strings.HasSuffix(path, "/blacklist") {
+		s.handleUserBlacklistMatches(w, r)
+		return
+	}
+
 	// Default: user details
 	s.handleUserDetails(w, r)
 }
@@ -472,6 +478,70 @@ func (s *Server) handleUserAlerts(w http.ResponseWriter, r *http.Request) {
 
 	if response.Alerts == nil {
 		response.Alerts = []models.Alert{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleUserBlacklistMatches returns paginated blacklist matches for a user
+func (s *Server) handleUserBlacklistMatches(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Extract email from URL path: /api/users/{email}/blacklist
+	path := r.URL.Path
+	parts := strings.Split(path, "/")
+	if len(parts) < 5 {
+		http.Error(w, "email required", http.StatusBadRequest)
+		return
+	}
+
+	email, err := url.PathUnescape(parts[3])
+	if err != nil {
+		http.Error(w, "invalid email", http.StatusBadRequest)
+		return
+	}
+
+	// Parse pagination params
+	page := 1
+	pageSize := 20
+	if p := r.URL.Query().Get("page"); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
+			pageSize = parsed
+		}
+	}
+
+	// Default: last 24 hours
+	since := time.Now().Add(-24 * time.Hour)
+	if p := r.URL.Query().Get("period"); p != "" {
+		switch p {
+		case "1h":
+			since = time.Now().Add(-1 * time.Hour)
+		case "6h":
+			since = time.Now().Add(-6 * time.Hour)
+		case "24h":
+			since = time.Now().Add(-24 * time.Hour)
+		case "7d":
+			since = time.Now().Add(-7 * 24 * time.Hour)
+		case "30d":
+			since = time.Now().Add(-30 * 24 * time.Hour)
+		}
+	}
+
+	response, err := s.storage.GetUserBlacklistMatches(ctx, email, since, page, pageSize)
+	if err != nil {
+		log.Printf("Error getting user blacklist matches: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if response.Matches == nil {
+		response.Matches = []models.BlacklistMatchInfo{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
