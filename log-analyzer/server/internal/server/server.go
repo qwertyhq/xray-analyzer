@@ -458,7 +458,7 @@ func (s *Server) handleHourlyStats(w http.ResponseWriter, r *http.Request) {
 	hoursStr := r.URL.Query().Get("hours")
 	hours := 24 // default
 	if hoursStr != "" {
-		if h, err := strconv.Atoi(hoursStr); err == nil && h > 0 && h <= 168 {
+		if h, err := strconv.Atoi(hoursStr); err == nil && h > 0 && h <= 720 {
 			hours = h
 		}
 	}

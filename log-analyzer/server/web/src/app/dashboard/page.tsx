@@ -70,6 +70,7 @@ export default function DashboardPage() {
             title={chartTitles[timeRange]}
             description="Requests and blacklist hits over time"
             loading={hourlyLoading}
+            timeRange={timeRange}
           />
         </div>
         <AnomaliesCard anomalies={anomalies} loading={anomaliesLoading} />

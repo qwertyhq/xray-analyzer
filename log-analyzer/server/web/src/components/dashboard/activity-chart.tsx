@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { HourlyStats } from "@/lib/types";
+import { HourlyStats, TimeRange } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
@@ -21,6 +21,7 @@ interface ActivityChartProps {
   title?: string;
   description?: string;
   loading?: boolean;
+  timeRange?: TimeRange;
 }
 
 export function ActivityChart({ 
@@ -28,37 +29,39 @@ export function ActivityChart({
   title = "Activity",
   description = "Requests over time",
   loading = false,
+  timeRange = "24h",
 }: ActivityChartProps) {
   const chartData = useMemo(() => {
-    // Create a map of existing data by hour
-    const hourMap = new Map<string, HourlyStats>();
-    if (data && data.length > 0) {
-      data.forEach(d => {
-        const hourKey = format(new Date(d.hour), "yyyy-MM-dd HH:00");
-        hourMap.set(hourKey, d);
-      });
+    if (!data || data.length === 0) {
+      return [];
     }
 
-    // Generate all hours for the last 24 hours
-    const result = [];
-    const now = new Date();
-    now.setMinutes(0, 0, 0);
-    
-    for (let i = 23; i >= 0; i--) {
-      const hourDate = new Date(now.getTime() - i * 60 * 60 * 1000);
-      const hourKey = format(hourDate, "yyyy-MM-dd HH:00");
-      const existing = hourMap.get(hourKey);
-      
-      result.push({
-        hour: format(hourDate, "HH:mm"),
-        fullDate: format(hourDate, "MMM d, HH:mm"),
-        requests: existing?.total_requests || 0,
-        blacklist: existing?.blacklist_hits || 0,
-      });
-    }
+    // Determine label format based on time range
+    const isLongRange = timeRange === "7d" || timeRange === "30d";
 
-    return result;
-  }, [data]);
+    // Sort data by hour and format for chart
+    return data
+      .sort((a, b) => new Date(a.hour).getTime() - new Date(b.hour).getTime())
+      .map(d => {
+        const date = new Date(d.hour);
+        return {
+          hour: isLongRange ? format(date, "MMM d") : format(date, "HH:mm"),
+          fullDate: format(date, "MMM d, HH:mm"),
+          requests: d.total_requests || 0,
+          blacklist: d.blacklist_hits || 0,
+        };
+      });
+  }, [data, timeRange]);
+
+  // Calculate tick interval based on data length
+  const tickInterval = useMemo(() => {
+    const len = chartData.length;
+    if (len <= 12) return 0; // Show all
+    if (len <= 24) return 3;
+    if (len <= 48) return 5;
+    if (len <= 168) return 23; // 7 days - show daily
+    return Math.floor(len / 10);
+  }, [chartData.length]);
 
   if (loading) {
     return (
@@ -104,8 +107,7 @@ export function ActivityChart({
                 tickLine={false}
                 axisLine={false}
                 className="text-muted-foreground"
-                interval="preserveStartEnd"
-                tickFormatter={(value, index) => index % 4 === 0 ? value : ""}
+                interval={tickInterval}
               />
               <YAxis 
                 tick={{ fontSize: 12 }}
