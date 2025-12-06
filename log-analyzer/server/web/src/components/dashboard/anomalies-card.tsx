@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useEffect, useState } from "react";
 import { Anomaly } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,46 @@ const anomalyColors = {
   user_spike: "default",
 } as const;
 
+// Генерируем уникальный ключ для аномалии
+function getAnomalyKey(anomaly: Anomaly): string {
+  return `${anomaly.type}-${anomaly.hour}-${anomaly.user_email || "global"}-${anomaly.deviation}`;
+}
+
 export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
+  const prevAnomaliesRef = useRef<Set<string>>(new Set());
+  const [newAnomalyKeys, setNewAnomalyKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const currentKeys = new Set(anomalies.map(getAnomalyKey));
+    const newKeys = new Set<string>();
+
+    // Находим новые аномалии
+    currentKeys.forEach((key) => {
+      if (!prevAnomaliesRef.current.has(key)) {
+        newKeys.add(key);
+      }
+    });
+
+    if (newKeys.size > 0) {
+      setNewAnomalyKeys(newKeys);
+
+      // Убираем подсветку через 2 секунды
+      const timer = setTimeout(() => {
+        setNewAnomalyKeys(new Set());
+      }, 2000);
+
+      return () => clearTimeout(timer);
+    }
+
+    // Обновляем предыдущее состояние
+    prevAnomaliesRef.current = currentKeys;
+  }, [anomalies]);
+
+  // Обновляем ref после каждого рендера
+  useEffect(() => {
+    prevAnomaliesRef.current = new Set(anomalies.map(getAnomalyKey));
+  }, [anomalies]);
+
   if (loading) {
     return (
       <Card>
@@ -66,17 +106,23 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
           </p>
         ) : (
           <div className="space-y-3">
-            {anomalies.map((anomaly, i) => {
+            {anomalies.map((anomaly) => {
               const Icon = anomalyIcons[anomaly.type] || AlertTriangle;
               const color = anomalyColors[anomaly.type] || "default";
+              const key = getAnomalyKey(anomaly);
+              const isNew = newAnomalyKeys.has(key);
               
               return (
                 <div
-                  key={i}
-                  className="flex items-start gap-3 p-3 rounded-lg border bg-card"
+                  key={key}
+                  className={`flex items-start gap-3 p-3 rounded-lg border bg-card transition-all duration-300 ${
+                    isNew ? "animate-fade-in-row ring-2 ring-orange-500 ring-offset-1" : ""
+                  }`}
                 >
                   <div className="flex-shrink-0 mt-0.5">
-                    <Badge variant={color} className="h-6 w-6 p-0 flex items-center justify-center">
+                    <Badge variant={color} className={`h-6 w-6 p-0 flex items-center justify-center ${
+                      isNew ? "animate-pulse" : ""
+                    }`}>
                       <Icon className="h-3 w-3" />
                     </Badge>
                   </div>
@@ -102,7 +148,9 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-bold text-destructive">
+                    <p className={`text-sm font-bold transition-colors duration-300 ${
+                      isNew ? "text-orange-500" : "text-destructive"
+                    }`}>
                       {anomaly.deviation.toFixed(1)}x
                     </p>
                     <p className="text-xs text-muted-foreground">
