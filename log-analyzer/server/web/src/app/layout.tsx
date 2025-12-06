@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Header } from "@/components/layout/header";
 import { WebSocketProvider } from "@/contexts/websocket-context";
+import { AuthProvider } from "@/contexts/auth-context";
+import { AuthGuard } from "@/components/auth/auth-guard";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -29,12 +31,16 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <WebSocketProvider>
-          <Header />
-          <main className="min-h-[calc(100vh-3.5rem)]">
-            {children}
-          </main>
-        </WebSocketProvider>
+        <AuthProvider>
+          <AuthGuard>
+            <WebSocketProvider>
+              <Header />
+              <main className="min-h-[calc(100vh-3.5rem)]">
+                {children}
+              </main>
+            </WebSocketProvider>
+          </AuthGuard>
+        </AuthProvider>
       </body>
     </html>
   );

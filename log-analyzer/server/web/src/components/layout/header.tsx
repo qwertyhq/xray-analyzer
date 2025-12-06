@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Activity, ShieldAlert } from "lucide-react";
+import { Activity, ShieldAlert, LogOut } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
@@ -15,6 +17,12 @@ const navItems = [
 
 export function Header() {
   const pathname = usePathname();
+  const { isAuthenticated, logout } = useAuth();
+
+  // Don't show header on login page
+  if (pathname === "/login") {
+    return null;
+  }
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -46,6 +54,17 @@ export function Header() {
           <span className="text-xs text-muted-foreground">
             analyzer.z-hq.com
           </span>
+          {isAuthenticated && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={logout}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <LogOut className="h-4 w-4 mr-1" />
+              Выход
+            </Button>
+          )}
         </div>
       </div>
     </header>
