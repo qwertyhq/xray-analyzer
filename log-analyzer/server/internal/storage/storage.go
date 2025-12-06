@@ -32,10 +32,25 @@ func New(dbPath string) (*Storage, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
+	// Configure connection pool for SQLite
+	db.SetMaxOpenConns(1) // SQLite only supports one writer
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0) // Keep connection alive
+
 	// Enable WAL mode for better concurrency
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		return nil, fmt.Errorf("enable WAL: %w", err)
 	}
+
+	// Set busy timeout to wait instead of failing immediately
+	if _, err := db.Exec("PRAGMA busy_timeout=30000"); err != nil {
+		return nil, fmt.Errorf("set busy_timeout: %w", err)
+	}
+
+	// Optimize SQLite performance
+	db.Exec("PRAGMA synchronous=NORMAL")
+	db.Exec("PRAGMA cache_size=10000")
+	db.Exec("PRAGMA temp_store=MEMORY")
 
 	storage := &Storage{db: db}
 	if err := storage.migrate(); err != nil {
@@ -747,7 +762,7 @@ func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*
 			COUNT(*) as hits, 
 			COUNT(DISTINCT bm.destination) as domains,
 			GROUP_CONCAT(DISTINCT bm.destination) as top_domains,
-			COALESCE((SELECT last_ip FROM user_stats WHERE user_email = bm.user_email LIMIT 1), '') as last_ip
+			COALESCE(MAX(bm.source_ip), '') as last_ip
 		FROM blacklist_matches bm
 		WHERE bm.timestamp > ?
 		GROUP BY bm.user_email
