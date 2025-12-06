@@ -1,7 +1,10 @@
 import { Stats, NodeStats, UserStats } from './types';
 
-// API calls go through Next.js rewrites to Go backend
-const API_BASE = '';
+// Server-side: call Go backend directly
+// Client-side: use relative URL (Caddy routes /api/* to Go)
+const API_BASE = typeof window === 'undefined' 
+  ? 'http://localhost:8237'  // Server-side
+  : '';  // Client-side (browser)
 
 async function fetchAPI<T>(endpoint: string): Promise<T> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
