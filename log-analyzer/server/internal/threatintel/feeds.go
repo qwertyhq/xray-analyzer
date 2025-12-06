@@ -54,6 +54,8 @@ func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 		{SourceFakeNews, f.loadFakeNewsBlocklist},
 		// P2P
 		{SourceTorrent, f.loadTorrentTrackers},
+		// Anonymization
+		{SourceTor, f.loadTorExitNodes},
 	}
 
 	for _, feed := range feeds {
@@ -753,6 +755,141 @@ func (f *FeedLoader) addTorrentPatterns() {
 			Source:      SourceTorrent,
 			Confidence:  90, // Very high confidence for known torrent domains
 			Description: "BitTorrent/P2P related domain",
+			FirstSeen:   time.Now(),
+			LastSeen:    time.Now(),
+			CreatedAt:   time.Now(),
+		}
+
+		f.indicators[indicator.Indicator] = indicator
+	}
+}
+
+// loadTorExitNodes loads Tor exit node IPs and related domains
+func (f *FeedLoader) loadTorExitNodes(ctx context.Context) (int, error) {
+	count := 0
+
+	// Load Tor exit nodes from dan.me.uk (popular Tor exit list)
+	c, err := f.loadTorExitNodesFromURL(ctx, "https://www.dan.me.uk/torlist/?exit")
+	if err != nil {
+		log.Printf("threatintel: failed to load tor exit nodes from dan.me.uk: %v", err)
+	} else {
+		count += c
+	}
+
+	// Add known Tor-related domains
+	f.addTorDomains()
+
+	return count, nil
+}
+
+// loadTorExitNodesFromURL loads Tor exit node IPs from a URL
+func (f *FeedLoader) loadTorExitNodesFromURL(ctx context.Context, torURL string) (int, error) {
+	resp, err := f.client.Get(torURL)
+	if err != nil {
+		return 0, fmt.Errorf("fetch tor exit nodes: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("tor exit nodes returned status %d", resp.StatusCode)
+	}
+
+	count := 0
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	scanner := bufio.NewScanner(resp.Body)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Each line should be an IP address
+		if !isIP(line) {
+			continue
+		}
+
+		// Skip if already exists
+		if _, exists := f.indicators[line]; exists {
+			continue
+		}
+
+		indicator := &ThreatIndicator{
+			Indicator:   line,
+			Type:        "ip",
+			ThreatType:  ThreatTypeTor,
+			Source:      SourceTor,
+			Confidence:  90, // High confidence - these are known Tor exit nodes
+			Description: "Tor exit node",
+			FirstSeen:   time.Now(),
+			LastSeen:    time.Now(),
+			CreatedAt:   time.Now(),
+		}
+
+		f.indicators[indicator.Indicator] = indicator
+		count++
+	}
+
+	if err := scanner.Err(); err != nil && err != io.EOF {
+		return count, fmt.Errorf("scan tor exit nodes: %w", err)
+	}
+
+	return count, nil
+}
+
+// addTorDomains adds known Tor-related domains
+func (f *FeedLoader) addTorDomains() {
+	// Known Tor-related domains for detection
+	torDomains := []string{
+		// Tor Project official
+		"torproject.org",
+		"www.torproject.org",
+		"check.torproject.org",
+		"dist.torproject.org",
+		"bridges.torproject.org",
+		"metrics.torproject.org",
+		"blog.torproject.org",
+		"support.torproject.org",
+		// Tor directory authorities
+		"authority.torproject.org",
+		// Tor Browser update servers
+		"aus1.torproject.org",
+		"aus2.torproject.org",
+		// Onion routing related
+		"onion.ws",
+		"onion.pet",
+		"onion.ly",
+		"onion.cab",
+		"onion.to",
+		"tor2web.org",
+		"tor2web.io",
+		// Tor relay search
+		"relay.love",
+		"torstatus.blutmagie.de",
+		"atlas.torproject.org",
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for _, domain := range torDomains {
+		if _, exists := f.indicators[domain]; exists {
+			continue
+		}
+
+		indicator := &ThreatIndicator{
+			Indicator:   domain,
+			Type:        "domain",
+			ThreatType:  ThreatTypeTor,
+			Source:      SourceTor,
+			Confidence:  95, // Very high confidence for known Tor domains
+			Description: "Tor network related domain",
 			FirstSeen:   time.Now(),
 			LastSeen:    time.Now(),
 			CreatedAt:   time.Now(),

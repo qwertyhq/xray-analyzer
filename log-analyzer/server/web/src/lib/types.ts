@@ -147,8 +147,8 @@ export interface PaginatedAlertsResponse extends PaginatedResponse<Alert> {
 export type TimeRange = "1h" | "6h" | "24h" | "7d" | "30d" | "custom";
 
 // Threat Intelligence types
-export type ThreatType = "malware" | "c2" | "phishing" | "adware" | "tracker" | "botnet" | "ransomware" | "porn" | "gambling" | "social" | "fakenews" | "torrent";
-export type ThreatSource = "urlhaus" | "feodo" | "threatfox" | "sslbl" | "stevenblack" | "porn-blocklist" | "gambling-blocklist" | "social-blocklist" | "fakenews-blocklist" | "torrent-trackers";
+export type ThreatType = "malware" | "c2" | "phishing" | "adware" | "tracker" | "botnet" | "ransomware" | "porn" | "gambling" | "social" | "fakenews" | "torrent" | "tor";
+export type ThreatSource = "urlhaus" | "feodo" | "threatfox" | "sslbl" | "stevenblack" | "porn-blocklist" | "gambling-blocklist" | "social-blocklist" | "fakenews-blocklist" | "torrent-trackers" | "tor-exit-nodes";
 
 export interface ThreatMatch {
   id: number;

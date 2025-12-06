@@ -12,8 +12,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ShieldAlert, Bug, Crosshair, Fish, Bot, Skull, Activity, RefreshCw, Heart, Dice1, Users, Newspaper, Download } from "lucide-react";
-import { ThreatMatch, ThreatStats, FeedStatus, ThreatType, ThreatSource, CategoryTopUsers } from "@/lib/types";
+import { ShieldAlert, Bug, Crosshair, Fish, Bot, Skull, Activity, RefreshCw, Heart, Dice1, Users, Newspaper, Download, Globe } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ThreatMatch, ThreatStats, FeedStatus, ThreatType, ThreatSource, CategoryTopUsers, CategoryUserStats } from "@/lib/types";
 import { format, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { useWsThreatIntel } from "@/contexts/websocket-context";
@@ -33,6 +34,8 @@ const threatTypeConfig: Record<ThreatType, { icon: React.ReactNode; color: strin
   fakenews: { icon: <Newspaper className="h-4 w-4" />, color: "bg-amber-600", label: "Фейки" },
   // P2P
   torrent: { icon: <Download className="h-4 w-4" />, color: "bg-cyan-600", label: "Торрент" },
+  // Anonymization
+  tor: { icon: <Globe className="h-4 w-4" />, color: "bg-violet-600", label: "Tor" },
 };
 
 const sourceLabels: Record<ThreatSource, string> = {
@@ -48,6 +51,8 @@ const sourceLabels: Record<ThreatSource, string> = {
   "fakenews-blocklist": "FakeNews Blocklist",
   // P2P
   "torrent-trackers": "Torrent Trackers",
+  // Anonymization
+  "tor-exit-nodes": "Tor Exit Nodes",
 };
 
 interface ThreatIntelCardProps {
@@ -157,6 +162,7 @@ export function ThreatIntelPage() {
   const [feeds, setFeeds] = useState<FeedStatus[]>([]);
   const [apiLoading, setApiLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [activeTab, setActiveTab] = useState("overview");
   const pageSize = 20;
 
   // Fetch feeds status (not in WebSocket)
@@ -184,9 +190,28 @@ export function ThreatIntelPage() {
   const topUsers = threatIntel.topUsers;
   const loading = wsLoading && apiLoading;
 
-  // Pagination
-  const totalPages = Math.ceil(matches.length / pageSize);
-  const paginatedMatches = matches.slice((page - 1) * pageSize, page * pageSize);
+  // Filter matches by type
+  const torrentMatches = matches.filter(m => m.threat_type === "torrent");
+  const torMatches = matches.filter(m => m.threat_type === "tor");
+  const threatMatches = matches.filter(m => !["torrent", "tor", "porn", "gambling", "social", "fakenews"].includes(m.threat_type));
+
+  // Pagination based on active tab
+  const getFilteredMatches = () => {
+    switch (activeTab) {
+      case "torrent": return torrentMatches;
+      case "tor": return torMatches;
+      default: return threatMatches;
+    }
+  };
+  
+  const filteredMatches = getFilteredMatches();
+  const totalPages = Math.ceil(filteredMatches.length / pageSize);
+  const paginatedMatches = filteredMatches.slice((page - 1) * pageSize, page * pageSize);
+
+  // Reset page when switching tabs
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab]);
 
   if (loading) {
     return (
@@ -226,273 +251,520 @@ export function ThreatIntelPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Indicators</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {stats?.total_indicators.toLocaleString() || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Loaded from feeds</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Matches</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">
-              {stats?.total_matches || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">All time</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Matches (24h)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-500">
-              {stats?.matches_24h || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Last 24 hours</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Active Feeds</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-500">
-              {feeds.filter((f) => f.status === "ok").length}/{feeds.length}
-            </div>
-            <p className="text-xs text-muted-foreground">Feeds online</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsTrigger value="overview" className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4" />
+            Обзор
+          </TabsTrigger>
+          <TabsTrigger value="torrent" className="flex items-center gap-2">
+            <Download className="h-4 w-4" />
+            Торренты
+            {torrentMatches.length > 0 && (
+              <Badge variant="secondary" className="ml-1 text-xs">{torrentMatches.length}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="tor" className="flex items-center gap-2">
+            <Globe className="h-4 w-4" />
+            Tor
+            {torMatches.length > 0 && (
+              <Badge variant="secondary" className="ml-1 text-xs">{torMatches.length}</Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Feed Status */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Feed Status</CardTitle>
-          <CardDescription>Status of threat intelligence data sources</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Source</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Indicators</TableHead>
-                <TableHead>Last Update</TableHead>
-                <TableHead>Next Update</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {feeds.map((feed) => (
-                <TableRow key={feed.source}>
-                  <TableCell className="font-medium">
-                    {sourceLabels[feed.source] || feed.source}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={feed.status === "ok" ? "default" : "destructive"}
-                    >
-                      {feed.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {feed.indicators.toLocaleString()}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {feed.last_update
-                      ? formatDistanceToNow(new Date(feed.last_update), { addSuffix: true })
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {feed.next_update
-                      ? formatDistanceToNow(new Date(feed.next_update), { addSuffix: true })
-                      : "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-6 mt-6">
+          {/* Stats Cards */}
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Total Indicators</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {stats?.total_indicators.toLocaleString() || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">Loaded from feeds</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Total Matches</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-destructive">
+                  {stats?.total_matches || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">All time</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Matches (24h)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-500">
+                  {stats?.matches_24h || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">Last 24 hours</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Active Feeds</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-500">
+                  {feeds.filter((f) => f.status === "ok").length}/{feeds.length}
+                </div>
+                <p className="text-xs text-muted-foreground">Feeds online</p>
+              </CardContent>
+            </Card>
+          </div>
 
-      {/* Top Users by Content Category */}
-      {topUsers && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          {(["porn", "gambling", "social", "fakenews", "torrent"] as const).map((category) => {
-            const users = topUsers[category] || [];
-            const config = threatTypeConfig[category];
-            const totalCount = users.reduce((sum, u) => sum + u.match_count, 0);
-            
-            return (
-              <Card key={category}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className={`p-1.5 rounded-md ${config.color}`}>
-                        <span className="text-white">{config.icon}</span>
-                      </div>
-                      <CardTitle className="text-sm font-medium">{config.label}</CardTitle>
-                    </div>
-                    {totalCount > 0 && (
-                      <span className="text-xl font-bold">{totalCount}</span>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  {users.length > 0 ? (
-                    <div className="space-y-3">
-                      {users.map((user, idx) => (
-                        <div key={user.user_email} className="flex items-start gap-2.5">
-                          {/* Rank */}
-                          <span className={`text-sm font-medium w-4 ${
-                            idx === 0 ? "text-yellow-500" :
-                            idx === 1 ? "text-gray-400" :
-                            idx === 2 ? "text-amber-600" :
-                            "text-muted-foreground"
-                          }`}>
-                            {idx + 1}.
-                          </span>
-                          
-                          <div className="flex-1 min-w-0">
-                            {/* User info */}
-                            <div className="flex items-center justify-between gap-2">
-                              <Link
-                                href={`/users/${encodeURIComponent(user.user_email)}`}
-                                className="text-sm hover:underline truncate"
-                                title={user.user_email}
-                              >
-                                {user.user_email}
-                              </Link>
-                              <Badge variant="secondary" className="text-xs font-mono">
-                                {user.match_count}
-                              </Badge>
-                            </div>
-                            
-                            {/* Domains */}
-                            {user.domains && user.domains.length > 0 && (
-                              <div className="mt-1 text-xs text-muted-foreground truncate" title={user.domains.join(", ")}>
-                                {user.domains.slice(0, 2).join(", ")}
-                                {user.domains.length > 2 && ` +${user.domains.length - 2}`}
-                              </div>
-                            )}
+          {/* Feed Status */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Feed Status</CardTitle>
+              <CardDescription>Status of threat intelligence data sources</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Indicators</TableHead>
+                    <TableHead>Last Update</TableHead>
+                    <TableHead>Next Update</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {feeds.map((feed) => (
+                    <TableRow key={feed.source}>
+                      <TableCell className="font-medium">
+                        {sourceLabels[feed.source] || feed.source}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={feed.status === "ok" ? "default" : "destructive"}
+                        >
+                          {feed.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {feed.indicators.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {feed.last_update
+                          ? formatDistanceToNow(new Date(feed.last_update), { addSuffix: true })
+                          : "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {feed.next_update
+                          ? formatDistanceToNow(new Date(feed.next_update), { addSuffix: true })
+                          : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Top Users by Content Category */}
+          {topUsers && (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {(["porn", "gambling", "social", "fakenews"] as const).map((category) => {
+                const users = topUsers[category] || [];
+                const config = threatTypeConfig[category];
+                const totalCount = users.reduce((sum, u) => sum + u.match_count, 0);
+                
+                return (
+                  <Card key={category}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className={`p-1.5 rounded-md ${config.color}`}>
+                            <span className="text-white">{config.icon}</span>
                           </div>
+                          <CardTitle className="text-sm font-medium">{config.label}</CardTitle>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-6 text-center text-sm text-muted-foreground">
-                      Нет данных
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Recent Matches */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Recent Threat Matches</CardTitle>
-              <CardDescription>
-                Traffic that matched known threat indicators ({matches.length} total)
-              </CardDescription>
+                        {totalCount > 0 && (
+                          <span className="text-xl font-bold">{totalCount}</span>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <UserList users={users} />
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="px-3 py-1 text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Prev
-                </button>
-                <span className="text-sm text-muted-foreground">
-                  Page {page} of {totalPages}
-                </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="px-3 py-1 text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
+          )}
+
+          {/* Recent Threat Matches (excluding torrent/tor) */}
+          <MatchesTable 
+            matches={threatMatches} 
+            title="Recent Threat Matches"
+            description={`Traffic that matched known threat indicators (${threatMatches.length} total)`}
+          />
+        </TabsContent>
+
+        {/* Torrent Tab */}
+        <TabsContent value="torrent" className="space-y-6 mt-6">
+          {/* Torrent Stats */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Download className="h-4 w-4 text-cyan-600" />
+                  Torrent Detections
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-cyan-600">
+                  {torrentMatches.length}
+                </div>
+                <p className="text-xs text-muted-foreground">All time</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Unique Users</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {new Set(torrentMatches.map(m => m.user_email)).size}
+                </div>
+                <p className="text-xs text-muted-foreground">Using torrents</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Indicators Loaded</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {feeds.find(f => f.source === "torrent-trackers")?.indicators.toLocaleString() || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">Trackers & sites</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Top Torrent Users */}
+          {topUsers?.torrent && topUsers.torrent.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Download className="h-5 w-5 text-cyan-600" />
+                  Top Torrent Users
+                </CardTitle>
+                <CardDescription>Users with most torrent activity</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {topUsers.torrent.map((user, idx) => (
+                    <div key={user.user_email} className="flex items-start gap-3 p-3 rounded-lg border">
+                      <span className={`text-lg font-bold w-6 ${
+                        idx === 0 ? "text-yellow-500" :
+                        idx === 1 ? "text-gray-400" :
+                        idx === 2 ? "text-amber-600" :
+                        "text-muted-foreground"
+                      }`}>
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <Link
+                          href={`/users/${encodeURIComponent(user.user_email)}`}
+                          className="font-medium hover:underline block truncate"
+                        >
+                          {user.user_email}
+                        </Link>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="secondary">{user.match_count} hits</Badge>
+                        </div>
+                        {user.domains && user.domains.length > 0 && (
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            {user.domains.slice(0, 3).map((d, i) => (
+                              <span key={d} className="font-mono">
+                                {d}{i < Math.min(user.domains.length, 3) - 1 ? ", " : ""}
+                              </span>
+                            ))}
+                            {user.domains.length > 3 && <span> +{user.domains.length - 3} more</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Torrent Matches Table */}
+          <MatchesTable 
+            matches={torrentMatches} 
+            title="Torrent Activity"
+            description={`Detected torrent tracker and site connections (${torrentMatches.length} total)`}
+          />
+        </TabsContent>
+
+        {/* Tor Tab */}
+        <TabsContent value="tor" className="space-y-6 mt-6">
+          {/* Tor Stats */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-violet-600" />
+                  Tor Detections
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-violet-600">
+                  {torMatches.length}
+                </div>
+                <p className="text-xs text-muted-foreground">All time</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Unique Users</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {new Set(torMatches.map(m => m.user_email)).size}
+                </div>
+                <p className="text-xs text-muted-foreground">Using Tor</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Exit Nodes Loaded</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {feeds.find(f => f.source === "tor-exit-nodes")?.indicators.toLocaleString() || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">IPs & domains</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Top Tor Users */}
+          {topUsers?.tor && topUsers.tor.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Globe className="h-5 w-5 text-violet-600" />
+                  Top Tor Users
+                </CardTitle>
+                <CardDescription>Users with most Tor network activity</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {topUsers.tor.map((user, idx) => (
+                    <div key={user.user_email} className="flex items-start gap-3 p-3 rounded-lg border">
+                      <span className={`text-lg font-bold w-6 ${
+                        idx === 0 ? "text-yellow-500" :
+                        idx === 1 ? "text-gray-400" :
+                        idx === 2 ? "text-amber-600" :
+                        "text-muted-foreground"
+                      }`}>
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <Link
+                          href={`/users/${encodeURIComponent(user.user_email)}`}
+                          className="font-medium hover:underline block truncate"
+                        >
+                          {user.user_email}
+                        </Link>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="secondary">{user.match_count} hits</Badge>
+                        </div>
+                        {user.domains && user.domains.length > 0 && (
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            {user.domains.slice(0, 3).map((d, i) => (
+                              <span key={d} className="font-mono">
+                                {d}{i < Math.min(user.domains.length, 3) - 1 ? ", " : ""}
+                              </span>
+                            ))}
+                            {user.domains.length > 3 && <span> +{user.domains.length - 3} more</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Tor Matches Table */}
+          <MatchesTable 
+            matches={torMatches} 
+            title="Tor Activity"
+            description={`Detected Tor network connections (${torMatches.length} total)`}
+          />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// Helper component for user list
+function UserList({ users }: { users: CategoryUserStats[] }) {
+  if (users.length === 0) {
+    return (
+      <div className="py-6 text-center text-sm text-muted-foreground">
+        Нет данных
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {users.map((user, idx) => (
+        <div key={user.user_email} className="flex items-start gap-2.5">
+          <span className={`text-sm font-medium w-4 ${
+            idx === 0 ? "text-yellow-500" :
+            idx === 1 ? "text-gray-400" :
+            idx === 2 ? "text-amber-600" :
+            "text-muted-foreground"
+          }`}>
+            {idx + 1}.
+          </span>
+          
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <Link
+                href={`/users/${encodeURIComponent(user.user_email)}`}
+                className="text-sm hover:underline truncate"
+                title={user.user_email}
+              >
+                {user.user_email}
+              </Link>
+              <Badge variant="secondary" className="text-xs font-mono">
+                {user.match_count}
+              </Badge>
+            </div>
+            
+            {user.domains && user.domains.length > 0 && (
+              <div className="mt-1 text-xs text-muted-foreground truncate" title={user.domains.join(", ")}>
+                {user.domains.slice(0, 2).join(", ")}
+                {user.domains.length > 2 && ` +${user.domains.length - 2}`}
               </div>
             )}
           </div>
-        </CardHeader>
-        <CardContent className="max-h-[500px] overflow-y-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Time</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Destination</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead className="text-right">Confidence</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginatedMatches.map((match) => {
-                const config = threatTypeConfig[match.threat_type] || threatTypeConfig.malware;
-                return (
-                  <TableRow key={match.id}>
-                    <TableCell className="text-muted-foreground whitespace-nowrap">
-                      {format(new Date(match.matched_at), "MMM d, HH:mm")}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={`${config.color} text-white`}>
-                        {config.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/users/${encodeURIComponent(match.user_email)}`}
-                        className="hover:underline text-primary"
-                      >
-                        {match.user_email}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="font-mono text-sm max-w-[250px] truncate">
-                      {match.destination}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {sourceLabels[match.source]}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Badge
-                        variant={match.confidence >= 80 ? "destructive" : "secondary"}
-                      >
-                        {match.confidence}%
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {matches.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                    No threat matches detected
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Helper component for matches table
+function MatchesTable({ matches, title, description }: { matches: ThreatMatch[], title: string, description: string }) {
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const totalPages = Math.ceil(matches.length / pageSize);
+  const paginatedMatches = matches.slice((page - 1) * pageSize, page * pageSize);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>{title}</CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1 text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Prev
+              </button>
+              <span className="text-sm text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="px-3 py-1 text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="max-h-[500px] overflow-y-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Time</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>User</TableHead>
+              <TableHead>Destination</TableHead>
+              <TableHead>Source</TableHead>
+              <TableHead className="text-right">Confidence</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {paginatedMatches.map((match) => {
+              const config = threatTypeConfig[match.threat_type] || threatTypeConfig.malware;
+              return (
+                <TableRow key={match.id}>
+                  <TableCell className="text-muted-foreground whitespace-nowrap">
+                    {format(new Date(match.matched_at), "MMM d, HH:mm")}
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={`${config.color} text-white`}>
+                      {config.label}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/users/${encodeURIComponent(match.user_email)}`}
+                      className="hover:underline text-primary"
+                    >
+                      {match.user_email}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="font-mono text-sm max-w-[250px] truncate">
+                    {match.destination}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {sourceLabels[match.source] || match.source}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Badge
+                      variant={match.confidence >= 80 ? "destructive" : "secondary"}
+                    >
+                      {match.confidence}%
+                    </Badge>
                   </TableCell>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+              );
+            })}
+            {matches.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  No matches detected
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }

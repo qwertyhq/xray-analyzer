@@ -20,6 +20,8 @@ const (
 	ThreatTypeFakeNews ThreatType = "fakenews"
 	// P2P
 	ThreatTypeTorrent ThreatType = "torrent"
+	// Anonymization
+	ThreatTypeTor ThreatType = "tor"
 )
 
 // ThreatSource represents the source of threat data
@@ -38,6 +40,8 @@ const (
 	SourceFakeNews ThreatSource = "fakenews-blocklist"
 	// P2P sources
 	SourceTorrent ThreatSource = "torrent-trackers"
+	// Anonymization sources
+	SourceTor ThreatSource = "tor-exit-nodes"
 )
 
 // ThreatIndicator represents an indicator of compromise (IOC)
