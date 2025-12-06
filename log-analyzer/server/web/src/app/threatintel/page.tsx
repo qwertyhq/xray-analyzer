@@ -1,6 +1,6 @@
 "use client";
 
-import { ThreatIntelPage } from "@/components/threatintel/threat-intel-card";
+import { ThreatIntelPage } from "@/components/threatintel";
 
 export default function ThreatIntelRoute() {
   return <ThreatIntelPage />;

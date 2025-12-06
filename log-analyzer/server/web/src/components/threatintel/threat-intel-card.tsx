@@ -106,6 +106,3 @@ export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
     </Card>
   );
 }
-
-// Re-export page component
-export { ThreatIntelPage } from "./threat-intel-page";

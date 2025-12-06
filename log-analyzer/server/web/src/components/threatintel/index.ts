@@ -1,4 +1,5 @@
-export { ThreatIntelCard, ThreatIntelPage } from "./threat-intel-card";
+export { ThreatIntelCard } from "./threat-intel-card";
+export { ThreatIntelPage } from "./threat-intel-page";
 export { MatchesTable } from "./matches-table";
 export { UserList } from "./user-list";
 export { OverviewTab } from "./overview-tab";
