@@ -240,6 +240,11 @@ func (s *Server) sendFullDashboardData(conn *websocket.Conn) {
 		conn.WriteJSON(&DashboardUpdate{Type: "nodes", Data: nodes})
 	}
 
+	// Users (top 500 for dashboard)
+	if users, err := s.storage.GetAllUsers(ctx, 500); err == nil {
+		conn.WriteJSON(&DashboardUpdate{Type: "users", Data: users})
+	}
+
 	// Hourly stats (24h)
 	if hourly, err := s.storage.GetHourlyStats(ctx, 24); err == nil {
 		conn.WriteJSON(&DashboardUpdate{Type: "hourly", Data: hourly})
@@ -329,6 +334,11 @@ func (s *Server) broadcastToDashboards() {
 			n.IsConnected = connectedMap[n.NodeID]
 		}
 		updates = append(updates, DashboardUpdate{Type: "nodes", Data: nodes})
+	}
+
+	// Users (top 500 for dashboard)
+	if users, err := s.storage.GetAllUsers(ctx, 500); err == nil {
+		updates = append(updates, DashboardUpdate{Type: "users", Data: users})
 	}
 
 	// Blacklist analytics (with recent matches)

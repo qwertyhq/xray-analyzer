@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useBlacklistAnalytics } from "@/hooks/use-api";
+import { useWsBlacklist } from "@/contexts/websocket-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,9 +16,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
-import { TimeRange } from "@/lib/types";
+import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink, Wifi, WifiOff } from "lucide-react";
+import { format } from "date-fns";
+import { TimeRange, BlacklistAnalytics } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
 import {
   AreaChart,
@@ -32,7 +32,37 @@ import {
 
 export default function BlacklistPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
-  const { analytics, loading } = useBlacklistAnalytics(timeRange);
+  const { blacklist: wsBlacklist, loading: wsLoading, connected } = useWsBlacklist();
+  const [httpAnalytics, setHttpAnalytics] = useState<BlacklistAnalytics | null>(null);
+  const [httpLoading, setHttpLoading] = useState(false);
+
+  // For 24h, use WebSocket; for other ranges, fetch via HTTP
+  const use24hWebSocket = timeRange === "24h";
+  const analytics = use24hWebSocket ? wsBlacklist : httpAnalytics;
+  const loading = use24hWebSocket ? wsLoading : httpLoading;
+
+  // Fetch analytics for non-24h ranges via HTTP
+  useEffect(() => {
+    if (use24hWebSocket) return;
+
+    const fetchAnalytics = async () => {
+      setHttpLoading(true);
+      try {
+        const res = await fetch(`/api/blacklist/analytics?period=${timeRange}`);
+        if (res.ok) {
+          setHttpAnalytics(await res.json());
+        }
+      } catch {
+        // ignore
+      } finally {
+        setHttpLoading(false);
+      }
+    };
+
+    fetchAnalytics();
+    const interval = setInterval(fetchAnalytics, 10000);
+    return () => clearInterval(interval);
+  }, [timeRange, use24hWebSocket]);
 
   if (loading || !analytics) {
     return (
@@ -75,7 +105,25 @@ export default function BlacklistPage() {
             Detailed analysis of blocked resource access
           </p>
         </div>
-        <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+        <div className="flex items-center gap-3">
+          <Badge 
+            variant={connected ? "default" : "destructive"} 
+            className="flex items-center gap-1.5"
+          >
+            {connected ? (
+              <>
+                <Wifi className="h-3 w-3" />
+                Live
+              </>
+            ) : (
+              <>
+                <WifiOff className="h-3 w-3" />
+                Disconnected
+              </>
+            )}
+          </Badge>
+          <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+        </div>
       </div>
 
       {/* Stats Cards */}

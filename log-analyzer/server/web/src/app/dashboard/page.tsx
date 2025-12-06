@@ -1,6 +1,6 @@
 "use client";
 
-import { useDashboardWebSocket } from "@/hooks/use-websocket";
+import { useWebSocket } from "@/contexts/websocket-context";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { ActivityChart } from "@/components/dashboard/activity-chart";
 import { AnomaliesCard } from "@/components/dashboard/anomalies-card";
@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Wifi, WifiOff } from "lucide-react";
 
 export default function DashboardPage() {
-  const { stats, nodes, hourly, anomalies, blacklist, connected, loading } = useDashboardWebSocket();
+  const { stats, nodes, hourly, anomalies, blacklist, connected, loading } = useWebSocket();
 
   if (loading) {
     return (

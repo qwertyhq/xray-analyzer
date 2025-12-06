@@ -1,15 +1,16 @@
 "use client";
 
-import { useUsers, useApi } from "@/hooks/use-api";
+import { useWsUsers, useWsStats } from "@/contexts/websocket-context";
 import { UsersTable } from "@/components/users/users-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Wifi, WifiOff } from "lucide-react";
 
 export default function UsersPage() {
-  const { users, loading } = useUsers();
-  const { stats } = useApi();
+  const { users, loading, connected } = useWsUsers();
+  const { stats } = useWsStats();
 
   if (loading) {
     return (
@@ -26,11 +27,29 @@ export default function UsersPage() {
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Users</h2>
-        <p className="text-muted-foreground">
-          All users across all nodes, sorted by activity
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Users</h2>
+          <p className="text-muted-foreground">
+            All users across all nodes, sorted by activity
+          </p>
+        </div>
+        <Badge 
+          variant={connected ? "default" : "destructive"} 
+          className="flex items-center gap-1.5"
+        >
+          {connected ? (
+            <>
+              <Wifi className="h-3 w-3" />
+              Live
+            </>
+          ) : (
+            <>
+              <WifiOff className="h-3 w-3" />
+              Disconnected
+            </>
+          )}
+        </Badge>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">

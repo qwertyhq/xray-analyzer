@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useNodes } from "@/hooks/use-api";
+import { useState, useCallback } from "react";
+import { useWsNodes } from "@/contexts/websocket-context";
 import { NodesTable } from "@/components/nodes/nodes-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Wifi, WifiOff } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,9 +19,22 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export default function NodesPage() {
-  const { nodes, loading, refetch, deleteNode } = useNodes();
+  const { nodes, loading, connected } = useWsNodes();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const deleteNode = useCallback(async (nodeId: string) => {
+    try {
+      const res = await fetch("/api/nodes/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ node_id: nodeId }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }, []);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -52,10 +65,22 @@ export default function NodesPage() {
             Manage and monitor Xray proxy nodes
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={refetch}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <Badge 
+          variant={connected ? "default" : "destructive"} 
+          className="flex items-center gap-1.5"
+        >
+          {connected ? (
+            <>
+              <Wifi className="h-3 w-3" />
+              Live
+            </>
+          ) : (
+            <>
+              <WifiOff className="h-3 w-3" />
+              Disconnected
+            </>
+          )}
+        </Badge>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
