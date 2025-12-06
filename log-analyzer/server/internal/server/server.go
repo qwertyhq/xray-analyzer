@@ -321,7 +321,7 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 			nodeID = body.NodeID
 		}
 	}
-	
+
 	if nodeID == "" {
 		http.Error(w, "node_id required", http.StatusBadRequest)
 		return
@@ -368,7 +368,7 @@ func (s *Server) handleUserDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userEmail := strings.TrimPrefix(path, prefix)
-	
+
 	// URL decode the email
 	userEmail, err := url.QueryUnescape(userEmail)
 	if err != nil {
@@ -404,5 +404,4 @@ func (s *Server) handleHourlyStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
-}
 }
