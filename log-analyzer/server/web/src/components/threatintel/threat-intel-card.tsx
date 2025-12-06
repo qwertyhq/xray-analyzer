@@ -146,26 +146,20 @@ export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
 
 // Full page component for threat intel
 export function ThreatIntelPage() {
-  // Use WebSocket for real-time stats and matches
+  // Use WebSocket for real-time stats, matches, and top users
   const { threatIntel, loading: wsLoading, connected } = useWsThreatIntel();
   
-  // Additional data fetched via API (not in WebSocket)
+  // Feeds fetched via API (status doesn't change often)
   const [feeds, setFeeds] = useState<FeedStatus[]>([]);
-  const [topUsers, setTopUsers] = useState<CategoryTopUsers | null>(null);
   const [apiLoading, setApiLoading] = useState(true);
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
-  // Fetch additional data not provided by WebSocket
-  const fetchAdditionalData = async () => {
+  // Fetch feeds status (not in WebSocket)
+  const fetchFeeds = async () => {
     try {
-      const [feedsRes, topUsersRes] = await Promise.all([
-        fetch("/api/threatintel/feeds"),
-        fetch("/api/threatintel/top-users?limit=5"),
-      ]);
-
+      const feedsRes = await fetch("/api/threatintel/feeds");
       if (feedsRes.ok) setFeeds((await feedsRes.json()) || []);
-      if (topUsersRes.ok) setTopUsers(await topUsersRes.json());
     } catch {
       // ignore
     } finally {
@@ -174,15 +168,16 @@ export function ThreatIntelPage() {
   };
 
   useEffect(() => {
-    fetchAdditionalData();
-    // Refresh feeds and top users every 60 seconds
-    const interval = setInterval(fetchAdditionalData, 60000);
+    fetchFeeds();
+    // Refresh feeds every 60 seconds
+    const interval = setInterval(fetchFeeds, 60000);
     return () => clearInterval(interval);
   }, []);
 
   // Get data from WebSocket
   const stats = threatIntel.stats;
   const matches = threatIntel.matches || [];
+  const topUsers = threatIntel.topUsers;
   const loading = wsLoading && apiLoading;
 
   // Pagination
