@@ -1,7 +1,7 @@
 version: '3.8'
 
 # Этот файл используется на каждой Xray ноде для запуска агента
-# Скопируйте на каждую ноду и настройте переменные окружения
+# Скопируйте на каждую ноду и создайте .env файл с настройками
 
 services:
   xray-log-agent:
@@ -12,18 +12,18 @@ services:
     restart: unless-stopped
     volumes:
       # Монтируем директорию с логами Remnanode
-      - /var/log/remnanode:/var/log/xray:ro
+      - ${LOG_HOST_PATH:-/var/log/remnanode}:/var/log/remnanode:ro
     environment:
       # Уникальный ID этой ноды (любая строка)
       - NODE_ID=${NODE_ID:-node-1}
       # Путь к access логу внутри контейнера
-      - LOG_FILE_PATH=/var/log/xray/access.log
-      # URL сервера анализа (замените на реальный IP/домен)
-      - SERVER_URL=${SERVER_URL:-ws://your-analyzer-server:8080/ws}
+      - LOG_FILE_PATH=${LOG_FILE_PATH:-/var/log/remnanode/access.log}
+      # URL сервера анализа
+      - SERVER_URL=${SERVER_URL:-wss://analyzer.example.com/ws}
       # Размер батча (количество записей)
-      - BATCH_SIZE=1000
+      - BATCH_SIZE=${BATCH_SIZE:-1000}
       # Таймаут батча
-      - BATCH_TIMEOUT=5s
+      - BATCH_TIMEOUT=${BATCH_TIMEOUT:-5s}
     # Для работы с inotify нужен доступ к fs
     security_opt:
       - no-new-privileges:true
