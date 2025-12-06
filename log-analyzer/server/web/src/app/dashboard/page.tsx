@@ -1,22 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { useApi, useHourlyStatsWithRange, useAnomalies } from "@/hooks/use-api";
+import { useApi, useHourlyStatsWithRange, useAnomalies, useBlacklistAnalytics } from "@/hooks/use-api";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { ActivityChart } from "@/components/dashboard/activity-chart";
 import { TimeRangeSelector } from "@/components/dashboard/time-range-selector";
 import { AnomaliesCard } from "@/components/dashboard/anomalies-card";
+import { RecentBlocks } from "@/components/dashboard/recent-blocks";
 import { NodesTable } from "@/components/nodes/nodes-table";
-import { UsersTable } from "@/components/users/users-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TimeRange } from "@/lib/types";
 
 export default function DashboardPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
-  const { stats, nodes, users, loading } = useApi();
+  const { stats, nodes, loading } = useApi();
   const { stats: hourlyStats, loading: hourlyLoading } = useHourlyStatsWithRange(timeRange);
   const { anomalies, loading: anomaliesLoading } = useAnomalies();
+  const { analytics: blacklistAnalytics, loading: blacklistLoading } = useBlacklistAnalytics(timeRange);
 
   if (loading) {
     return (
@@ -37,7 +38,6 @@ export default function DashboardPage() {
 
   // Filter only online nodes for dashboard
   const onlineNodes = nodes.filter(n => n.is_connected);
-  const blacklistUsers = users.filter(u => u.blacklist_hits > 0).slice(0, 10);
 
   // Get chart title based on time range
   const chartTitles: Record<TimeRange, string> = {
@@ -93,11 +93,15 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>Blacklist Alerts</CardTitle>
             <CardDescription>
-              Users accessing blocked destinations
+              Recent blocked requests
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <UsersTable users={blacklistUsers} showBlacklistOnly />
+            <RecentBlocks 
+              matches={blacklistAnalytics?.recent_matches || []} 
+              loading={blacklistLoading}
+              limit={10}
+            />
           </CardContent>
         </Card>
       </div>
