@@ -112,6 +112,7 @@ type UserNodeStats struct {
 // BlacklistMatchInfo represents a blacklist match for display
 type BlacklistMatchInfo struct {
 	NodeID      string    `json:"node_id"`
+	UserEmail   string    `json:"user_email,omitempty"`
 	SourceIP    string    `json:"source_ip"`
 	Destination string    `json:"destination"`
 	MatchedRule string    `json:"matched_rule"`

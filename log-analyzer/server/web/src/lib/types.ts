@@ -60,6 +60,7 @@ export interface UserNodeStats {
 
 export interface BlacklistMatchInfo {
   node_id: string;
+  user_email?: string;
   source_ip: string;
   destination: string;
   matched_rule: string;

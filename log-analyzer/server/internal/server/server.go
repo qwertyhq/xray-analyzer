@@ -356,8 +356,23 @@ func (s *Server) handleBlacklistAnalytics(w http.ResponseWriter, r *http.Request
 	since := time.Now().Add(-period)
 	analytics, err := s.storage.GetBlacklistAnalytics(ctx, since)
 	if err != nil {
+		log.Printf("Error getting blacklist analytics: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Ensure slices are not nil for JSON encoding
+	if analytics.TopDomains == nil {
+		analytics.TopDomains = []models.DomainStats{}
+	}
+	if analytics.TopUsers == nil {
+		analytics.TopUsers = []models.UserBlacklistStats{}
+	}
+	if analytics.RecentMatches == nil {
+		analytics.RecentMatches = []models.BlacklistMatchInfo{}
+	}
+	if analytics.HourlyStats == nil {
+		analytics.HourlyStats = []models.HourlyBlacklistStats{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

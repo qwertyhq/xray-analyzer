@@ -806,8 +806,7 @@ func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*
 
 	for matchRows.Next() {
 		var m models.BlacklistMatchInfo
-		var userEmail string
-		if err := matchRows.Scan(&m.NodeID, &userEmail, &m.SourceIP, &m.Destination, &m.MatchedRule, &m.Timestamp); err != nil {
+		if err := matchRows.Scan(&m.NodeID, &m.UserEmail, &m.SourceIP, &m.Destination, &m.MatchedRule, &m.Timestamp); err != nil {
 			return nil, err
 		}
 		analytics.RecentMatches = append(analytics.RecentMatches, m)
