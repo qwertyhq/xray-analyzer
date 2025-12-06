@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -257,6 +258,11 @@ func (s *Server) handleAnomalies(w http.ResponseWriter, r *http.Request) {
 
 	userAnomalies, _ := s.storage.GetUserAnomalies(ctx, 5)
 	anomalies = append(anomalies, userAnomalies...)
+
+	// Сортируем по времени (новые сверху)
+	sort.Slice(anomalies, func(i, j int) bool {
+		return anomalies[i].Hour.After(anomalies[j].Hour)
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(anomalies)

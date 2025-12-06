@@ -104,7 +104,7 @@ export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps
               key={key}
               className={cn(
                 "transition-all duration-500",
-                isNew && "animate-highlight animate-pulse-border"
+                isNew && "animate-fade-in-row animate-pulse-border"
               )}
             >
               <TableCell className="font-medium">

@@ -122,9 +122,27 @@
 }
 
 /* Custom animations for real-time updates */
+@keyframes fade-in-row {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+    background-color: rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(0);
+    background-color: rgba(239, 68, 68, 0.2);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    background-color: transparent;
+  }
+}
+
 @keyframes highlight-fade {
   0% {
-    background-color: hsl(var(--destructive) / 0.2);
+    background-color: rgba(239, 68, 68, 0.3);
   }
   100% {
     background-color: transparent;
@@ -133,11 +151,15 @@
 
 @keyframes pulse-border {
   0%, 100% {
-    border-left-color: hsl(var(--destructive));
+    border-left-color: rgb(239, 68, 68);
   }
   50% {
     border-left-color: transparent;
   }
+}
+
+.animate-fade-in-row {
+  animation: fade-in-row 2s ease-out forwards;
 }
 
 .animate-highlight {
@@ -145,6 +167,6 @@
 }
 
 .animate-pulse-border {
-  border-left: 3px solid;
-  animation: pulse-border 1s ease-in-out 2;
+  border-left: 3px solid rgb(239, 68, 68);
+  animation: pulse-border 0.5s ease-in-out 4;
 }
