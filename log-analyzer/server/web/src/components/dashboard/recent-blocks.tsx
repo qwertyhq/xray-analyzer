@@ -3,6 +3,14 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { BlacklistMatchInfo } from "@/lib/types";
 import { format } from "date-fns";
 
@@ -24,7 +32,7 @@ export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps
     return (
       <div className="space-y-3">
         {[...Array(5)].map((_, i) => (
-          <Skeleton key={i} className="h-16" />
+          <Skeleton key={i} className="h-10" />
         ))}
       </div>
     );
@@ -41,45 +49,45 @@ export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps
   const displayMatches = matches.slice(0, limit);
 
   return (
-    <div className="space-y-2">
-      {displayMatches.map((match, idx) => (
-        <div
-          key={idx}
-          className="flex items-start justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
-        >
-          <div className="space-y-1 min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>User</TableHead>
+          <TableHead>Node</TableHead>
+          <TableHead>Destination</TableHead>
+          <TableHead>Time</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {displayMatches.map((match, idx) => (
+          <TableRow key={idx}>
+            <TableCell className="font-medium">
               {match.user_email ? (
                 <Link
                   href={`/users/${encodeURIComponent(match.user_email)}`}
-                  className="font-medium text-sm text-primary hover:underline truncate"
+                  className="text-primary hover:underline"
                 >
                   {match.user_email}
                 </Link>
               ) : (
-                <span className="font-medium text-sm text-muted-foreground">Unknown</span>
+                <span className="text-muted-foreground">Unknown</span>
               )}
-              <Badge variant="outline" className="text-xs shrink-0">
-                {match.node_id}
-              </Badge>
-            </div>
-            <p className="text-sm text-destructive font-mono truncate" title={match.destination}>
+            </TableCell>
+            <TableCell>
+              <Badge variant="outline">{match.node_id}</Badge>
+            </TableCell>
+            <TableCell className="text-destructive font-mono text-sm max-w-[200px] truncate">
               {match.destination}
-            </p>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="font-mono">{match.source_ip}</span>
-              <span>•</span>
-              <span>{match.matched_rule}</span>
-            </div>
-          </div>
-          <div className="text-xs text-muted-foreground shrink-0 ml-2">
-            {isValidDate(match.timestamp)
-              ? format(new Date(match.timestamp), "HH:mm:ss")
-              : "—"
-            }
-          </div>
-        </div>
-      ))}
-    </div>
+            </TableCell>
+            <TableCell className="text-muted-foreground text-sm">
+              {isValidDate(match.timestamp)
+                ? format(new Date(match.timestamp), "HH:mm:ss")
+                : "—"
+              }
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
