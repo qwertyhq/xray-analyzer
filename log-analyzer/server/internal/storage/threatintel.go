@@ -238,9 +238,9 @@ func lastIndex(s string, sep byte) int {
 	return -1
 }
 
-// GetTopUsersByAllCategories returns top users for all content categories (porn, gambling, social, fakenews)
+// GetTopUsersByAllCategories returns top users for all content categories (porn, gambling, social, fakenews, torrent)
 func (s *Storage) GetTopUsersByAllCategories(ctx context.Context, limit int) (map[string][]*threatintel.CategoryUserStats, error) {
-	categories := []string{"porn", "gambling", "social", "fakenews"}
+	categories := []string{"porn", "gambling", "social", "fakenews", "torrent"}
 	result := make(map[string][]*threatintel.CategoryUserStats)
 
 	for _, cat := range categories {
