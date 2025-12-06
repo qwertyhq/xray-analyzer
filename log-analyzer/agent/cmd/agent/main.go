@@ -10,7 +10,6 @@ import (
 	"github.com/xray-log-analyzer/agent/internal/batcher"
 	"github.com/xray-log-analyzer/agent/internal/config"
 	"github.com/xray-log-analyzer/agent/internal/models"
-	"github.com/xray-log-analyzer/agent/internal/parser"
 	"github.com/xray-log-analyzer/agent/internal/tailer"
 	"github.com/xray-log-analyzer/agent/internal/websocket"
 )
@@ -20,24 +19,22 @@ func main() {
 	log.Println("xray-log-agent starting...")
 
 	// Load configuration
-	cfg := config.Load()
+	cfg := config.LoadFromEnv()
 	log.Printf("config: node_id=%s, log_file=%s, server=%s",
 		cfg.NodeID, cfg.LogFilePath, cfg.ServerURL)
 	log.Printf("config: batch_size=%d, batch_timeout=%v",
 		cfg.BatchSize, cfg.BatchTimeout)
 
 	// Create channels
-	lineCh := make(chan string, 10000)                // Raw log lines
-	entryCh := make(chan *models.LogEntry, 10000)     // Parsed entries
-	batchCh := make(chan *models.LogBatch, 100)       // Batches for sending
+	entryCh := make(chan *models.LogEntry, 10000) // Parsed entries
+	batchCh := make(chan *models.LogBatch, 100)   // Batches for sending
 
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Create components
-	logParser := parser.New()
-	logTailer := tailer.New(cfg.LogFilePath, lineCh)
+	logTailer := tailer.New(cfg.LogFilePath, entryCh)
 	logBatcher := batcher.New(cfg.NodeID, cfg.BatchSize, cfg.BatchTimeout, entryCh, batchCh)
 	wsClient := websocket.New(cfg.ServerURL, cfg.NodeID, batchCh)
 
@@ -46,27 +43,6 @@ func main() {
 		if err := logTailer.Start(ctx); err != nil {
 			log.Printf("tailer error: %v", err)
 			cancel()
-		}
-	}()
-
-	// Start parser goroutine (converts lines to entries)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case line := <-lineCh:
-				entry, err := logParser.ParseLine(line)
-				if err != nil {
-					// Skip unparseable lines (warnings, errors, etc.)
-					continue
-				}
-				select {
-				case entryCh <- entry:
-				default:
-					log.Println("warning: entry channel full, dropping entry")
-				}
-			}
 		}
 	}()
 
