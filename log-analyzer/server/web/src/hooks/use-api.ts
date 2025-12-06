@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Stats, NodeStats, UserStats, HourlyStats, UserDetails, Anomaly, Alert, TimeRange } from "@/lib/types";
+import { Stats, NodeStats, UserStats, HourlyStats, UserDetails, Anomaly, Alert, TimeRange, BlacklistAnalytics } from "@/lib/types";
 
 interface ApiState {
   stats: Stats;
@@ -343,4 +343,32 @@ export function useAlerts(limit = 50) {
   }, [limit]);
 
   return { alerts, loading };
+}
+
+export function useBlacklistAnalytics(period: TimeRange = "24h", refreshInterval = 30000) {
+  const [analytics, setAnalytics] = useState<BlacklistAnalytics | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        const res = await fetch(`/api/blacklist/analytics?period=${period}`);
+        if (res.ok) {
+          const data = await res.json();
+          setAnalytics(data);
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    setLoading(true);
+    fetchAnalytics();
+    const interval = setInterval(fetchAnalytics, refreshInterval);
+    return () => clearInterval(interval);
+  }, [period, refreshInterval]);
+
+  return { analytics, loading };
 }
