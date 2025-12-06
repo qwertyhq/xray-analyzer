@@ -298,17 +298,18 @@ func (f *FeedLoader) loadThreatFox(ctx context.Context) (int, error) {
 			continue
 		}
 
-		// CSV format: first_seen_utc,ioc_id,ioc_value,ioc_type,threat_type,fk_malware,malware_alias,malware_printable,last_seen_utc,confidence_level,reference,tags,anonymous,reporter
+		// CSV format: "first_seen_utc", "ioc_id", "ioc_value", "ioc_type", ...
+		// Note: ThreatFox uses ", " (comma-space) as delimiter, so we split and trim
 		parts := strings.Split(line, ",")
 		if len(parts) < 8 {
 			continue
 		}
 
-		// Remove quotes from fields
-		iocValue := strings.Trim(parts[2], `"`)
-		iocType := strings.Trim(parts[3], `"`)
-		threatType := strings.Trim(parts[4], `"`)
-		malware := strings.Trim(parts[7], `"`)
+		// Remove quotes and whitespace from fields
+		iocValue := strings.Trim(strings.TrimSpace(parts[2]), `" `)
+		iocType := strings.Trim(strings.TrimSpace(parts[3]), `" `)
+		threatType := strings.Trim(strings.TrimSpace(parts[4]), `" `)
+		malware := strings.Trim(strings.TrimSpace(parts[7]), `" `)
 
 		// Only process domain and IP IOCs
 		var indicatorType string
@@ -831,18 +832,40 @@ func (f *FeedLoader) addTorrentPatterns() {
 func (f *FeedLoader) loadTorExitNodes(ctx context.Context) (int, error) {
 	count := 0
 
-	// Load Tor exit nodes from dan.me.uk (popular Tor exit list)
-	c, err := f.loadTorExitNodesFromURL(ctx, "https://www.dan.me.uk/torlist/?exit")
-	if err != nil {
-		log.Printf("threatintel: failed to load tor exit nodes from dan.me.uk: %v", err)
-	} else {
-		count += c
+	// Multiple sources for Tor exit nodes (in case one fails)
+	torSources := []struct {
+		url  string
+		name string
+	}{
+		// TorProject official exit list (most reliable)
+		{"https://check.torproject.org/torbulkexitlist", "TorProject"},
+		// dan.me.uk (popular but sometimes unavailable)
+		{"https://www.dan.me.uk/torlist/?exit", "dan.me.uk"},
+		// SecOps Tor exit nodes
+		{"https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-exit-nodes.lst", "SecOps-GitHub"},
 	}
 
-	// Add known Tor-related domains
+	successCount := 0
+	for _, src := range torSources {
+		c, err := f.loadTorExitNodesFromURL(ctx, src.url)
+		if err != nil {
+			log.Printf("threatintel: failed to load tor exit nodes from %s: %v", src.name, err)
+			continue
+		}
+		count += c
+		successCount++
+		log.Printf("threatintel: loaded %d Tor exit nodes from %s", c, src.name)
+	}
+
+	// Add known Tor-related domains (always works)
 	f.addTorDomains()
 
-	return count, nil
+	// If at least one source succeeded, return success
+	if successCount > 0 || count > 0 {
+		return count, nil
+	}
+
+	return 0, fmt.Errorf("all Tor exit node sources failed")
 }
 
 // loadTorExitNodesFromURL loads Tor exit node IPs from a URL
