@@ -78,19 +78,19 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
+        <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle>Active Nodes</CardTitle>
             <CardDescription>
               {onlineNodes.length} of {nodes.length} nodes online
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="overflow-x-auto">
             <NodesTable nodes={onlineNodes} />
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle>Blacklist Alerts</CardTitle>
             <CardDescription>

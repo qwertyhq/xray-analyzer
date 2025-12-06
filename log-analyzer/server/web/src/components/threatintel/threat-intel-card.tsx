@@ -45,7 +45,7 @@ export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
   }
 
   return (
-    <Card className={className}>
+    <Card className={`${className} overflow-hidden`}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <ShieldAlert className="h-5 w-5 text-destructive" />
@@ -70,12 +70,12 @@ export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
                 return (
                   <div
                     key={match.id}
-                    className="flex items-start gap-3 p-2 rounded-lg bg-muted/50 border border-destructive/20"
+                    className="flex items-start gap-3 p-2 rounded-lg bg-muted/50 border border-destructive/20 overflow-hidden"
                   >
                     <div className={`p-1.5 rounded ${config.color} text-white shrink-0`}>
                       {config.icon}
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 overflow-hidden">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="destructive" className="text-xs">
                           {config.label}
@@ -87,16 +87,16 @@ export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
                           {sourceLabels[match.source]}
                         </span>
                       </div>
-                      <p className="text-sm font-mono truncate mt-1">{match.destination}</p>
+                      <p className="text-sm font-mono truncate mt-1 max-w-full">{match.destination}</p>
                       <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                         <Link
                           href={`/users/${encodeURIComponent(match.user_email)}`}
-                          className="hover:underline"
+                          className="hover:underline truncate"
                         >
                           {match.user_email}
                         </Link>
                         <span>•</span>
-                        <span>{formatDistanceToNow(new Date(match.matched_at), { addSuffix: true })}</span>
+                        <span className="whitespace-nowrap">{formatDistanceToNow(new Date(match.matched_at), { addSuffix: true })}</span>
                       </div>
                     </div>
                   </div>
