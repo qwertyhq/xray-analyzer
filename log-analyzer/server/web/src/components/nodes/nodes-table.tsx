@@ -14,6 +14,13 @@ import { NodeStats } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { Trash2, RefreshCw } from "lucide-react";
 
+// Check if date is valid (not zero time or year 1)
+function isValidDate(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime()) && date.getFullYear() > 2000;
+}
+
 interface NodesTableProps {
   nodes: NodeStats[];
   onDelete?: (nodeId: string) => void;
@@ -61,9 +68,10 @@ export function NodesTable({ nodes, onDelete, showActions = false }: NodesTableP
             </TableCell>
             <TableCell className="text-right">{node.unique_users}</TableCell>
             <TableCell className="text-muted-foreground text-sm">
-              {formatDistanceToNow(new Date(node.last_seen), {
-                addSuffix: true,
-              })}
+              {isValidDate(node.last_seen)
+                ? formatDistanceToNow(new Date(node.last_seen), { addSuffix: true })
+                : "—"
+              }
             </TableCell>
             {showActions && (
               <TableCell>

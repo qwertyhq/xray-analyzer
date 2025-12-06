@@ -19,6 +19,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { TimeRange } from "@/lib/types";
+
+// Check if date is valid (not zero time or year 1)
+function isValidDate(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime()) && date.getFullYear() > 2000;
+}
 import {
   AreaChart,
   Area,
@@ -57,7 +64,7 @@ export default function BlacklistPage() {
   };
 
   // Prepare chart data
-  const chartData = analytics.hourly_stats?.map((h) => ({
+  const chartData = analytics.hourly_stats?.filter(h => isValidDate(h.hour)).map((h) => ({
     hour: format(new Date(h.hour), "HH:mm"),
     hits: h.hit_count,
   })) || [];
@@ -342,7 +349,10 @@ export default function BlacklistPage() {
                   {analytics.recent_matches?.map((match, idx) => (
                     <TableRow key={idx}>
                       <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
-                        {format(new Date(match.timestamp), "MMM d, HH:mm:ss")}
+                        {isValidDate(match.timestamp)
+                          ? format(new Date(match.timestamp), "MMM d, HH:mm:ss")
+                          : "—"
+                        }
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">{match.node_id}</Badge>

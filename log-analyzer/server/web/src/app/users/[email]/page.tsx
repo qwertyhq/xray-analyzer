@@ -18,6 +18,13 @@ import {
 import { ArrowLeft, User, Activity, ShieldAlert, Globe } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
+// Check if date is valid (not zero time or year 1)
+function isValidDate(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime()) && date.getFullYear() > 2000;
+}
+
 export default function UserDetailsPage() {
   const params = useParams();
   const email = decodeURIComponent(params.email as string);
@@ -149,7 +156,10 @@ export default function UserDetailsPage() {
                     {node.unique_destinations}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
-                    {formatDistanceToNow(new Date(node.last_seen), { addSuffix: true })}
+                    {isValidDate(node.last_seen)
+                      ? formatDistanceToNow(new Date(node.last_seen), { addSuffix: true })
+                      : "—"
+                    }
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
                     {node.last_blacklist_domain || "—"}
@@ -182,7 +192,10 @@ export default function UserDetailsPage() {
                 {details.recent_matches.map((match, idx) => (
                   <TableRow key={idx}>
                     <TableCell className="text-muted-foreground text-sm">
-                      {format(new Date(match.timestamp), "MMM d, HH:mm:ss")}
+                      {isValidDate(match.timestamp)
+                        ? format(new Date(match.timestamp), "MMM d, HH:mm:ss")
+                        : "—"
+                      }
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{match.node_id}</Badge>

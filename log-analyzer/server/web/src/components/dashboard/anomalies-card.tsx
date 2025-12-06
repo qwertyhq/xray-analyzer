@@ -7,6 +7,13 @@ import { AlertTriangle, TrendingUp, User } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 
+// Check if date is valid (not zero time or year 1)
+function isValidDate(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime()) && date.getFullYear() > 2000;
+}
+
 interface AnomaliesCardProps {
   anomalies: Anomaly[];
   loading?: boolean;
@@ -93,7 +100,10 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
                         </Link>
                       )}
                       <span className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(anomaly.hour), { addSuffix: true })}
+                        {isValidDate(anomaly.hour)
+                          ? formatDistanceToNow(new Date(anomaly.hour), { addSuffix: true })
+                          : "—"
+                        }
                       </span>
                     </div>
                   </div>

@@ -17,6 +17,13 @@ import { UserStats } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { Search, ExternalLink } from "lucide-react";
 
+// Check if date is valid (not zero time or year 1)
+function isValidDate(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime()) && date.getFullYear() > 2000;
+}
+
 interface UsersTableProps {
   users: UserStats[];
   showBlacklistOnly?: boolean;
@@ -86,7 +93,7 @@ export function UsersTable({
             <TableHead className="text-right">Blacklist Hits</TableHead>
             <TableHead className="text-right">Destinations</TableHead>
             <TableHead>Last Seen</TableHead>
-            {showBlacklistOnly && <TableHead>Last Blocked Domain</TableHead>}
+            <TableHead>Last Blocked Domain</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -121,21 +128,20 @@ export function UsersTable({
                 {user.unique_destinations}
               </TableCell>
               <TableCell className="text-muted-foreground text-sm">
-                {formatDistanceToNow(new Date(user.last_seen), {
-                  addSuffix: true,
-                })}
+                {isValidDate(user.last_seen) 
+                  ? formatDistanceToNow(new Date(user.last_seen), { addSuffix: true })
+                  : "—"
+                }
               </TableCell>
-              {showBlacklistOnly && (
-                <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
-                  {user.last_blacklist_domain || "—"}
-                </TableCell>
-              )}
+              <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
+                {user.last_blacklist_domain || "—"}
+              </TableCell>
             </TableRow>
           ))}
           {paginatedUsers.length === 0 && (
             <TableRow>
               <TableCell 
-                colSpan={showBlacklistOnly ? 8 : 7} 
+                colSpan={8} 
                 className="text-center text-muted-foreground"
               >
                 {showBlacklistOnly ? "No blacklist hits" : "No users found"}
