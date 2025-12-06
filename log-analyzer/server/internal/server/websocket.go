@@ -354,9 +354,11 @@ func (s *Server) broadcastToDashboards() {
 	if s.threatIntel != nil {
 		tiStats := s.threatIntel.GetStats()
 		tiMatches, _ := s.storage.GetThreatMatches(ctx, time.Now().Add(-24*time.Hour), 10)
+		tiTopUsers, _ := s.threatIntel.GetTopUsersByAllCategories(ctx, 5)
 		threatData := map[string]interface{}{
-			"stats":   tiStats,
-			"matches": tiMatches,
+			"stats":    tiStats,
+			"matches":  tiMatches,
+			"topUsers": tiTopUsers,
 		}
 		updates = append(updates, DashboardUpdate{Type: "threatintel", Data: threatData})
 	}
@@ -433,10 +435,12 @@ func (s *Server) sendThreatIntelUpdate(conn *websocket.Conn) {
 	ctx := context.Background()
 	tiStats := s.threatIntel.GetStats()
 	tiMatches, _ := s.storage.GetThreatMatches(ctx, time.Now().Add(-24*time.Hour), 10)
+	tiTopUsers, _ := s.threatIntel.GetTopUsersByAllCategories(ctx, 5)
 
 	threatData := map[string]interface{}{
-		"stats":   tiStats,
-		"matches": tiMatches,
+		"stats":    tiStats,
+		"matches":  tiMatches,
+		"topUsers": tiTopUsers,
 	}
 
 	conn.WriteJSON(&DashboardUpdate{Type: "threatintel", Data: threatData})

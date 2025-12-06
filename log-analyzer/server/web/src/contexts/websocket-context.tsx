@@ -1,11 +1,12 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from "react";
-import { Stats, NodeStats, UserStats, HourlyStats, Anomaly, BlacklistAnalytics, ThreatStats, ThreatMatch } from "@/lib/types";
+import { Stats, NodeStats, UserStats, HourlyStats, Anomaly, BlacklistAnalytics, ThreatStats, ThreatMatch, CategoryTopUsers } from "@/lib/types";
 
 interface ThreatIntelData {
   stats: ThreatStats | null;
   matches: ThreatMatch[];
+  topUsers: CategoryTopUsers | null;
 }
 
 interface WebSocketState {
@@ -40,7 +41,7 @@ const defaultState: WebSocketState = {
   hourly: [],
   anomalies: [],
   blacklist: null,
-  threatIntel: { stats: null, matches: [] },
+  threatIntel: { stats: null, matches: [], topUsers: null },
   connected: false,
   loading: true,
 };
