@@ -146,39 +146,44 @@ export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
 
 // Full page component for threat intel
 export function ThreatIntelPage() {
-  const [stats, setStats] = useState<ThreatStats | null>(null);
-  const [matches, setMatches] = useState<ThreatMatch[]>([]);
+  // Use WebSocket for real-time stats and matches
+  const { threatIntel, loading: wsLoading, connected } = useWsThreatIntel();
+  
+  // Additional data fetched via API (not in WebSocket)
   const [feeds, setFeeds] = useState<FeedStatus[]>([]);
   const [topUsers, setTopUsers] = useState<CategoryTopUsers | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [apiLoading, setApiLoading] = useState(true);
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
-  const fetchData = async () => {
+  // Fetch additional data not provided by WebSocket
+  const fetchAdditionalData = async () => {
     try {
-      const [statsRes, matchesRes, feedsRes, topUsersRes] = await Promise.all([
-        fetch("/api/threatintel/stats"),
-        fetch("/api/threatintel/matches?limit=500"),
+      const [feedsRes, topUsersRes] = await Promise.all([
         fetch("/api/threatintel/feeds"),
         fetch("/api/threatintel/top-users?limit=5"),
       ]);
 
-      if (statsRes.ok) setStats(await statsRes.json());
-      if (matchesRes.ok) setMatches((await matchesRes.json()) || []);
       if (feedsRes.ok) setFeeds((await feedsRes.json()) || []);
       if (topUsersRes.ok) setTopUsers(await topUsersRes.json());
     } catch {
       // ignore
     } finally {
-      setLoading(false);
+      setApiLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 30000);
+    fetchAdditionalData();
+    // Refresh feeds and top users every 60 seconds
+    const interval = setInterval(fetchAdditionalData, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  // Get data from WebSocket
+  const stats = threatIntel.stats;
+  const matches = threatIntel.matches || [];
+  const loading = wsLoading && apiLoading;
 
   // Pagination
   const totalPages = Math.ceil(matches.length / pageSize);
@@ -210,10 +215,16 @@ export function ThreatIntelPage() {
             Real-time threat detection from open source feeds
           </p>
         </div>
-        <Badge variant="outline" className="flex items-center gap-1.5">
-          <RefreshCw className="h-3 w-3" />
-          Updates every 6h
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant={connected ? "default" : "secondary"} className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${connected ? "bg-green-400 animate-pulse" : "bg-gray-400"}`} />
+            {connected ? "Live" : "Offline"}
+          </Badge>
+          <Badge variant="outline" className="flex items-center gap-1.5">
+            <RefreshCw className="h-3 w-3" />
+            Feeds every 6h
+          </Badge>
+        </div>
       </div>
 
       {/* Stats Cards */}
