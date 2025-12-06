@@ -315,17 +315,24 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try query param first, then JSON body
-	nodeID := r.URL.Query().Get("node_id")
-	if nodeID == "" {
+	var nodeID string
+	var hasNodeID bool
+
+	if qp := r.URL.Query().Get("node_id"); r.URL.Query().Has("node_id") {
+		nodeID = qp
+		hasNodeID = true
+	} else {
 		var body struct {
-			NodeID string `json:"node_id"`
+			NodeID  string `json:"node_id"`
+			HasNode bool   `json:"-"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
 			nodeID = body.NodeID
+			hasNodeID = true
 		}
 	}
 
-	if nodeID == "" {
+	if !hasNodeID {
 		http.Error(w, "node_id required", http.StatusBadRequest)
 		return
 	}
