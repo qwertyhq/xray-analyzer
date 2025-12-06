@@ -1,0 +1,39 @@
+# Пример черного списка сайтов
+# Строки начинающиеся с # - комментарии
+# Формат: один домен на строку
+# Поддерживаются wildcard: *.example.com
+
+# === Торренты ===
+rutracker.org
+*.rutracker.org
+rutor.org
+*.rutor.org
+nnmclub.to
+*.nnmclub.to
+kinozal.tv
+*.kinozal.tv
+torrentino.me
+*.torrentino.me
+
+# === Пиратские сайты ===
+hdrezka.ag
+*.hdrezka.ag
+rezka.ag
+*.rezka.ag
+kinokrad.co
+*.kinokrad.co
+filmix.co
+*.filmix.co
+baskino.me
+*.baskino.me
+
+# === Заблокированные соцсети ===
+linkedin.com
+*.linkedin.com
+
+# === VPN сервисы (если нужно блокировать) ===
+# nordvpn.com
+# expressvpn.com
+# surfshark.com
+
+# === Добавьте свои домены ниже ===

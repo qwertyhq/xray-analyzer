@@ -1,0 +1,40 @@
+version: '3.8'
+
+# Этот файл используется на каждой Xray ноде для запуска агента
+# Скопируйте на каждую ноду и настройте переменные окружения
+
+services:
+  xray-log-agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: xray-log-agent
+    restart: unless-stopped
+    volumes:
+      # Монтируем директорию с логами Xray
+      - /var/log/xray:/var/log/xray:ro
+      # Или путь к логам Remnanode:
+      # - /opt/remnanode/logs:/var/log/xray:ro
+    environment:
+      # Уникальный ID этой ноды (любая строка)
+      - NODE_ID=${NODE_ID:-node-1}
+      # Путь к access логу внутри контейнера
+      - LOG_FILE_PATH=/var/log/xray/access.log
+      # URL сервера анализа (замените на реальный IP/домен)
+      - SERVER_URL=${SERVER_URL:-ws://your-analyzer-server:8080/ws}
+      # Размер батча (количество записей)
+      - BATCH_SIZE=1000
+      # Таймаут батча
+      - BATCH_TIMEOUT=5s
+    # Для работы с inotify нужен доступ к fs
+    security_opt:
+      - no-new-privileges:true
+    # Ограничение ресурсов
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M

@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # Main analyzer server
+  analyzer-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: xray-log-analyzer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - analyzer-data:/app/data
+      - ./server/blacklist.txt:/app/blacklist.txt:ro
+    environment:
+      - LISTEN_ADDR=:8080
+      - DB_PATH=/app/data/analyzer.db
+      - BLACKLIST_PATH=/app/blacklist.txt
+      - BLACKLIST_RELOAD=5m
+      - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-false}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - SUSPICIOUS_REQUEST_COUNT=${SUSPICIOUS_REQUEST_COUNT:-5}
+      - SUSPICIOUS_TIME_WINDOW=${SUSPICIOUS_TIME_WINDOW:-1h}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - analyzer-net
+
+  # Web UI (optional, for future)
+  # analyzer-ui:
+  #   build:
+  #     context: ./ui
+  #     dockerfile: Dockerfile
+  #   container_name: xray-log-analyzer-ui
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - API_URL=http://analyzer-server:8080
+  #   depends_on:
+  #     - analyzer-server
+  #   networks:
+  #     - analyzer-net
+
+volumes:
+  analyzer-data:
+
+networks:
+  analyzer-net:
+    driver: bridge
