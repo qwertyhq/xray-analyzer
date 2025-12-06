@@ -100,7 +100,7 @@ export default function DashboardPage() {
             <RecentBlocks 
               matches={blacklist?.recent_matches || []} 
               loading={false}
-              limit={10}
+              limit={20}
             />
           </CardContent>
         </Card>
