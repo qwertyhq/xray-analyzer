@@ -16,6 +16,7 @@ import { ShieldAlert, Bug, Crosshair, Fish, Bot, Skull, Activity, RefreshCw } fr
 import { ThreatMatch, ThreatStats, FeedStatus, ThreatType, ThreatSource } from "@/lib/types";
 import { format, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
+import { useWsThreatIntel } from "@/contexts/websocket-context";
 
 const threatTypeConfig: Record<ThreatType, { icon: React.ReactNode; color: string; label: string }> = {
   malware: { icon: <Bug className="h-4 w-4" />, color: "bg-red-500", label: "Malware" },
@@ -40,36 +41,8 @@ interface ThreatIntelCardProps {
 }
 
 export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
-  const [stats, setStats] = useState<ThreatStats | null>(null);
-  const [matches, setMatches] = useState<ThreatMatch[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [statsRes, matchesRes] = await Promise.all([
-          fetch("/api/threatintel/stats"),
-          fetch("/api/threatintel/matches?limit=10"),
-        ]);
-
-        if (statsRes.ok) {
-          setStats(await statsRes.json());
-        }
-        if (matchesRes.ok) {
-          const data = await matchesRes.json();
-          setMatches(data || []);
-        }
-      } catch {
-        // ignore
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  const { threatIntel, loading } = useWsThreatIntel();
+  const { stats, matches } = threatIntel;
 
   if (loading) {
     return (
@@ -167,12 +140,14 @@ export function ThreatIntelPage() {
   const [matches, setMatches] = useState<ThreatMatch[]>([]);
   const [feeds, setFeeds] = useState<FeedStatus[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
 
   const fetchData = async () => {
     try {
       const [statsRes, matchesRes, feedsRes] = await Promise.all([
         fetch("/api/threatintel/stats"),
-        fetch("/api/threatintel/matches?limit=100"),
+        fetch("/api/threatintel/matches?limit=500"),
         fetch("/api/threatintel/feeds"),
       ]);
 
@@ -191,6 +166,10 @@ export function ThreatIntelPage() {
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Pagination
+  const totalPages = Math.ceil(matches.length / pageSize);
+  const paginatedMatches = matches.slice((page - 1) * pageSize, page * pageSize);
 
   if (loading) {
     return (
@@ -325,12 +304,37 @@ export function ThreatIntelPage() {
       {/* Recent Matches */}
       <Card>
         <CardHeader>
-          <CardTitle>Recent Threat Matches</CardTitle>
-          <CardDescription>
-            Traffic that matched known threat indicators
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Recent Threat Matches</CardTitle>
+              <CardDescription>
+                Traffic that matched known threat indicators ({matches.length} total)
+              </CardDescription>
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="px-3 py-1 text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Prev
+                </button>
+                <span className="text-sm text-muted-foreground">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="px-3 py-1 text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="max-h-[500px] overflow-y-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -343,7 +347,7 @@ export function ThreatIntelPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {matches.map((match) => {
+              {paginatedMatches.map((match) => {
                 const config = threatTypeConfig[match.threat_type] || threatTypeConfig.malware;
                 return (
                   <TableRow key={match.id}>

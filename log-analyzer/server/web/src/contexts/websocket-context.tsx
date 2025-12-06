@@ -1,7 +1,12 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from "react";
-import { Stats, NodeStats, UserStats, HourlyStats, Anomaly, BlacklistAnalytics } from "@/lib/types";
+import { Stats, NodeStats, UserStats, HourlyStats, Anomaly, BlacklistAnalytics, ThreatStats, ThreatMatch } from "@/lib/types";
+
+interface ThreatIntelData {
+  stats: ThreatStats | null;
+  matches: ThreatMatch[];
+}
 
 interface WebSocketState {
   stats: Stats;
@@ -10,6 +15,7 @@ interface WebSocketState {
   hourly: HourlyStats[];
   anomalies: Anomaly[];
   blacklist: BlacklistAnalytics | null;
+  threatIntel: ThreatIntelData;
   connected: boolean;
   loading: boolean;
 }
@@ -34,6 +40,7 @@ const defaultState: WebSocketState = {
   hourly: [],
   anomalies: [],
   blacklist: null,
+  threatIntel: { stats: null, matches: [] },
   connected: false,
   loading: true,
 };
@@ -101,6 +108,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
               return { ...prev, anomalies: update.data as Anomaly[] };
             case "blacklist":
               return { ...prev, blacklist: update.data as BlacklistAnalytics };
+            case "threatintel":
+              return { ...prev, threatIntel: update.data as ThreatIntelData };
             default:
               return prev;
           }
@@ -182,4 +191,9 @@ export function useWsUsers() {
 export function useWsBlacklist() {
   const { blacklist, loading, connected } = useWebSocket();
   return { blacklist, loading, connected };
+}
+
+export function useWsThreatIntel() {
+  const { threatIntel, loading, connected } = useWebSocket();
+  return { threatIntel, loading, connected };
 }

@@ -260,6 +260,9 @@ func (s *Server) sendFullDashboardData(conn *websocket.Conn) {
 	if analytics, err := s.storage.GetBlacklistAnalytics(ctx, since); err == nil {
 		conn.WriteJSON(&DashboardUpdate{Type: "blacklist", Data: analytics})
 	}
+
+	// Threat intelligence
+	s.sendThreatIntelUpdate(conn)
 }
 
 // BroadcastDashboardUpdate triggers a broadcast to all dashboard clients
@@ -347,6 +350,17 @@ func (s *Server) broadcastToDashboards() {
 		updates = append(updates, DashboardUpdate{Type: "blacklist", Data: analytics})
 	}
 
+	// Threat intelligence
+	if s.threatIntel != nil {
+		tiStats := s.threatIntel.GetStats()
+		tiMatches, _ := s.storage.GetThreatMatches(ctx, time.Now().Add(-24*time.Hour), 10)
+		threatData := map[string]interface{}{
+			"stats":   tiStats,
+			"matches": tiMatches,
+		}
+		updates = append(updates, DashboardUpdate{Type: "threatintel", Data: threatData})
+	}
+
 	// Send to all clients
 	for _, conn := range clients {
 		for _, update := range updates {
@@ -408,4 +422,22 @@ func (s *Server) getAnomalies(ctx context.Context) []models.Anomaly {
 	})
 
 	return anomalies
+}
+
+// sendThreatIntelUpdate sends threat intel data to a single client
+func (s *Server) sendThreatIntelUpdate(conn *websocket.Conn) {
+	if s.threatIntel == nil {
+		return
+	}
+
+	ctx := context.Background()
+	tiStats := s.threatIntel.GetStats()
+	tiMatches, _ := s.storage.GetThreatMatches(ctx, time.Now().Add(-24*time.Hour), 10)
+
+	threatData := map[string]interface{}{
+		"stats":   tiStats,
+		"matches": tiMatches,
+	}
+
+	conn.WriteJSON(&DashboardUpdate{Type: "threatintel", Data: threatData})
 }
