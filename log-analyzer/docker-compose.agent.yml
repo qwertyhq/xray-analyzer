@@ -11,10 +11,8 @@ services:
     container_name: xray-log-agent
     restart: unless-stopped
     volumes:
-      # Монтируем директорию с логами Xray
-      - /var/log/xray:/var/log/xray:ro
-      # Или путь к логам Remnanode:
-      # - /opt/remnanode/logs:/var/log/xray:ro
+      # Монтируем директорию с логами Remnanode
+      - /var/log/remnanode:/var/log/xray:ro
     environment:
       # Уникальный ID этой ноды (любая строка)
       - NODE_ID=${NODE_ID:-node-1}
