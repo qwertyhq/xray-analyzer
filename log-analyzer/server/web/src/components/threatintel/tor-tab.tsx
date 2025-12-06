@@ -10,10 +10,13 @@ import { MatchesTable } from "./matches-table";
 interface TorTabProps {
   matches: ThreatMatch[];
   topUsers: CategoryUserStats[];
-  feed: FeedStatus | undefined;
+  feeds: FeedStatus[];
 }
 
-export function TorTab({ matches, topUsers, feed }: TorTabProps) {
+export function TorTab({ matches, topUsers, feeds }: TorTabProps) {
+  // Sum indicators from all Tor-related feeds
+  const totalIndicators = feeds.reduce((sum, f) => sum + (f.indicators || 0), 0);
+  
   return (
     <div className="space-y-6">
       {/* Tor Stats */}
@@ -49,7 +52,7 @@ export function TorTab({ matches, topUsers, feed }: TorTabProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {feed?.indicators.toLocaleString() || 0}
+              {totalIndicators.toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">IPs & domains</p>
           </CardContent>

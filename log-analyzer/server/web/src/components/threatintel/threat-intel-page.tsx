@@ -123,7 +123,11 @@ export function ThreatIntelPage() {
           <TorrentTab 
             matches={torrentMatches}
             topUsers={topUsers?.torrent || []}
-            feed={feeds.find(f => f.source === "torrent-trackers")}
+            feeds={feeds.filter(f => 
+              f.source === "torrent-trackers" || 
+              f.source === "blocklist-torrent" || 
+              f.source === "blocklist-piracy"
+            )}
           />
         </TabsContent>
 
@@ -131,7 +135,7 @@ export function ThreatIntelPage() {
           <TorTab 
             matches={torMatches}
             topUsers={topUsers?.tor || []}
-            feed={feeds.find(f => f.source === "tor-exit-nodes")}
+            feeds={feeds.filter(f => f.source === "tor-exit-nodes")}
           />
         </TabsContent>
       </Tabs>

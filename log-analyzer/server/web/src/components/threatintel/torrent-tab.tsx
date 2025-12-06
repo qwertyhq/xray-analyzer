@@ -10,10 +10,13 @@ import { MatchesTable } from "./matches-table";
 interface TorrentTabProps {
   matches: ThreatMatch[];
   topUsers: CategoryUserStats[];
-  feed: FeedStatus | undefined;
+  feeds: FeedStatus[];
 }
 
-export function TorrentTab({ matches, topUsers, feed }: TorrentTabProps) {
+export function TorrentTab({ matches, topUsers, feeds }: TorrentTabProps) {
+  // Sum indicators from all torrent-related feeds
+  const totalIndicators = feeds.reduce((sum, f) => sum + (f.indicators || 0), 0);
+  
   return (
     <div className="space-y-6">
       {/* Torrent Stats */}
@@ -49,9 +52,11 @@ export function TorrentTab({ matches, topUsers, feed }: TorrentTabProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {feed?.indicators.toLocaleString() || 0}
+              {totalIndicators.toLocaleString()}
             </div>
-            <p className="text-xs text-muted-foreground">Trackers & sites</p>
+            <p className="text-xs text-muted-foreground">
+              From {feeds.length} source{feeds.length !== 1 ? 's' : ''}
+            </p>
           </CardContent>
         </Card>
       </div>

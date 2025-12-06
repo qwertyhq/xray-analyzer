@@ -80,7 +80,7 @@ func (f *FeedLoader) loadWithRetry(ctx context.Context, source ThreatSource, loa
 // LoadAllFeeds loads all threat intelligence feeds
 func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 	var wg sync.WaitGroup
-	errChan := make(chan error, 10)
+	errChan := make(chan error, 30) // Enough buffer for all feeds
 
 	// Load feeds concurrently
 	feeds := []struct {
