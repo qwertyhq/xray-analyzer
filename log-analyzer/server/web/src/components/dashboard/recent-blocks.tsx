@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +15,7 @@ import {
 import { BlacklistMatchInfo } from "@/lib/types";
 import { format } from "date-fns";
 import { isValidDate } from "@/lib/utils/date";
+import { cn } from "@/lib/utils";
 
 interface RecentBlocksProps {
   matches: BlacklistMatchInfo[];
@@ -21,7 +23,47 @@ interface RecentBlocksProps {
   limit?: number;
 }
 
+// Generate unique key for a match
+function getMatchKey(match: BlacklistMatchInfo): string {
+  return `${match.timestamp}-${match.user_email}-${match.destination}-${match.node_id}`;
+}
+
 export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps) {
+  const [newKeys, setNewKeys] = useState<Set<string>>(new Set());
+  const prevMatchesRef = useRef<string[]>([]);
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (!matches || matches.length === 0) return;
+
+    const currentKeys = matches.slice(0, limit).map(getMatchKey);
+    
+    // Skip animation on first render
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      prevMatchesRef.current = currentKeys;
+      return;
+    }
+
+    // Find new items that weren't in the previous list
+    const prevSet = new Set(prevMatchesRef.current);
+    const newItems = currentKeys.filter(key => !prevSet.has(key));
+
+    if (newItems.length > 0) {
+      setNewKeys(new Set(newItems));
+      
+      // Clear highlight after animation
+      const timer = setTimeout(() => {
+        setNewKeys(new Set());
+      }, 2000);
+
+      prevMatchesRef.current = currentKeys;
+      return () => clearTimeout(timer);
+    }
+
+    prevMatchesRef.current = currentKeys;
+  }, [matches, limit]);
+
   if (loading) {
     return (
       <div className="space-y-3">
@@ -53,34 +95,51 @@ export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps
         </TableRow>
       </TableHeader>
       <TableBody>
-        {displayMatches.map((match, idx) => (
-          <TableRow key={idx}>
-            <TableCell className="font-medium">
-              {match.user_email ? (
-                <Link
-                  href={`/users/${encodeURIComponent(match.user_email)}`}
-                  className="text-primary hover:underline"
-                >
-                  {match.user_email}
-                </Link>
-              ) : (
-                <span className="text-muted-foreground">Unknown</span>
+        {displayMatches.map((match, idx) => {
+          const key = getMatchKey(match);
+          const isNew = newKeys.has(key);
+          
+          return (
+            <TableRow 
+              key={key}
+              className={cn(
+                "transition-all duration-500",
+                isNew && "animate-highlight animate-pulse-border"
               )}
-            </TableCell>
-            <TableCell>
-              <Badge variant="outline">{match.node_id}</Badge>
-            </TableCell>
-            <TableCell className="text-destructive font-mono text-sm max-w-[200px] truncate">
-              {match.destination}
-            </TableCell>
-            <TableCell className="text-muted-foreground text-sm">
-              {isValidDate(match.timestamp)
-                ? format(new Date(match.timestamp), "HH:mm:ss")
-                : "—"
-              }
-            </TableCell>
-          </TableRow>
-        ))}
+            >
+              <TableCell className="font-medium">
+                {match.user_email ? (
+                  <Link
+                    href={`/users/${encodeURIComponent(match.user_email)}`}
+                    className="text-primary hover:underline"
+                  >
+                    {match.user_email}
+                  </Link>
+                ) : (
+                  <span className="text-muted-foreground">Unknown</span>
+                )}
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline">{match.node_id}</Badge>
+              </TableCell>
+              <TableCell className={cn(
+                "font-mono text-sm max-w-[200px] truncate",
+                isNew ? "text-destructive font-semibold" : "text-destructive"
+              )}>
+                {match.destination}
+              </TableCell>
+              <TableCell className={cn(
+                "text-sm",
+                isNew ? "text-foreground font-medium" : "text-muted-foreground"
+              )}>
+                {isValidDate(match.timestamp)
+                  ? format(new Date(match.timestamp), "HH:mm:ss")
+                  : "—"
+                }
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );

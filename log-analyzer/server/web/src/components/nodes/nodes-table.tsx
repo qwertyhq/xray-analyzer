@@ -1,5 +1,7 @@
-"use client";
+'use client'
 
+import { useRef, useEffect, useState } from 'react'
+import { Badge } from '@/components/ui/badge'
 import {
   Table,
   TableBody,
@@ -7,89 +9,171 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { NodeStats } from "@/lib/types";
-import { formatDistanceToNow } from "date-fns";
-import { Trash2, RefreshCw } from "lucide-react";
-import { isValidDate } from "@/lib/utils/date";
+} from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
+import { Trash2 } from 'lucide-react'
+import { isValidDate, formatRelativeTime } from '@/lib/utils/date'
+import { NodeStats } from '@/lib/types'
 
 interface NodesTableProps {
-  nodes: NodeStats[];
-  onDelete?: (nodeId: string) => void;
-  showActions?: boolean;
+  nodes: NodeStats[]
+  onDeleteNode?: (nodeId: string) => void
+  onDelete?: (nodeId: string) => void
+  showActions?: boolean
 }
 
-export function NodesTable({ nodes, onDelete, showActions = false }: NodesTableProps) {
+// Хранение предыдущих значений для отслеживания изменений
+interface PrevNodeState {
+  is_connected: boolean
+  blacklist_hits: number
+  online_users: number
+}
+
+export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: NodesTableProps) {
+  // Поддержка обоих вариантов: onDeleteNode и onDelete
+  const handleDelete = onDeleteNode || onDelete
+  const showDeleteButton = showActions || !!handleDelete
+  
+  const prevNodesRef = useRef<Map<string, PrevNodeState>>(new Map())
+  const [changedNodes, setChangedNodes] = useState<Map<string, {
+    statusChanged: boolean
+    blacklistIncreased: boolean
+    onlineChanged: boolean
+  }>>(new Map())
+
+  useEffect(() => {
+    const newChanges = new Map<string, {
+      statusChanged: boolean
+      blacklistIncreased: boolean
+      onlineChanged: boolean
+    }>()
+
+    nodes.forEach(node => {
+      const prev = prevNodesRef.current.get(node.node_id)
+      
+      if (prev) {
+        const statusChanged = prev.is_connected !== node.is_connected
+        const blacklistIncreased = node.blacklist_hits > prev.blacklist_hits
+        const onlineChanged = prev.online_users !== node.online_users
+
+        if (statusChanged || blacklistIncreased || onlineChanged) {
+          newChanges.set(node.node_id, {
+            statusChanged,
+            blacklistIncreased,
+            onlineChanged
+          })
+        }
+      }
+    })
+
+    if (newChanges.size > 0) {
+      setChangedNodes(newChanges)
+      
+      // Убираем анимацию через 2 секунды
+      const timer = setTimeout(() => {
+        setChangedNodes(new Map())
+      }, 2000)
+
+      return () => clearTimeout(timer)
+    }
+
+    // Сохраняем текущее состояние
+    const newPrevMap = new Map<string, PrevNodeState>()
+    nodes.forEach(node => {
+      newPrevMap.set(node.node_id, {
+        is_connected: node.is_connected,
+        blacklist_hits: node.blacklist_hits,
+        online_users: node.online_users
+      })
+    })
+    prevNodesRef.current = newPrevMap
+  }, [nodes])
+
+  // Обновляем prevNodesRef после каждого рендера
+  useEffect(() => {
+    const newPrevMap = new Map<string, PrevNodeState>()
+    nodes.forEach(node => {
+      newPrevMap.set(node.node_id, {
+        is_connected: node.is_connected,
+        blacklist_hits: node.blacklist_hits,
+        online_users: node.online_users
+      })
+    })
+    prevNodesRef.current = newPrevMap
+  }, [nodes])
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Node ID</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="text-right">Requests</TableHead>
-          <TableHead className="text-right">Blacklist</TableHead>
-          <TableHead className="text-right">Online</TableHead>
-          <TableHead className="text-right">Total Users</TableHead>
-          <TableHead>Last Seen</TableHead>
-          {showActions && <TableHead className="w-[100px]">Actions</TableHead>}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {nodes.map((node) => (
-          <TableRow key={node.node_id}>
-            <TableCell className="font-medium">{node.node_id}</TableCell>
-            <TableCell>
-              <Badge variant={node.is_connected ? "default" : "secondary"}>
-                {node.is_connected ? "Online" : "Offline"}
-              </Badge>
-            </TableCell>
-            <TableCell className="text-right">
-              {node.total_requests.toLocaleString()}
-            </TableCell>
-            <TableCell className="text-right">
-              {node.blacklist_hits > 0 ? (
-                <span className="text-destructive font-medium">
-                  {node.blacklist_hits}
-                </span>
-              ) : (
-                "0"
-              )}
-            </TableCell>
-            <TableCell className="text-right">
-              <span className="text-green-500 font-medium">{node.online_users || 0}</span>
-            </TableCell>
-            <TableCell className="text-right">{node.unique_users}</TableCell>
-            <TableCell className="text-muted-foreground text-sm">
-              {isValidDate(node.last_seen)
-                ? formatDistanceToNow(new Date(node.last_seen), { addSuffix: true })
-                : "—"
-              }
-            </TableCell>
-            {showActions && (
-              <TableCell>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
-                  onClick={() => onDelete?.(node.node_id)}
-                  title="Delete node"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </TableCell>
-            )}
-          </TableRow>
-        ))}
-        {nodes.length === 0 && (
+    <div className="rounded-md border">
+      <Table>
+        <TableHeader>
           <TableRow>
-            <TableCell colSpan={showActions ? 8 : 7} className="text-center text-muted-foreground">
-              No nodes found
-            </TableCell>
+            <TableHead>Node ID</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">Requests</TableHead>
+            <TableHead className="text-right">Blacklist</TableHead>
+            <TableHead className="text-right">Online</TableHead>
+            <TableHead className="text-right">Total Users</TableHead>
+            <TableHead>Last Seen</TableHead>
+            {showDeleteButton && <TableHead className="w-[50px]"></TableHead>}
           </TableRow>
-        )}
-      </TableBody>
-    </Table>
-  );
+        </TableHeader>
+        <TableBody>
+          {nodes.map((node) => {
+            const changes = changedNodes.get(node.node_id)
+            const hasChanges = !!changes
+            
+            return (
+              <TableRow 
+                key={node.node_id}
+                className={hasChanges ? 'animate-fade-in-row' : ''}
+              >
+                <TableCell className="font-medium">{node.node_id}</TableCell>
+                <TableCell>
+                  <Badge
+                    variant={node.is_connected ? 'default' : 'secondary'}
+                    className={`transition-all duration-300 ${
+                      changes?.statusChanged 
+                        ? node.is_connected 
+                          ? 'ring-2 ring-green-500 ring-offset-1' 
+                          : 'ring-2 ring-red-500 ring-offset-1'
+                        : ''
+                    }`}
+                  >
+                    {node.is_connected ? 'Online' : 'Offline'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">{node.total_requests.toLocaleString()}</TableCell>
+                <TableCell className={`text-right transition-colors duration-300 ${
+                  changes?.blacklistIncreased ? 'text-red-500 font-bold' : ''
+                }`}>
+                  {node.blacklist_hits.toLocaleString()}
+                </TableCell>
+                <TableCell className={`text-right transition-colors duration-300 ${
+                  changes?.onlineChanged ? 'text-blue-500 font-bold' : ''
+                }`}>
+                  {node.online_users.toLocaleString()}
+                </TableCell>
+                <TableCell className="text-right">{node.unique_users.toLocaleString()}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {isValidDate(node.last_seen) ? formatRelativeTime(node.last_seen) : 'Never'}
+                </TableCell>
+                {showDeleteButton && handleDelete && (
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(node.node_id)}
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                )}
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  )
 }

@@ -120,3 +120,31 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom animations for real-time updates */
+@keyframes highlight-fade {
+  0% {
+    background-color: hsl(var(--destructive) / 0.2);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    border-left-color: hsl(var(--destructive));
+  }
+  50% {
+    border-left-color: transparent;
+  }
+}
+
+.animate-highlight {
+  animation: highlight-fade 2s ease-out forwards;
+}
+
+.animate-pulse-border {
+  border-left: 3px solid;
+  animation: pulse-border 1s ease-in-out 2;
+}
