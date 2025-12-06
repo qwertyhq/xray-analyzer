@@ -88,6 +88,11 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 		}
 	}
 
+	// Update unique users count for this node
+	if err := a.storage.UpdateNodeUniqueUsers(ctx, batch.NodeID); err != nil {
+		log.Printf("analyzer: failed to update unique users: %v", err)
+	}
+
 	return processed, blacklistHits, nil
 }
 

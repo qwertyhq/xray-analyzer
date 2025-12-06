@@ -137,6 +137,16 @@ func (s *Storage) UpdateNodeStats(ctx context.Context, nodeID string, requests i
 	return err
 }
 
+// UpdateNodeUniqueUsers updates unique users count for a node
+func (s *Storage) UpdateNodeUniqueUsers(ctx context.Context, nodeID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE node_stats 
+		SET unique_users = (SELECT COUNT(DISTINCT user_email) FROM user_stats WHERE node_id = ?)
+		WHERE node_id = ?
+	`, nodeID, nodeID)
+	return err
+}
+
 // UpdateUserStats updates statistics for a user
 func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string, requests int, blacklistHits int, lastBlacklistDomain string) error {
 	now := time.Now().UTC()
