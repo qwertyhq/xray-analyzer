@@ -57,13 +57,15 @@ interface DashboardUpdate {
 function getWebSocketUrl(): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const hostname = window.location.hostname;
+  const port = window.location.port;
   
-  // In development (Next.js on port 3925), connect to Go backend on 8237
-  if (window.location.port === "3925") {
+  // Development: Next.js on port 3925, Go backend on 8237 (same host)
+  if (port === "3925") {
     return `ws://${hostname}:8237/ws/dashboard`;
   }
   
-  // In production, use same host (nginx will proxy)
+  // Production with Caddy/nginx: WebSocket proxied through same host
+  // Caddy handles /ws/* routing to backend
   return `${protocol}//${window.location.host}/ws/dashboard`;
 }
 
