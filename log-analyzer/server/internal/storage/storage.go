@@ -271,6 +271,39 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 	return users, nil
 }
 
+// GetAllUsers gets all users sorted by requests
+func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserStats, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT node_id, user_email, total_requests, blacklist_hits, last_seen, last_blacklist_hit, last_blacklist_domain
+		FROM user_stats
+		ORDER BY total_requests DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*models.UserStats
+	for rows.Next() {
+		u := &models.UserStats{}
+		var lastHit sql.NullTime
+		var lastDomain sql.NullString
+		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &u.LastSeen, &lastHit, &lastDomain)
+		if err != nil {
+			return nil, err
+		}
+		if lastHit.Valid {
+			u.LastBlacklistHit = lastHit.Time
+		}
+		if lastDomain.Valid {
+			u.LastBlacklistDomain = lastDomain.String
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+
 // GetNodeStats gets statistics for all nodes
 func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error) {
 	rows, err := s.db.QueryContext(ctx, `

@@ -60,6 +60,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/nodes", s.handleNodes)
 	mux.HandleFunc("/api/users", s.handleUsers)
+	mux.HandleFunc("/api/users/all", s.handleAllUsers)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	server := &http.Server{
@@ -267,6 +268,20 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	users, err := s.storage.GetTopBlacklistUsers(ctx, 50)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
+}
+
+// handleAllUsers returns all users sorted by requests
+func (s *Server) handleAllUsers(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	users, err := s.storage.GetAllUsers(ctx, 100)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
