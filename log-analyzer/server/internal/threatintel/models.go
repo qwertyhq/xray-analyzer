@@ -18,6 +18,8 @@ const (
 	ThreatTypeGambling ThreatType = "gambling"
 	ThreatTypeSocial   ThreatType = "social"
 	ThreatTypeFakeNews ThreatType = "fakenews"
+	// P2P
+	ThreatTypeTorrent ThreatType = "torrent"
 )
 
 // ThreatSource represents the source of threat data
@@ -34,6 +36,8 @@ const (
 	SourceGambling ThreatSource = "gambling-blocklist"
 	SourceSocial   ThreatSource = "social-blocklist"
 	SourceFakeNews ThreatSource = "fakenews-blocklist"
+	// P2P sources
+	SourceTorrent ThreatSource = "torrent-trackers"
 )
 
 // ThreatIndicator represents an indicator of compromise (IOC)

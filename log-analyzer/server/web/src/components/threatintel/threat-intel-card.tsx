@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ShieldAlert, Bug, Crosshair, Fish, Bot, Skull, Activity, RefreshCw, Heart, Dice1, Users, Newspaper } from "lucide-react";
+import { ShieldAlert, Bug, Crosshair, Fish, Bot, Skull, Activity, RefreshCw, Heart, Dice1, Users, Newspaper, Download } from "lucide-react";
 import { ThreatMatch, ThreatStats, FeedStatus, ThreatType, ThreatSource, CategoryTopUsers } from "@/lib/types";
 import { format, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
@@ -31,6 +31,8 @@ const threatTypeConfig: Record<ThreatType, { icon: React.ReactNode; color: strin
   gambling: { icon: <Dice1 className="h-4 w-4" />, color: "bg-emerald-600", label: "Казино" },
   social: { icon: <Users className="h-4 w-4" />, color: "bg-blue-500", label: "Соц.сети" },
   fakenews: { icon: <Newspaper className="h-4 w-4" />, color: "bg-amber-600", label: "Фейки" },
+  // P2P
+  torrent: { icon: <Download className="h-4 w-4" />, color: "bg-cyan-600", label: "Торрент" },
 };
 
 const sourceLabels: Record<ThreatSource, string> = {
@@ -44,6 +46,8 @@ const sourceLabels: Record<ThreatSource, string> = {
   "gambling-blocklist": "Gambling Blocklist",
   "social-blocklist": "Social Blocklist",
   "fakenews-blocklist": "FakeNews Blocklist",
+  // P2P
+  "torrent-trackers": "Torrent Trackers",
 };
 
 interface ThreatIntelCardProps {
@@ -322,8 +326,8 @@ export function ThreatIntelPage() {
 
       {/* Top Users by Content Category */}
       {topUsers && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {(["porn", "gambling", "social", "fakenews"] as const).map((category) => {
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+          {(["porn", "gambling", "social", "fakenews", "torrent"] as const).map((category) => {
             const users = topUsers[category] || [];
             const config = threatTypeConfig[category];
             const totalCount = users.reduce((sum, u) => sum + u.match_count, 0);

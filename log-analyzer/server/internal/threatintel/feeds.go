@@ -52,6 +52,8 @@ func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 		{SourceGambling, f.loadGamblingBlocklist},
 		{SourceSocial, f.loadSocialBlocklist},
 		{SourceFakeNews, f.loadFakeNewsBlocklist},
+		// P2P
+		{SourceTorrent, f.loadTorrentTrackers},
 	}
 
 	for _, feed := range feeds {
@@ -605,4 +607,157 @@ func (f *FeedLoader) loadFakeNewsBlocklist(ctx context.Context) (int, error) {
 		"Fake news site",
 		75,
 	)
+}
+
+// loadTorrentTrackers loads BitTorrent tracker domains from ngosang/trackerslist
+func (f *FeedLoader) loadTorrentTrackers(ctx context.Context) (int, error) {
+	// Load from multiple sources for comprehensive coverage
+	trackerURLs := []string{
+		"https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt",
+	}
+
+	count := 0
+	for _, trackerURL := range trackerURLs {
+		c, err := f.loadTorrentTrackersFromURL(ctx, trackerURL)
+		if err != nil {
+			log.Printf("threatintel: failed to load torrent trackers from %s: %v", trackerURL, err)
+			continue
+		}
+		count += c
+	}
+
+	// Also add known BitTorrent-related domains with pattern matching
+	f.addTorrentPatterns()
+
+	return count, nil
+}
+
+// loadTorrentTrackersFromURL loads torrent trackers from a URL
+func (f *FeedLoader) loadTorrentTrackersFromURL(ctx context.Context, trackerURL string) (int, error) {
+	resp, err := f.client.Get(trackerURL)
+	if err != nil {
+		return 0, fmt.Errorf("fetch torrent trackers: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("torrent trackers returned status %d", resp.StatusCode)
+	}
+
+	count := 0
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	scanner := bufio.NewScanner(resp.Body)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines
+		if line == "" {
+			continue
+		}
+
+		// Parse tracker URL to extract host
+		// Format: udp://tracker.example.com:6969/announce or http://tracker.example.com/announce
+		u, err := url.Parse(line)
+		if err != nil {
+			continue
+		}
+
+		host := u.Hostname()
+		if host == "" {
+			continue
+		}
+
+		// Skip IP addresses - only use domain names
+		if isIP(host) {
+			continue
+		}
+
+		// Skip if already exists
+		if _, exists := f.indicators[host]; exists {
+			continue
+		}
+
+		indicator := &ThreatIndicator{
+			Indicator:   strings.ToLower(host),
+			Type:        "domain",
+			ThreatType:  ThreatTypeTorrent,
+			Source:      SourceTorrent,
+			Confidence:  85, // High confidence - these are known tracker domains
+			Description: "BitTorrent tracker",
+			FirstSeen:   time.Now(),
+			LastSeen:    time.Now(),
+			CreatedAt:   time.Now(),
+		}
+
+		f.indicators[indicator.Indicator] = indicator
+		count++
+	}
+
+	if err := scanner.Err(); err != nil && err != io.EOF {
+		return count, fmt.Errorf("scan torrent trackers: %w", err)
+	}
+
+	return count, nil
+}
+
+// addTorrentPatterns adds common torrent-related domain patterns
+func (f *FeedLoader) addTorrentPatterns() {
+	// These are known BitTorrent DHT bootstrap nodes and common tracker patterns
+	torrentDomains := []string{
+		// DHT Bootstrap nodes
+		"router.bittorrent.com",
+		"router.utorrent.com",
+		"dht.transmissionbt.com",
+		"dht.aelitis.com",
+		// Popular torrent sites (for detection, not blocking)
+		"thepiratebay.org",
+		"1337x.to",
+		"rarbg.to",
+		"nyaa.si",
+		"rutracker.org",
+		"rutor.info",
+		"rutor.is",
+		"nnmclub.to",
+		"kinozal.tv",
+		"rustorka.com",
+		"pornolab.net",
+		"torrentgalaxy.to",
+		"limetorrents.info",
+		"torrentdownloads.me",
+		"torrentz2.eu",
+		"bt4g.org",
+		"bitsearch.to",
+		// Torrent client APIs
+		"check.utorrent.com",
+		"update.utorrent.com",
+		"update.bittorrent.com",
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for _, domain := range torrentDomains {
+		if _, exists := f.indicators[domain]; exists {
+			continue
+		}
+
+		indicator := &ThreatIndicator{
+			Indicator:   domain,
+			Type:        "domain",
+			ThreatType:  ThreatTypeTorrent,
+			Source:      SourceTorrent,
+			Confidence:  90, // Very high confidence for known torrent domains
+			Description: "BitTorrent/P2P related domain",
+			FirstSeen:   time.Now(),
+			LastSeen:    time.Now(),
+			CreatedAt:   time.Now(),
+		}
+
+		f.indicators[indicator.Indicator] = indicator
+	}
 }
