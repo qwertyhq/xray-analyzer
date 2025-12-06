@@ -25,9 +25,22 @@ type Server struct {
 	clientsMu   sync.RWMutex
 
 	// Dashboard WebSocket clients
-	dashboardClients   map[*websocket.Conn]bool
+	dashboardClients   map[*DashboardClient]bool
 	dashboardClientsMu sync.RWMutex
 	broadcastChan      chan *DashboardUpdate
+}
+
+// DashboardClient wraps websocket connection with mutex for thread-safe writes
+type DashboardClient struct {
+	Conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+// WriteJSON writes JSON to websocket with mutex protection
+func (c *DashboardClient) WriteJSON(v interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Conn.WriteJSON(v)
 }
 
 // Client represents a connected agent
@@ -53,7 +66,7 @@ func New(addr string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl 
 		storage:          storage,
 		blacklist:        bl,
 		clients:          make(map[string]*Client),
-		dashboardClients: make(map[*websocket.Conn]bool),
+		dashboardClients: make(map[*DashboardClient]bool),
 		broadcastChan:    make(chan *DashboardUpdate, 100),
 	}
 	return s
