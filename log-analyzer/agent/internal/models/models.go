@@ -27,7 +27,9 @@ type LogBatch struct {
 
 // ServerMessage represents a message from the server
 type ServerMessage struct {
-	Type    string `json:"type"`
-	Message string `json:"message,omitempty"`
-	AckID   int64  `json:"ack_id,omitempty"`
+	Type      string `json:"type"`
+	Message   string `json:"message,omitempty"`
+	AckID     int64  `json:"ack_id,omitempty"`
+	Processed int    `json:"processed,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
