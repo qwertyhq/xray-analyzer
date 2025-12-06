@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/models"
@@ -87,17 +89,49 @@ func (s *Storage) GetHourlyStatsRange(ctx context.Context, from, to time.Time) (
 	return stats, nil
 }
 
-// CleanupOldData removes old data
-func (s *Storage) CleanupOldData(ctx context.Context, olderThan time.Duration) error {
-	cutoff := time.Now().Add(-olderThan)
+// CleanupOldData removes data older than retentionDays
+// This prevents the database from growing indefinitely
+func (s *Storage) CleanupOldData(ctx context.Context, retentionDays int) error {
+	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays).Format(time.RFC3339)
 
+	// Delete old blacklist matches
 	result, err := s.db.ExecContext(ctx, `DELETE FROM blacklist_matches WHERE timestamp < ?`, cutoff)
 	if err != nil {
-		return err
+		return fmt.Errorf("cleanup blacklist_matches: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows > 0 {
+		log.Printf("storage: cleaned up %d old blacklist matches", rows)
 	}
 
-	affected, _ := result.RowsAffected()
-	_ = affected // suppress unused
+	// Delete old alerts
+	result, err = s.db.ExecContext(ctx, `DELETE FROM alerts WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return fmt.Errorf("cleanup alerts: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows > 0 {
+		log.Printf("storage: cleaned up %d old alerts", rows)
+	}
+
+	// Delete old hourly stats
+	result, err = s.db.ExecContext(ctx, `DELETE FROM hourly_stats WHERE hour < ?`, cutoff)
+	if err != nil {
+		return fmt.Errorf("cleanup hourly_stats: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows > 0 {
+		log.Printf("storage: cleaned up %d old hourly stats", rows)
+	}
+
+	// Delete user stats for users not seen in retention period
+	result, err = s.db.ExecContext(ctx, `DELETE FROM user_stats WHERE last_seen < ?`, cutoff)
+	if err != nil {
+		return fmt.Errorf("cleanup user_stats: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows > 0 {
+		log.Printf("storage: cleaned up %d old user stats", rows)
+	}
+
+	// Checkpoint WAL to reclaim space
+	s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 
 	return nil
 }

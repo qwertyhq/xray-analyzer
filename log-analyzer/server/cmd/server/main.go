@@ -95,8 +95,8 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				// Cleanup old blacklist matches (keep 7 days)
-				if err := store.CleanupOldData(ctx, 7*24*time.Hour); err != nil {
+				// Cleanup old data (keep 30 days)
+				if err := store.CleanupOldData(ctx, 30); err != nil {
 					log.Printf("cleanup error: %v", err)
 				}
 				// Cleanup analyzer alert cache

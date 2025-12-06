@@ -100,10 +100,13 @@ func (s *Server) Start(ctx context.Context) error {
 	return server.ListenAndServe()
 }
 
-// startCleanupJob runs periodic cleanup of inactive nodes
+// startCleanupJob runs periodic cleanup of inactive nodes and old data
 func (s *Server) startCleanupJob(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
+
+	// Run cleanup on startup
+	s.storage.CleanupOldData(context.Background(), 30) // 30 days retention
 
 	for {
 		select {
@@ -111,6 +114,7 @@ func (s *Server) startCleanupJob(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.storage.CleanupInactiveNodes(context.Background(), 24*time.Hour)
+			s.storage.CleanupOldData(context.Background(), 30) // 30 days retention
 		}
 	}
 }
