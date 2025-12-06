@@ -13,6 +13,11 @@ const (
 	ThreatTypeTracker    ThreatType = "tracker"
 	ThreatTypeBotnet     ThreatType = "botnet"
 	ThreatTypeRansomware ThreatType = "ransomware"
+	// Content category types
+	ThreatTypePorn     ThreatType = "porn"
+	ThreatTypeGambling ThreatType = "gambling"
+	ThreatTypeSocial   ThreatType = "social"
+	ThreatTypeFakeNews ThreatType = "fakenews"
 )
 
 // ThreatSource represents the source of threat data
@@ -24,6 +29,11 @@ const (
 	SourceThreatFox    ThreatSource = "threatfox"
 	SourceSSLBlacklist ThreatSource = "sslbl"
 	SourceStevenBlack  ThreatSource = "stevenblack"
+	// Content category sources (StevenBlack extensions)
+	SourcePorn     ThreatSource = "porn-blocklist"
+	SourceGambling ThreatSource = "gambling-blocklist"
+	SourceSocial   ThreatSource = "social-blocklist"
+	SourceFakeNews ThreatSource = "fakenews-blocklist"
 )
 
 // ThreatIndicator represents an indicator of compromise (IOC)

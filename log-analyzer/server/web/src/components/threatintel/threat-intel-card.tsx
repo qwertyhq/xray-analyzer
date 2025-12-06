@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ShieldAlert, Bug, Crosshair, Fish, Bot, Skull, Activity, RefreshCw } from "lucide-react";
+import { ShieldAlert, Bug, Crosshair, Fish, Bot, Skull, Activity, RefreshCw, Heart, Dice1, Users, Newspaper } from "lucide-react";
 import { ThreatMatch, ThreatStats, FeedStatus, ThreatType, ThreatSource } from "@/lib/types";
 import { format, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
@@ -26,6 +26,11 @@ const threatTypeConfig: Record<ThreatType, { icon: React.ReactNode; color: strin
   ransomware: { icon: <Skull className="h-4 w-4" />, color: "bg-red-700", label: "Ransomware" },
   adware: { icon: <Activity className="h-4 w-4" />, color: "bg-yellow-500", label: "Adware" },
   tracker: { icon: <Activity className="h-4 w-4" />, color: "bg-gray-500", label: "Tracker" },
+  // Content categories
+  porn: { icon: <Heart className="h-4 w-4" />, color: "bg-pink-600", label: "Порно" },
+  gambling: { icon: <Dice1 className="h-4 w-4" />, color: "bg-emerald-600", label: "Казино" },
+  social: { icon: <Users className="h-4 w-4" />, color: "bg-blue-500", label: "Соц.сети" },
+  fakenews: { icon: <Newspaper className="h-4 w-4" />, color: "bg-amber-600", label: "Фейки" },
 };
 
 const sourceLabels: Record<ThreatSource, string> = {
@@ -34,6 +39,11 @@ const sourceLabels: Record<ThreatSource, string> = {
   threatfox: "ThreatFox",
   sslbl: "SSL Blacklist",
   stevenblack: "StevenBlack",
+  // Content category blocklists
+  "porn-blocklist": "Porn Blocklist",
+  "gambling-blocklist": "Gambling Blocklist",
+  "social-blocklist": "Social Blocklist",
+  "fakenews-blocklist": "FakeNews Blocklist",
 };
 
 interface ThreatIntelCardProps {
