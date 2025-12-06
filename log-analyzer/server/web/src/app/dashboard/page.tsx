@@ -96,7 +96,7 @@ export default function DashboardPage() {
               Recent blocked requests
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="max-h-[400px] overflow-y-auto">
             <RecentBlocks 
               matches={blacklist?.recent_matches || []} 
               loading={false}
