@@ -1,7 +1,8 @@
 "use client";
 
-import { useApi } from "@/hooks/use-api";
+import { useApi, useHourlyStats } from "@/hooks/use-api";
 import { StatsCards } from "@/components/dashboard/stats-cards";
+import { ActivityChart } from "@/components/dashboard/activity-chart";
 import { NodesTable } from "@/components/nodes/nodes-table";
 import { UsersTable } from "@/components/users/users-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DashboardPage() {
   const { stats, nodes, users, loading } = useApi();
+  const { stats: hourlyStats } = useHourlyStats(24);
 
   if (loading) {
     return (
@@ -18,6 +20,7 @@ export default function DashboardPage() {
             <Skeleton key={i} className="h-[120px]" />
           ))}
         </div>
+        <Skeleton className="h-[280px]" />
         <div className="grid gap-6 md:grid-cols-2">
           <Skeleton className="h-[300px]" />
           <Skeleton className="h-[300px]" />
@@ -40,6 +43,12 @@ export default function DashboardPage() {
       </div>
 
       <StatsCards stats={stats} />
+
+      <ActivityChart 
+        data={hourlyStats} 
+        title="Activity (Last 24 Hours)"
+        description="Requests and blacklist hits per hour"
+      />
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>

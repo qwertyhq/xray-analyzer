@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import {
   Table,
   TableBody,
@@ -11,9 +12,10 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { UserStats } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
-import { Search } from "lucide-react";
+import { Search, ExternalLink } from "lucide-react";
 
 interface UsersTableProps {
   users: UserStats[];
@@ -88,8 +90,14 @@ export function UsersTable({
         <TableBody>
           {paginatedUsers.map((user) => (
             <TableRow key={`${user.node_id}-${user.user_email}`}>
-              <TableCell className="font-medium max-w-[200px] truncate">
-                {user.user_email}
+              <TableCell className="font-medium max-w-[200px]">
+                <Link 
+                  href={`/users/${encodeURIComponent(user.user_email)}`}
+                  className="hover:underline text-primary flex items-center gap-1 truncate"
+                >
+                  {user.user_email}
+                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                </Link>
               </TableCell>
               <TableCell>
                 <Badge variant="outline">{user.node_id}</Badge>

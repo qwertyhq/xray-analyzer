@@ -148,7 +148,7 @@ func (s *Storage) UpdateNodeUniqueUsers(ctx context.Context, nodeID string) erro
 }
 
 // UpdateUserStats updates statistics for a user
-func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string, requests int, blacklistHits int, lastBlacklistDomain string) error {
+func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string, requests int, blacklistHits int, lastBlacklistDomain string, uniqueDestinations int) error {
 	now := time.Now().UTC()
 
 	var lastHit interface{}
@@ -159,15 +159,16 @@ func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string,
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO user_stats (node_id, user_email, total_requests, blacklist_hits, last_seen, last_blacklist_hit, last_blacklist_domain)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO user_stats (node_id, user_email, total_requests, blacklist_hits, unique_destinations, last_seen, last_blacklist_hit, last_blacklist_domain)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(node_id, user_email) DO UPDATE SET
 			total_requests = total_requests + excluded.total_requests,
 			blacklist_hits = blacklist_hits + excluded.blacklist_hits,
+			unique_destinations = unique_destinations + excluded.unique_destinations,
 			last_seen = excluded.last_seen,
 			last_blacklist_hit = COALESCE(excluded.last_blacklist_hit, last_blacklist_hit),
 			last_blacklist_domain = COALESCE(excluded.last_blacklist_domain, last_blacklist_domain)
-	`, nodeID, userEmail, requests, blacklistHits, now, lastHit, lastBlacklistDomain)
+	`, nodeID, userEmail, requests, blacklistHits, uniqueDestinations, now, lastHit, lastBlacklistDomain)
 	return err
 }
 
@@ -404,4 +405,132 @@ func (s *Storage) CleanupInactiveNodes(ctx context.Context, olderThan time.Durat
 // Close closes the database connection
 func (s *Storage) Close() error {
 	return s.db.Close()
+}
+
+// UpdateHourlyStats updates hourly statistics for charts
+func (s *Storage) UpdateHourlyStats(ctx context.Context, nodeID string, requests int, blacklistHits int, uniqueUsers int) error {
+	// Round to current hour
+	now := time.Now().UTC().Truncate(time.Hour)
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO hourly_stats (node_id, hour, total_requests, blacklist_hits, unique_users)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(node_id, hour) DO UPDATE SET
+			total_requests = total_requests + excluded.total_requests,
+			blacklist_hits = blacklist_hits + excluded.blacklist_hits,
+			unique_users = MAX(unique_users, excluded.unique_users)
+	`, nodeID, now, requests, blacklistHits, uniqueUsers)
+	return err
+}
+
+// GetHourlyStats gets hourly statistics for the last N hours
+func (s *Storage) GetHourlyStats(ctx context.Context, hours int) ([]models.HourlyStats, error) {
+	since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour).Truncate(time.Hour)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT hour, SUM(total_requests) as total_requests, SUM(blacklist_hits) as blacklist_hits, SUM(unique_users) as unique_users
+		FROM hourly_stats
+		WHERE hour >= ?
+		GROUP BY hour
+		ORDER BY hour ASC
+	`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []models.HourlyStats
+	for rows.Next() {
+		var s models.HourlyStats
+		if err := rows.Scan(&s.Hour, &s.TotalRequests, &s.BlacklistHits, &s.UniqueUsers); err != nil {
+			return nil, err
+		}
+		stats = append(stats, s)
+	}
+	return stats, nil
+}
+
+// GetUserDetails gets detailed stats for a specific user
+func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models.UserDetails, error) {
+	// Get basic stats across all nodes
+	user := &models.UserDetails{
+		UserEmail: userEmail,
+		Nodes:     []models.UserNodeStats{},
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT node_id, total_requests, blacklist_hits, unique_destinations, last_seen, last_blacklist_hit, last_blacklist_domain
+		FROM user_stats
+		WHERE user_email = ?
+		ORDER BY total_requests DESC
+	`, userEmail)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var ns models.UserNodeStats
+		var lastHit sql.NullTime
+		var lastDomain sql.NullString
+		if err := rows.Scan(&ns.NodeID, &ns.TotalRequests, &ns.BlacklistHits, &ns.UniqueDestinations, &ns.LastSeen, &lastHit, &lastDomain); err != nil {
+			return nil, err
+		}
+		if lastHit.Valid {
+			ns.LastBlacklistHit = lastHit.Time
+		}
+		if lastDomain.Valid {
+			ns.LastBlacklistDomain = lastDomain.String
+		}
+		user.TotalRequests += ns.TotalRequests
+		user.TotalBlacklistHits += ns.BlacklistHits
+		user.Nodes = append(user.Nodes, ns)
+	}
+
+	// Get recent blacklist matches
+	matchRows, err := s.db.QueryContext(ctx, `
+		SELECT node_id, source_ip, destination, matched_rule, timestamp
+		FROM blacklist_matches
+		WHERE user_email = ?
+		ORDER BY timestamp DESC
+		LIMIT 50
+	`, userEmail)
+	if err != nil {
+		return nil, err
+	}
+	defer matchRows.Close()
+
+	for matchRows.Next() {
+		var m models.BlacklistMatchInfo
+		if err := matchRows.Scan(&m.NodeID, &m.SourceIP, &m.Destination, &m.MatchedRule, &m.Timestamp); err != nil {
+			return nil, err
+		}
+		user.RecentMatches = append(user.RecentMatches, m)
+	}
+
+	return user, nil
+}
+
+// GetGlobalStats gets aggregated stats across all nodes
+func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, error) {
+	stats := &models.GlobalStats{}
+
+	// Total requests and blacklist hits
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(total_requests), 0), COALESCE(SUM(blacklist_hits), 0), COUNT(*)
+		FROM node_stats
+	`).Scan(&stats.TotalRequests, &stats.TotalBlacklistHits, &stats.TotalNodes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Total unique users (across all nodes)
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT user_email) FROM user_stats
+	`).Scan(&stats.TotalUniqueUsers)
+	if err != nil {
+		return nil, err
+	}
+
+	return stats, nil
 }

@@ -78,3 +78,49 @@ type BlacklistMatch struct {
 	MatchedRule string    `json:"matched_rule"`
 	Timestamp   time.Time `json:"timestamp"`
 }
+
+// HourlyStats represents hourly aggregated statistics
+type HourlyStats struct {
+	Hour          time.Time `json:"hour"`
+	TotalRequests int64     `json:"total_requests"`
+	BlacklistHits int64     `json:"blacklist_hits"`
+	UniqueUsers   int       `json:"unique_users"`
+}
+
+// UserDetails represents detailed info about a user
+type UserDetails struct {
+	UserEmail          string               `json:"user_email"`
+	TotalRequests      int64                `json:"total_requests"`
+	TotalBlacklistHits int64                `json:"total_blacklist_hits"`
+	Nodes              []UserNodeStats      `json:"nodes"`
+	RecentMatches      []BlacklistMatchInfo `json:"recent_matches"`
+}
+
+// UserNodeStats represents user stats per node
+type UserNodeStats struct {
+	NodeID              string    `json:"node_id"`
+	TotalRequests       int64     `json:"total_requests"`
+	BlacklistHits       int64     `json:"blacklist_hits"`
+	UniqueDestinations  int       `json:"unique_destinations"`
+	LastSeen            time.Time `json:"last_seen"`
+	LastBlacklistHit    time.Time `json:"last_blacklist_hit,omitempty"`
+	LastBlacklistDomain string    `json:"last_blacklist_domain,omitempty"`
+}
+
+// BlacklistMatchInfo represents a blacklist match for display
+type BlacklistMatchInfo struct {
+	NodeID      string    `json:"node_id"`
+	SourceIP    string    `json:"source_ip"`
+	Destination string    `json:"destination"`
+	MatchedRule string    `json:"matched_rule"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+// GlobalStats represents aggregated global statistics
+type GlobalStats struct {
+	TotalRequests      int64 `json:"total_requests"`
+	TotalBlacklistHits int64 `json:"total_blacklist"`
+	TotalNodes         int   `json:"nodes_total"`
+	NodesConnected     int   `json:"nodes_connected"`
+	TotalUniqueUsers   int   `json:"total_unique_users"`
+}

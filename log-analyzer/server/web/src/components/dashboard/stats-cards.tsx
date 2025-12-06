@@ -70,7 +70,9 @@ export function StatsCards({ stats }: StatsCardsProps) {
           <Users className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">—</div>
+          <div className="text-2xl font-bold">
+            {stats.total_unique_users?.toLocaleString() || 0}
+          </div>
           <p className="text-xs text-muted-foreground">
             Across all nodes
           </p>

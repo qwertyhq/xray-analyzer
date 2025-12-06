@@ -43,12 +43,19 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 	userRequests := make(map[string]int)
 	userBlacklist := make(map[string]int)
 	userLastDomain := make(map[string]string)
+	userDestinations := make(map[string]map[string]bool) // user -> set of destinations
 
 	for _, entry := range batch.Entries {
 		processed++
 
 		// Count user requests
 		userRequests[entry.UserEmail]++
+
+		// Track unique destinations per user
+		if userDestinations[entry.UserEmail] == nil {
+			userDestinations[entry.UserEmail] = make(map[string]bool)
+		}
+		userDestinations[entry.UserEmail][entry.Destination] = true
 
 		// Check blacklist
 		matchedRule := a.blacklist.Check(entry.Destination)
@@ -83,7 +90,8 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 	for user, requests := range userRequests {
 		hits := userBlacklist[user]
 		domain := userLastDomain[user]
-		if err := a.storage.UpdateUserStats(ctx, batch.NodeID, user, requests, hits, domain); err != nil {
+		uniqueDests := len(userDestinations[user])
+		if err := a.storage.UpdateUserStats(ctx, batch.NodeID, user, requests, hits, domain, uniqueDests); err != nil {
 			log.Printf("analyzer: failed to update user stats: %v", err)
 		}
 	}
@@ -91,6 +99,12 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 	// Update unique users count for this node
 	if err := a.storage.UpdateNodeUniqueUsers(ctx, batch.NodeID); err != nil {
 		log.Printf("analyzer: failed to update unique users: %v", err)
+	}
+
+	// Update hourly stats for charts
+	uniqueUsersInBatch := len(userRequests)
+	if err := a.storage.UpdateHourlyStats(ctx, batch.NodeID, processed, blacklistHits, uniqueUsersInBatch); err != nil {
+		log.Printf("analyzer: failed to update hourly stats: %v", err)
 	}
 
 	return processed, blacklistHits, nil

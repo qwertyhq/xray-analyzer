@@ -8,6 +8,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,6 +65,8 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/nodes/delete", s.handleDeleteNode)
 	mux.HandleFunc("/api/users", s.handleUsers)
 	mux.HandleFunc("/api/users/all", s.handleAllUsers)
+	mux.HandleFunc("/api/users/", s.handleUserDetails)
+	mux.HandleFunc("/api/hourly", s.handleHourlyStats)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	// Start cleanup job for inactive nodes (older than 24 hours)
@@ -230,31 +235,18 @@ func (s *Server) handleClient(client *Client) {
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	nodes, err := s.storage.GetNodeStats(ctx)
+	globalStats, err := s.storage.GetGlobalStats(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	var totalRequests, totalBlacklist int64
-	for _, n := range nodes {
-		totalRequests += n.TotalRequests
-		totalBlacklist += n.BlacklistHits
-	}
-
 	s.clientsMu.RLock()
-	connectedCount := len(s.clients)
+	globalStats.NodesConnected = len(s.clients)
 	s.clientsMu.RUnlock()
 
-	stats := map[string]interface{}{
-		"total_requests":  totalRequests,
-		"total_blacklist": totalBlacklist,
-		"nodes_total":     len(nodes),
-		"nodes_connected": connectedCount,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	json.NewEncoder(w).Encode(globalStats)
 }
 
 // handleNodes returns node statistics
@@ -319,7 +311,17 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Try query param first, then JSON body
 	nodeID := r.URL.Query().Get("node_id")
+	if nodeID == "" {
+		var body struct {
+			NodeID string `json:"node_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			nodeID = body.NodeID
+		}
+	}
+	
 	if nodeID == "" {
 		http.Error(w, "node_id required", http.StatusBadRequest)
 		return
@@ -354,4 +356,53 @@ func (s *Server) GetConnectedClients() []string {
 		nodes = append(nodes, nodeID)
 	}
 	return nodes
+}
+
+// handleUserDetails returns detailed stats for a specific user
+func (s *Server) handleUserDetails(w http.ResponseWriter, r *http.Request) {
+	// Extract user email from URL path: /api/users/{email}
+	path := r.URL.Path
+	prefix := "/api/users/"
+	if !strings.HasPrefix(path, prefix) || len(path) <= len(prefix) {
+		http.Error(w, "user email required", http.StatusBadRequest)
+		return
+	}
+	userEmail := strings.TrimPrefix(path, prefix)
+	
+	// URL decode the email
+	userEmail, err := url.QueryUnescape(userEmail)
+	if err != nil {
+		http.Error(w, "invalid user email", http.StatusBadRequest)
+		return
+	}
+
+	details, err := s.storage.GetUserDetails(r.Context(), userEmail)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(details)
+}
+
+// handleHourlyStats returns hourly statistics for charts
+func (s *Server) handleHourlyStats(w http.ResponseWriter, r *http.Request) {
+	hoursStr := r.URL.Query().Get("hours")
+	hours := 24 // default
+	if hoursStr != "" {
+		if h, err := strconv.Atoi(hoursStr); err == nil && h > 0 && h <= 168 {
+			hours = h
+		}
+	}
+
+	stats, err := s.storage.GetHourlyStats(r.Context(), hours)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
 }

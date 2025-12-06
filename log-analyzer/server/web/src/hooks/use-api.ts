@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Stats, NodeStats, UserStats } from "@/lib/types";
+import { Stats, NodeStats, UserStats, HourlyStats, UserDetails } from "@/lib/types";
 
 interface ApiState {
   stats: Stats;
@@ -16,6 +16,7 @@ const defaultStats: Stats = {
   total_blacklist: 0,
   nodes_total: 0,
   nodes_connected: 0,
+  total_unique_users: 0,
 };
 
 export function useApi(refreshInterval = 5000) {
@@ -171,4 +172,64 @@ export function useUsers(refreshInterval = 5000) {
   }, [refreshInterval]);
 
   return { users, loading };
+}
+
+export function useHourlyStats(hours = 24) {
+  const [stats, setStats] = useState<HourlyStats[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch(`/api/hourly?hours=${hours}`);
+        if (res.ok) setStats(await res.json());
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+    // Refresh hourly stats every minute
+    const interval = setInterval(fetchStats, 60000);
+    return () => clearInterval(interval);
+  }, [hours]);
+
+  return { stats, loading };
+}
+
+export function useUserDetails(userEmail: string) {
+  const [details, setDetails] = useState<UserDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchDetails = async () => {
+      if (!userEmail) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/users/${encodeURIComponent(userEmail)}`);
+        if (res.ok) {
+          setDetails(await res.json());
+          setError(null);
+        } else {
+          setError("User not found");
+        }
+      } catch {
+        setError("Failed to fetch user details");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDetails();
+    const interval = setInterval(fetchDetails, 10000);
+    return () => clearInterval(interval);
+  }, [userEmail]);
+
+  return { details, loading, error };
 }
