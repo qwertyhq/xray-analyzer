@@ -567,7 +567,7 @@ func (f *FeedLoader) loadPornBlocklist(ctx context.Context) (int, error) {
 		SourcePorn,
 		ThreatTypePorn,
 		"Adult/Porn content",
-		50,
+		75,
 	)
 }
 
@@ -579,7 +579,7 @@ func (f *FeedLoader) loadGamblingBlocklist(ctx context.Context) (int, error) {
 		SourceGambling,
 		ThreatTypeGambling,
 		"Gambling/Casino site",
-		50,
+		75,
 	)
 }
 
@@ -591,7 +591,7 @@ func (f *FeedLoader) loadSocialBlocklist(ctx context.Context) (int, error) {
 		SourceSocial,
 		ThreatTypeSocial,
 		"Social media site",
-		50,
+		75,
 	)
 }
 
@@ -603,6 +603,6 @@ func (f *FeedLoader) loadFakeNewsBlocklist(ctx context.Context) (int, error) {
 		SourceFakeNews,
 		ThreatTypeFakeNews,
 		"Fake news site",
-		50,
+		75,
 	)
 }
