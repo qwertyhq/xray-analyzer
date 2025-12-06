@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Main analyzer server
+  # Main analyzer server with Web UI
   analyzer-server:
     build:
       context: ./server
@@ -9,7 +9,10 @@ services:
     container_name: xray-log-analyzer
     restart: unless-stopped
     ports:
+      # API port (for agents WebSocket)
       - "127.0.0.1:8237:8237"
+      # Web UI port (for Caddy)
+      - "127.0.0.1:3925:3000"
     volumes:
       - analyzer-data:/app/data
       - ./server/blacklist.txt:/app/blacklist.txt:ro
@@ -23,6 +26,7 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - SUSPICIOUS_REQUEST_COUNT=${SUSPICIOUS_REQUEST_COUNT:-5}
       - SUSPICIOUS_TIME_WINDOW=${SUSPICIOUS_TIME_WINDOW:-1h}
+      - WEB_PORT=3000
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8237/health"]
       interval: 30s
@@ -32,22 +36,6 @@ services:
     networks:
       - analyzer-net
       - remnawave-network
-
-  # Web UI (optional, for future)
-  # analyzer-ui:
-  #   build:
-  #     context: ./ui
-  #     dockerfile: Dockerfile
-  #   container_name: xray-log-analyzer-ui
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - API_URL=http://analyzer-server:8080
-  #   depends_on:
-  #     - analyzer-server
-  #   networks:
-  #     - analyzer-net
 
 volumes:
   analyzer-data:
