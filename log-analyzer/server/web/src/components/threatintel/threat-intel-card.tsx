@@ -471,49 +471,6 @@ export function ThreatIntelPage() {
           </Table>
         </CardContent>
       </Card>
-
-      {/* Indicators by Type */}
-      {stats && Object.keys(stats.indicators_by_type).length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Indicators by Type</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {Object.entries(stats.indicators_by_type).map(([type, count]) => {
-                  const config = threatTypeConfig[type as ThreatType];
-                  return (
-                    <div key={type} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {config?.icon}
-                        <span className="capitalize">{config?.label || type}</span>
-                      </div>
-                      <span className="font-mono">{count.toLocaleString()}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Indicators by Source</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {Object.entries(stats.indicators_by_source).map(([source, count]) => (
-                  <div key={source} className="flex items-center justify-between">
-                    <span>{sourceLabels[source as ThreatSource] || source}</span>
-                    <span className="font-mono">{count.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   );
 }
