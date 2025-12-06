@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ShieldAlert, Bug, Crosshair, Fish, Bot, Skull, Activity, RefreshCw, Heart, Dice1, Users, Newspaper } from "lucide-react";
-import { ThreatMatch, ThreatStats, FeedStatus, ThreatType, ThreatSource } from "@/lib/types";
+import { ThreatMatch, ThreatStats, FeedStatus, ThreatType, ThreatSource, CategoryTopUsers } from "@/lib/types";
 import { format, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { useWsThreatIntel } from "@/contexts/websocket-context";
@@ -149,21 +149,24 @@ export function ThreatIntelPage() {
   const [stats, setStats] = useState<ThreatStats | null>(null);
   const [matches, setMatches] = useState<ThreatMatch[]>([]);
   const [feeds, setFeeds] = useState<FeedStatus[]>([]);
+  const [topUsers, setTopUsers] = useState<CategoryTopUsers | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
   const fetchData = async () => {
     try {
-      const [statsRes, matchesRes, feedsRes] = await Promise.all([
+      const [statsRes, matchesRes, feedsRes, topUsersRes] = await Promise.all([
         fetch("/api/threatintel/stats"),
         fetch("/api/threatintel/matches?limit=500"),
         fetch("/api/threatintel/feeds"),
+        fetch("/api/threatintel/top-users?limit=5"),
       ]);
 
       if (statsRes.ok) setStats(await statsRes.json());
       if (matchesRes.ok) setMatches((await matchesRes.json()) || []);
       if (feedsRes.ok) setFeeds((await feedsRes.json()) || []);
+      if (topUsersRes.ok) setTopUsers(await topUsersRes.json());
     } catch {
       // ignore
     } finally {
@@ -310,6 +313,59 @@ export function ThreatIntelPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Top Users by Content Category */}
+      {topUsers && (
+        <Card>
+          <CardHeader>
+            <CardTitle>🏆 Топ пользователей по категориям контента</CardTitle>
+            <CardDescription>
+              Пользователи с наибольшим количеством срабатываний по категориям
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              {(["porn", "gambling", "social", "fakenews"] as const).map((category) => {
+                const users = topUsers[category] || [];
+                const config = threatTypeConfig[category];
+                return (
+                  <div key={category} className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded ${config.color}`}>
+                        {config.icon}
+                      </div>
+                      <span className="font-semibold">{config.label}</span>
+                    </div>
+                    {users.length > 0 ? (
+                      <div className="space-y-2">
+                        {users.map((user, idx) => (
+                          <div key={user.user_email} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground w-4">{idx + 1}.</span>
+                              <Link
+                                href={`/users/${encodeURIComponent(user.user_email)}`}
+                                className="hover:underline text-primary truncate max-w-[120px]"
+                                title={user.user_email}
+                              >
+                                {user.user_email}
+                              </Link>
+                            </div>
+                            <Badge variant="secondary" className="font-mono">
+                              {user.match_count}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Нет данных</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Matches */}
       <Card>

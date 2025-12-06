@@ -180,3 +180,11 @@ export interface FeedStatus {
   status: "ok" | "error" | "updating";
   error?: string;
 }
+
+export interface CategoryUserStats {
+  user_email: string;
+  category: string;
+  match_count: number;
+}
+
+export type CategoryTopUsers = Record<string, CategoryUserStats[]>;
