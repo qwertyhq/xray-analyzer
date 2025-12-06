@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -33,10 +33,20 @@ export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps
   const prevMatchesRef = useRef<Set<string>>(new Set());
   const isFirstRender = useRef(true);
 
-  useEffect(() => {
-    if (!matches || matches.length === 0) return;
+  // Sort matches by timestamp (newest first) and limit
+  const sortedMatches = useMemo(() => {
+    if (!matches || matches.length === 0) return [];
+    
+    return [...matches]
+      .filter(m => isValidDate(m.timestamp))
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limit);
+  }, [matches, limit]);
 
-    const currentKeys = matches.slice(0, limit).map(getMatchKey);
+  useEffect(() => {
+    if (sortedMatches.length === 0) return;
+
+    const currentKeys = sortedMatches.map(getMatchKey);
     const currentSet = new Set(currentKeys);
     
     // Skip animation on first render
@@ -65,7 +75,7 @@ export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps
 
     // Always update previous keys
     prevMatchesRef.current = currentSet;
-  }, [matches, limit]);
+  }, [sortedMatches]);
 
   if (loading) {
     return (
@@ -85,8 +95,6 @@ export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps
     );
   }
 
-  const displayMatches = matches.slice(0, limit);
-
   return (
     <Table>
       <TableHeader>
@@ -98,7 +106,7 @@ export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps
         </TableRow>
       </TableHeader>
       <TableBody>
-        {displayMatches.map((match, idx) => {
+        {sortedMatches.map((match) => {
           const key = getMatchKey(match);
           const isNew = newKeys.has(key);
           

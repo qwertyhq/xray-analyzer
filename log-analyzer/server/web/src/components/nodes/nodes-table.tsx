@@ -120,12 +120,10 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
         <TableBody>
           {nodes.map((node) => {
             const changes = changedNodes.get(node.node_id)
-            const hasChanges = !!changes
             
             return (
               <TableRow 
                 key={node.node_id}
-                className={hasChanges ? 'animate-fade-in-row' : ''}
               >
                 <TableCell className="font-medium">{node.node_id}</TableCell>
                 <TableCell>
