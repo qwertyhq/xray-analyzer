@@ -57,45 +57,53 @@ export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
       </CardHeader>
       <CardContent>
         {matches.length > 0 ? (
-          <div className="space-y-3 max-h-[300px] overflow-y-auto">
-            {matches.map((match) => {
-              const config = threatTypeConfig[match.threat_type] || threatTypeConfig.malware;
-              return (
-                <div
-                  key={match.id}
-                  className="flex items-start gap-3 p-2 rounded-lg bg-muted/50 border border-destructive/20"
-                >
-                  <div className={`p-1.5 rounded ${config.color} text-white`}>
-                    {config.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="destructive" className="text-xs">
-                        {config.label}
-                      </Badge>
-                      <Badge variant="outline" className="text-xs">
-                        {match.confidence}%
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {sourceLabels[match.source]}
-                      </span>
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium">Recent Matches</span>
+              <Badge variant="secondary" className="text-xs">
+                {matches.length} latest
+              </Badge>
+            </div>
+            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+              {matches.map((match) => {
+                const config = threatTypeConfig[match.threat_type] || threatTypeConfig.malware;
+                return (
+                  <div
+                    key={match.id}
+                    className="flex items-start gap-3 p-2 rounded-lg bg-muted/50 border border-destructive/20"
+                  >
+                    <div className={`p-1.5 rounded ${config.color} text-white shrink-0`}>
+                      {config.icon}
                     </div>
-                    <p className="text-sm font-mono truncate mt-1">{match.destination}</p>
-                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                      <Link
-                        href={`/users/${encodeURIComponent(match.user_email)}`}
-                        className="hover:underline"
-                      >
-                        {match.user_email}
-                      </Link>
-                      <span>•</span>
-                      <span>{formatDistanceToNow(new Date(match.matched_at), { addSuffix: true })}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="destructive" className="text-xs">
+                          {config.label}
+                        </Badge>
+                        <Badge variant="outline" className="text-xs">
+                          {match.confidence}%
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {sourceLabels[match.source]}
+                        </span>
+                      </div>
+                      <p className="text-sm font-mono truncate mt-1">{match.destination}</p>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                        <Link
+                          href={`/users/${encodeURIComponent(match.user_email)}`}
+                          className="hover:underline"
+                        >
+                          {match.user_email}
+                        </Link>
+                        <span>•</span>
+                        <span>{formatDistanceToNow(new Date(match.matched_at), { addSuffix: true })}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          </>
         ) : (
           <div className="text-center py-8 text-muted-foreground">
             <ShieldAlert className="h-12 w-12 mx-auto mb-2 opacity-20" />

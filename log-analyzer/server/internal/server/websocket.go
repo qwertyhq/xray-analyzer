@@ -353,7 +353,7 @@ func (s *Server) broadcastToDashboards() {
 	// Threat intelligence
 	if s.threatIntel != nil {
 		tiStats := s.threatIntel.GetStats()
-		tiMatches, _ := s.storage.GetThreatMatches(ctx, time.Now().Add(-24*time.Hour), 10)
+		tiMatches, _ := s.storage.GetThreatMatches(ctx, time.Now().Add(-24*time.Hour), 20)
 		tiTopUsers, _ := s.threatIntel.GetTopUsersByAllCategories(ctx, 5)
 		threatData := map[string]interface{}{
 			"stats":    tiStats,
