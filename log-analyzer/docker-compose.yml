@@ -9,12 +9,12 @@ services:
     container_name: xray-log-analyzer
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8237:8237"
     volumes:
       - analyzer-data:/app/data
       - ./server/blacklist.txt:/app/blacklist.txt:ro
     environment:
-      - LISTEN_ADDR=:8080
+      - LISTEN_ADDR=:8237
       - DB_PATH=/app/data/analyzer.db
       - BLACKLIST_PATH=/app/blacklist.txt
       - BLACKLIST_RELOAD=5m
@@ -24,7 +24,7 @@ services:
       - SUSPICIOUS_REQUEST_COUNT=${SUSPICIOUS_REQUEST_COUNT:-5}
       - SUSPICIOUS_TIME_WINDOW=${SUSPICIOUS_TIME_WINDOW:-1h}
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8237/health"]
       interval: 30s
       timeout: 5s
       retries: 3
