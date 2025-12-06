@@ -816,8 +816,9 @@ func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*
 	hourlyRows, err := s.db.QueryContext(ctx, `
 		SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as hour, COUNT(*) as hits
 		FROM blacklist_matches
-		WHERE timestamp > ?
+		WHERE timestamp > ? AND timestamp IS NOT NULL
 		GROUP BY hour
+		HAVING hour IS NOT NULL
 		ORDER BY hour
 	`, since)
 	if err != nil {
