@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -448,8 +449,14 @@ func (f *FeedLoader) CheckIndicator(indicator string) *ThreatIndicator {
 	// For domains, also check parent domains
 	if strings.Contains(indicator, ".") && !isIP(indicator) {
 		parts := strings.Split(indicator, ".")
-		for i := 1; i < len(parts)-1; i++ {
+		// Check all possible parent domains (from most specific to least)
+		// e.g., for "www.torproject.org" check: "torproject.org", then "org" (but skip TLDs)
+		for i := 1; i < len(parts); i++ {
 			parent := strings.Join(parts[i:], ".")
+			// Skip single-part TLDs
+			if !strings.Contains(parent, ".") {
+				continue
+			}
 			if ind, ok := f.indicators[parent]; ok {
 				return ind
 			}
@@ -461,21 +468,115 @@ func (f *FeedLoader) CheckIndicator(indicator string) *ThreatIndicator {
 
 // CheckDestination checks a destination (domain:port or IP:port) against threat intel
 func (f *FeedLoader) CheckDestination(destination string) *ThreatIndicator {
-	// Extract host from destination (remove port)
+	// Extract host and port from destination
 	host := destination
+	port := 0
 	if idx := strings.LastIndex(destination, ":"); idx > 0 {
 		// Handle IPv6 addresses
 		if strings.Count(destination, ":") > 1 && !strings.HasPrefix(destination, "[") {
 			// This is IPv6 without brackets, keep as is
 		} else {
 			host = destination[:idx]
+			// Parse port
+			if p, err := strconv.Atoi(destination[idx+1:]); err == nil {
+				port = p
+			}
 		}
 	}
 
 	// Remove brackets from IPv6
 	host = strings.Trim(host, "[]")
 
-	return f.CheckIndicator(host)
+	// First check by indicator (domain/IP)
+	if ind := f.CheckIndicator(host); ind != nil {
+		return ind
+	}
+
+	// Then check by port for protocol detection
+	if port > 0 {
+		if ind := f.checkPortIndicator(host, port); ind != nil {
+			return ind
+		}
+	}
+
+	return nil
+}
+
+// checkPortIndicator detects threats based on destination port
+func (f *FeedLoader) checkPortIndicator(host string, port int) *ThreatIndicator {
+	// Tor network ports
+	// 9001 - ORPort (relay connections)
+	// 9030 - DirPort (directory services)
+	// 9050 - Default SOCKS proxy
+	// 9150 - Tor Browser SOCKS
+	// 9051 - Control port
+	torPorts := map[int]string{
+		9001: "Tor ORPort (relay connection)",
+		9030: "Tor DirPort (directory)",
+		9050: "Tor SOCKS proxy",
+		9051: "Tor control port",
+		9150: "Tor Browser SOCKS",
+		9151: "Tor Browser control",
+	}
+
+	if desc, ok := torPorts[port]; ok {
+		return &ThreatIndicator{
+			Indicator:   fmt.Sprintf("%s:%d", host, port),
+			Type:        "port",
+			ThreatType:  ThreatTypeTor,
+			Source:      SourceTor,
+			Confidence:  70, // Lower confidence - port-based detection
+			Description: desc,
+			FirstSeen:   time.Now(),
+			LastSeen:    time.Now(),
+			CreatedAt:   time.Now(),
+		}
+	}
+
+	// BitTorrent ports
+	// 6881-6889 - Classic BitTorrent range
+	// 6969 - Popular tracker port
+	// 51413 - Transmission default
+	// 6880-6999 - Extended P2P range
+	isTorrentPort := false
+	torrentDesc := ""
+
+	switch {
+	case port >= 6881 && port <= 6889:
+		isTorrentPort = true
+		torrentDesc = "BitTorrent classic port range (6881-6889)"
+	case port == 6969:
+		isTorrentPort = true
+		torrentDesc = "BitTorrent tracker port (6969)"
+	case port == 51413:
+		isTorrentPort = true
+		torrentDesc = "Transmission BitTorrent port"
+	case port >= 6890 && port <= 6999:
+		isTorrentPort = true
+		torrentDesc = "BitTorrent extended port range"
+	case port == 16881 || port == 26881:
+		isTorrentPort = true
+		torrentDesc = "Alternative BitTorrent port"
+	case port == 8999:
+		isTorrentPort = true
+		torrentDesc = "qBittorrent default port"
+	}
+
+	if isTorrentPort {
+		return &ThreatIndicator{
+			Indicator:   fmt.Sprintf("%s:%d", host, port),
+			Type:        "port",
+			ThreatType:  ThreatTypeTorrent,
+			Source:      SourceTorrent,
+			Confidence:  65, // Lower confidence - port-based detection
+			Description: torrentDesc,
+			FirstSeen:   time.Now(),
+			LastSeen:    time.Now(),
+			CreatedAt:   time.Now(),
+		}
+	}
+
+	return nil
 }
 
 // GetIndicatorCount returns the total number of loaded indicators
@@ -898,6 +999,40 @@ func (f *FeedLoader) addTorrentPatterns() {
 
 		f.indicators[indicator.Indicator] = indicator
 	}
+
+	// Add known DHT bootstrap node IPs
+	dhtBootstrapIPs := []string{
+		// BitTorrent DHT bootstrap nodes
+		"67.215.246.10",  // router.bittorrent.com
+		"82.221.103.244", // router.utorrent.com
+		"87.98.162.88",   // dht.transmissionbt.com
+		"174.129.43.152", // dht.aelitis.com (Vuze/Azureus)
+		"212.129.33.59",  // dht.libtorrent.org
+		// Additional public DHT nodes
+		"91.121.59.153",   // Public DHT node
+		"23.21.224.150",   // Public DHT node
+		"188.165.227.128", // Public DHT node
+	}
+
+	for _, ip := range dhtBootstrapIPs {
+		if _, exists := f.indicators[ip]; exists {
+			continue
+		}
+
+		indicator := &ThreatIndicator{
+			Indicator:   ip,
+			Type:        "ip",
+			ThreatType:  ThreatTypeTorrent,
+			Source:      SourceTorrent,
+			Confidence:  95, // Very high - these are known DHT bootstrap IPs
+			Description: "BitTorrent DHT bootstrap node",
+			FirstSeen:   time.Now(),
+			LastSeen:    time.Now(),
+			CreatedAt:   time.Now(),
+		}
+
+		f.indicators[indicator.Indicator] = indicator
+	}
 }
 
 // loadTorExitNodes loads Tor exit node IPs and related domains
@@ -1073,6 +1208,90 @@ func (f *FeedLoader) addTorDomains() {
 			Source:      SourceTor,
 			Confidence:  95, // Very high confidence for known Tor domains
 			Description: "Tor network related domain",
+			FirstSeen:   time.Now(),
+			LastSeen:    time.Now(),
+			CreatedAt:   time.Now(),
+		}
+
+		f.indicators[indicator.Indicator] = indicator
+	}
+
+	// Add known Tor Directory Authority IPs (hardcoded in Tor source code)
+	// These are the 9 trusted authorities that sign the Tor consensus
+	// Source: https://gitweb.torproject.org/tor.git/tree/src/app/config/auth_dirs.inc
+	torDirectoryAuthorities := []struct {
+		ip   string
+		name string
+	}{
+		// moria1 (Mike Perry)
+		{"128.31.0.39", "Tor Directory Authority (moria1)"},
+		{"128.31.0.34", "Tor Directory Authority (moria1 alt)"},
+		// tor26 (Peter Palfrader)
+		{"86.59.21.38", "Tor Directory Authority (tor26)"},
+		// dizum (Alex de Joode)
+		{"45.66.33.45", "Tor Directory Authority (dizum)"},
+		// Serge (Serge)
+		{"66.111.2.131", "Tor Directory Authority (Serge)"},
+		// gabelmoo (Sebastian Hahn)
+		{"131.188.40.189", "Tor Directory Authority (gabelmoo)"},
+		// dannenberg (Andreas Lehner)
+		{"193.23.244.244", "Tor Directory Authority (dannenberg)"},
+		// maatuska (Linus Nordberg)
+		{"171.25.193.9", "Tor Directory Authority (maatuska)"},
+		{"171.25.193.20", "Tor Directory Authority (maatuska alt)"},
+		// Faravahar (Sina Rabbani)
+		{"154.35.175.225", "Tor Directory Authority (Faravahar)"},
+		// longclaw (Riseup)
+		{"199.58.81.140", "Tor Directory Authority (longclaw)"},
+		// bastet (Tor Project)
+		{"204.13.164.118", "Tor Directory Authority (bastet)"},
+	}
+
+	for _, auth := range torDirectoryAuthorities {
+		if _, exists := f.indicators[auth.ip]; exists {
+			continue
+		}
+
+		indicator := &ThreatIndicator{
+			Indicator:   auth.ip,
+			Type:        "ip",
+			ThreatType:  ThreatTypeTor,
+			Source:      SourceTor,
+			Confidence:  99, // Extremely high - these are hardcoded in Tor
+			Description: auth.name,
+			FirstSeen:   time.Now(),
+			LastSeen:    time.Now(),
+			CreatedAt:   time.Now(),
+		}
+
+		f.indicators[indicator.Indicator] = indicator
+	}
+
+	// Add known Tor bridge authority and other infrastructure IPs
+	torInfrastructureIPs := []struct {
+		ip   string
+		name string
+	}{
+		// Bridge authority
+		{"38.229.33.83", "Tor Bridge Authority (Bifroest)"},
+		// Snowflake broker
+		{"193.187.88.42", "Tor Snowflake broker"},
+		// meek-azure fronting
+		{"13.107.21.200", "Tor meek-azure (Microsoft CDN)"},
+	}
+
+	for _, infra := range torInfrastructureIPs {
+		if _, exists := f.indicators[infra.ip]; exists {
+			continue
+		}
+
+		indicator := &ThreatIndicator{
+			Indicator:   infra.ip,
+			Type:        "ip",
+			ThreatType:  ThreatTypeTor,
+			Source:      SourceTor,
+			Confidence:  95,
+			Description: infra.name,
 			FirstSeen:   time.Now(),
 			LastSeen:    time.Now(),
 			CreatedAt:   time.Now(),
