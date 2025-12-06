@@ -311,7 +311,7 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 			MAX(last_seen) as last_seen, 
 			MAX(last_ip) as last_ip,
 			MAX(last_blacklist_hit) as last_blacklist_hit, 
-			(SELECT last_blacklist_domain FROM user_stats u2 WHERE u2.user_email = user_stats.user_email ORDER BY last_blacklist_hit DESC LIMIT 1) as last_blacklist_domain
+			MAX(last_blacklist_domain) as last_blacklist_domain
 		FROM user_stats
 		GROUP BY user_email
 		ORDER BY total_requests DESC
