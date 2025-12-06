@@ -87,10 +87,10 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
   }
 
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" />
+        <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
           Anomalies
           {anomalies.length > 0 && (
             <Badge variant="destructive" className="ml-auto">
@@ -126,8 +126,8 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
                       <Icon className="h-3 w-3" />
                     </Badge>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <p className="text-xs sm:text-sm font-medium truncate max-w-full">
                       {anomaly.message}
                     </p>
                     <div className="flex items-center gap-2 mt-1">

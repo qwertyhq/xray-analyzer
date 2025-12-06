@@ -35,19 +35,22 @@ func (s *Storage) UpdateNodeUniqueUsers(ctx context.Context, nodeID string) erro
 
 // GetNodeStats gets statistics for all nodes
 func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error) {
+	// Calculate 5 minutes ago in RFC3339 format to match stored data
+	fiveMinAgo := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT 
 			n.node_id, 
 			n.total_requests, 
 			n.blacklist_hits, 
 			n.unique_users, 
-			COALESCE((SELECT COUNT(DISTINCT user_email) FROM user_stats WHERE node_id = n.node_id AND last_seen > datetime('now', '-5 minutes')), 0) as online_users,
+			COALESCE((SELECT COUNT(DISTINCT user_email) FROM user_stats WHERE node_id = n.node_id AND last_seen > ?), 0) as online_users,
 			COALESCE(n.last_seen, '') as last_seen, 
 			COALESCE(n.last_batch_time, '') as last_batch_time, 
 			n.last_batch_count
 		FROM node_stats n
 		ORDER BY n.total_requests DESC
-	`)
+	`, fiveMinAgo)
 	if err != nil {
 		return nil, err
 	}
