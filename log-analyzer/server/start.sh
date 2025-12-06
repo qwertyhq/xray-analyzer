@@ -10,4 +10,4 @@ sleep 2
 # Start Next.js frontend on port 3925
 echo "Starting Web UI on port 3925..."
 cd /app/web
-HOSTNAME=0.0.0.0 PORT=3925 NODE_ENV=production node server.js
+HOSTNAME=0.0.0.0 PORT=3925 INTERNAL_API_URL=http://localhost:8237 NODE_ENV=production node server.js

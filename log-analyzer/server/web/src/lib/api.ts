@@ -1,13 +1,11 @@
 import { Stats, NodeStats, UserStats } from './types';
 
-// Server-side: call Go backend directly
-// Client-side: use relative URL (Caddy routes /api/* to Go)
-const API_BASE = typeof window === 'undefined' 
-  ? 'http://localhost:8237'  // Server-side
-  : '';  // Client-side (browser)
+// Server-side uses internal URL, client uses relative path
+const API_BASE = process.env.INTERNAL_API_URL || '';
 
 async function fetchAPI<T>(endpoint: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${endpoint}`, {
+  const url = `${API_BASE}${endpoint}`;
+  const res = await fetch(url, {
     cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
