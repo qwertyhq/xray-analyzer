@@ -28,6 +28,7 @@ export interface UserStats {
   blacklist_hits: number;
   unique_destinations: number;
   last_seen: string;
+  last_ip?: string;
   last_blacklist_hit?: string;
   last_blacklist_domain?: string;
 }

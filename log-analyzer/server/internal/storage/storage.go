@@ -67,6 +67,7 @@ func (s *Storage) migrate() error {
 		blacklist_hits INTEGER DEFAULT 0,
 		unique_destinations INTEGER DEFAULT 0,
 		last_seen DATETIME,
+		last_ip TEXT,
 		last_blacklist_hit DATETIME,
 		last_blacklist_domain TEXT,
 		UNIQUE(node_id, user_email)
@@ -119,7 +120,14 @@ func (s *Storage) migrate() error {
 	`
 
 	_, err := s.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migration: add last_ip column if not exists
+	s.db.Exec("ALTER TABLE user_stats ADD COLUMN last_ip TEXT")
+
+	return nil
 }
 
 // UpdateNodeStats updates statistics for a node
@@ -148,7 +156,7 @@ func (s *Storage) UpdateNodeUniqueUsers(ctx context.Context, nodeID string) erro
 }
 
 // UpdateUserStats updates statistics for a user
-func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string, requests int, blacklistHits int, lastBlacklistDomain string, uniqueDestinations int) error {
+func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string, requests int, blacklistHits int, lastBlacklistDomain string, uniqueDestinations int, lastIP string) error {
 	now := time.Now().UTC()
 
 	var lastHit interface{}
@@ -159,16 +167,17 @@ func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string,
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO user_stats (node_id, user_email, total_requests, blacklist_hits, unique_destinations, last_seen, last_blacklist_hit, last_blacklist_domain)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO user_stats (node_id, user_email, total_requests, blacklist_hits, unique_destinations, last_seen, last_ip, last_blacklist_hit, last_blacklist_domain)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(node_id, user_email) DO UPDATE SET
 			total_requests = total_requests + excluded.total_requests,
 			blacklist_hits = blacklist_hits + excluded.blacklist_hits,
 			unique_destinations = unique_destinations + excluded.unique_destinations,
 			last_seen = excluded.last_seen,
+			last_ip = COALESCE(excluded.last_ip, last_ip),
 			last_blacklist_hit = COALESCE(excluded.last_blacklist_hit, last_blacklist_hit),
 			last_blacklist_domain = COALESCE(excluded.last_blacklist_domain, last_blacklist_domain)
-	`, nodeID, userEmail, requests, blacklistHits, uniqueDestinations, now, lastHit, lastBlacklistDomain)
+	`, nodeID, userEmail, requests, blacklistHits, uniqueDestinations, now, lastIP, lastHit, lastBlacklistDomain)
 	return err
 }
 
@@ -241,7 +250,7 @@ func (s *Storage) GetUserBlacklistCount(ctx context.Context, nodeID, userEmail s
 // GetTopBlacklistUsers gets users with most blacklist hits
 func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*models.UserStats, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT node_id, user_email, total_requests, blacklist_hits, last_seen, last_blacklist_hit, last_blacklist_domain
+		SELECT node_id, user_email, total_requests, blacklist_hits, last_seen, last_ip, last_blacklist_hit, last_blacklist_domain
 		FROM user_stats
 		WHERE blacklist_hits > 0
 		ORDER BY blacklist_hits DESC
@@ -256,8 +265,8 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 	for rows.Next() {
 		u := &models.UserStats{}
 		var lastHit sql.NullTime
-		var lastDomain sql.NullString
-		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &u.LastSeen, &lastHit, &lastDomain)
+		var lastDomain, lastIP sql.NullString
+		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &u.LastSeen, &lastIP, &lastHit, &lastDomain)
 		if err != nil {
 			return nil, err
 		}
@@ -267,6 +276,9 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 		if lastDomain.Valid {
 			u.LastBlacklistDomain = lastDomain.String
 		}
+		if lastIP.Valid {
+			u.LastIP = lastIP.String
+		}
 		users = append(users, u)
 	}
 	return users, nil
@@ -275,7 +287,7 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 // GetAllUsers gets all users sorted by requests
 func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserStats, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT node_id, user_email, total_requests, blacklist_hits, last_seen, last_blacklist_hit, last_blacklist_domain
+		SELECT node_id, user_email, total_requests, blacklist_hits, last_seen, last_ip, last_blacklist_hit, last_blacklist_domain
 		FROM user_stats
 		ORDER BY total_requests DESC
 		LIMIT ?
@@ -289,8 +301,8 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 	for rows.Next() {
 		u := &models.UserStats{}
 		var lastHit sql.NullTime
-		var lastDomain sql.NullString
-		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &u.LastSeen, &lastHit, &lastDomain)
+		var lastDomain, lastIP sql.NullString
+		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &u.LastSeen, &lastIP, &lastHit, &lastDomain)
 		if err != nil {
 			return nil, err
 		}
@@ -299,6 +311,9 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 		}
 		if lastDomain.Valid {
 			u.LastBlacklistDomain = lastDomain.String
+		}
+		if lastIP.Valid {
+			u.LastIP = lastIP.String
 		}
 		users = append(users, u)
 	}

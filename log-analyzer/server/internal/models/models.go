@@ -52,6 +52,7 @@ type UserStats struct {
 	BlacklistHits       int64     `json:"blacklist_hits"`
 	UniqueDestinations  int       `json:"unique_destinations"`
 	LastSeen            time.Time `json:"last_seen"`
+	LastIP              string    `json:"last_ip,omitempty"`
 	LastBlacklistHit    time.Time `json:"last_blacklist_hit,omitempty"`
 	LastBlacklistDomain string    `json:"last_blacklist_domain,omitempty"`
 }

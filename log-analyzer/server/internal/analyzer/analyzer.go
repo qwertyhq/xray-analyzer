@@ -43,6 +43,7 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 	userRequests := make(map[string]int)
 	userBlacklist := make(map[string]int)
 	userLastDomain := make(map[string]string)
+	userLastIP := make(map[string]string)                // user -> last source IP
 	userDestinations := make(map[string]map[string]bool) // user -> set of destinations
 
 	for _, entry := range batch.Entries {
@@ -50,6 +51,11 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 
 		// Count user requests
 		userRequests[entry.UserEmail]++
+
+		// Track last IP for user
+		if entry.SourceIP != "" {
+			userLastIP[entry.UserEmail] = entry.SourceIP
+		}
 
 		// Track unique destinations per user
 		if userDestinations[entry.UserEmail] == nil {
@@ -90,8 +96,9 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 	for user, requests := range userRequests {
 		hits := userBlacklist[user]
 		domain := userLastDomain[user]
+		lastIP := userLastIP[user]
 		uniqueDests := len(userDestinations[user])
-		if err := a.storage.UpdateUserStats(ctx, batch.NodeID, user, requests, hits, domain, uniqueDests); err != nil {
+		if err := a.storage.UpdateUserStats(ctx, batch.NodeID, user, requests, hits, domain, uniqueDests, lastIP); err != nil {
 			log.Printf("analyzer: failed to update user stats: %v", err)
 		}
 	}

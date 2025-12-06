@@ -44,7 +44,8 @@ export function UsersTable({
       const lower = search.toLowerCase();
       result = result.filter(u => 
         u.user_email.toLowerCase().includes(lower) ||
-        u.node_id.toLowerCase().includes(lower)
+        u.node_id.toLowerCase().includes(lower) ||
+        (u.last_ip && u.last_ip.includes(lower))
       );
     }
     
@@ -80,6 +81,7 @@ export function UsersTable({
           <TableRow>
             <TableHead>User</TableHead>
             <TableHead>Node</TableHead>
+            <TableHead>IP</TableHead>
             <TableHead className="text-right">Requests</TableHead>
             <TableHead className="text-right">Blacklist Hits</TableHead>
             <TableHead className="text-right">Destinations</TableHead>
@@ -101,6 +103,9 @@ export function UsersTable({
               </TableCell>
               <TableCell>
                 <Badge variant="outline">{user.node_id}</Badge>
+              </TableCell>
+              <TableCell className="font-mono text-sm text-muted-foreground">
+                {user.last_ip || "—"}
               </TableCell>
               <TableCell className="text-right">
                 {user.total_requests.toLocaleString()}
@@ -130,7 +135,7 @@ export function UsersTable({
           {paginatedUsers.length === 0 && (
             <TableRow>
               <TableCell 
-                colSpan={showBlacklistOnly ? 7 : 6} 
+                colSpan={showBlacklistOnly ? 8 : 7} 
                 className="text-center text-muted-foreground"
               >
                 {showBlacklistOnly ? "No blacklist hits" : "No users found"}

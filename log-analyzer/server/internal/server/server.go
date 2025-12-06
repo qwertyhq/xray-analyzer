@@ -295,7 +295,15 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAllUsers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	users, err := s.storage.GetAllUsers(ctx, 100)
+	// Get limit from query param, default to 10000
+	limit := 10000
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	users, err := s.storage.GetAllUsers(ctx, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
