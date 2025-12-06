@@ -4,13 +4,16 @@ import "time"
 
 // Date/time formats used by SQLite
 var dateFormats = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02T15:04:05.999999999Z07:00",
+	"2006-01-02T15:04:05Z07:00",
+	"2006-01-02T15:04:05.999999999Z",
+	"2006-01-02T15:04:05Z",
 	"2006-01-02 15:04:05.999999999-07:00",
+	"2006-01-02 15:04:05.999999999+00:00",
 	"2006-01-02 15:04:05.999999999",
 	"2006-01-02 15:04:05",
-	"2006-01-02T15:04:05Z07:00",
-	"2006-01-02T15:04:05Z",
-	time.RFC3339,
-	time.RFC3339Nano,
 }
 
 // parseDateTime parses a date/time string from SQLite into time.Time

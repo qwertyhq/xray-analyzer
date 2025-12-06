@@ -9,10 +9,11 @@ import (
 
 // CreateAlert creates a new alert
 func (s *Storage) CreateAlert(ctx context.Context, alert *models.Alert) error {
+	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO alerts (type, node_id, user_email, source_ip, destination, count, message, created_at, sent)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-	`, alert.Type, alert.NodeID, alert.UserEmail, alert.SourceIP, alert.Destination, alert.Count, alert.Message, time.Now().UTC())
+	`, alert.Type, alert.NodeID, alert.UserEmail, alert.SourceIP, alert.Destination, alert.Count, alert.Message, now)
 	if err != nil {
 		return err
 	}

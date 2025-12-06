@@ -9,7 +9,7 @@ import (
 
 // UpdateHourlyStats updates hourly statistics for charts
 func (s *Storage) UpdateHourlyStats(ctx context.Context, nodeID string, requests int, blacklistHits int, uniqueUsers int) error {
-	now := time.Now().UTC().Truncate(time.Hour)
+	now := time.Now().UTC().Truncate(time.Hour).Format(time.RFC3339)
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO hourly_stats (node_id, hour, total_requests, blacklist_hits, unique_users)

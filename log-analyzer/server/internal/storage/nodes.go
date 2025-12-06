@@ -9,6 +9,7 @@ import (
 
 // UpdateNodeStats updates statistics for a node
 func (s *Storage) UpdateNodeStats(ctx context.Context, nodeID string, requests int, blacklistHits int, batchCount int) error {
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO node_stats (node_id, total_requests, blacklist_hits, last_seen, last_batch_time, last_batch_count)
 		VALUES (?, ?, ?, ?, ?, ?)
@@ -18,7 +19,7 @@ func (s *Storage) UpdateNodeStats(ctx context.Context, nodeID string, requests i
 			last_seen = excluded.last_seen,
 			last_batch_time = excluded.last_batch_time,
 			last_batch_count = excluded.last_batch_count
-	`, nodeID, requests, blacklistHits, time.Now().UTC(), time.Now().UTC(), batchCount)
+	`, nodeID, requests, blacklistHits, now, now, batchCount)
 	return err
 }
 

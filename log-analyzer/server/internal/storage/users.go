@@ -10,7 +10,7 @@ import (
 
 // UpdateUserStats updates statistics for a user
 func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string, requests int, blacklistHits int, lastBlacklistDomain string, uniqueDestinations int, lastIP string) error {
-	now := time.Now().UTC()
+	now := time.Now().UTC().Format(time.RFC3339)
 
 	var lastHit interface{}
 	if blacklistHits > 0 {
