@@ -14,7 +14,7 @@ func (s *Storage) RecordBlacklistMatch(ctx context.Context, match *models.Blackl
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO blacklist_matches (node_id, user_email, source_ip, destination, matched_rule, timestamp)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`, match.NodeID, match.UserEmail, match.SourceIP, match.Destination, match.MatchedRule, match.Timestamp)
+	`, match.NodeID, match.UserEmail, match.SourceIP, match.Destination, match.MatchedRule, match.Timestamp.UTC().Format(time.RFC3339))
 	return err
 }
 
@@ -27,10 +27,12 @@ func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*
 		HourlyStats:   []models.HourlyBlacklistStats{},
 	}
 
+	sinceStr := since.UTC().Format(time.RFC3339)
+
 	// Total hits in period
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM blacklist_matches WHERE timestamp > ?
-	`, since).Scan(&analytics.TotalHits)
+	`, sinceStr).Scan(&analytics.TotalHits)
 	if err != nil {
 		return nil, fmt.Errorf("count total hits: %w", err)
 	}
@@ -38,7 +40,7 @@ func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*
 	// Unique users
 	err = s.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT user_email) FROM blacklist_matches WHERE timestamp > ?
-	`, since).Scan(&analytics.UniqueUsers)
+	`, sinceStr).Scan(&analytics.UniqueUsers)
 	if err != nil {
 		return nil, fmt.Errorf("count unique users: %w", err)
 	}
@@ -46,35 +48,35 @@ func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*
 	// Unique domains
 	err = s.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT destination) FROM blacklist_matches WHERE timestamp > ?
-	`, since).Scan(&analytics.UniqueDomains)
+	`, sinceStr).Scan(&analytics.UniqueDomains)
 	if err != nil {
 		return nil, fmt.Errorf("count unique domains: %w", err)
 	}
 
 	// Top domains
-	if err := s.loadTopDomains(ctx, since, analytics); err != nil {
+	if err := s.loadTopDomains(ctx, sinceStr, analytics); err != nil {
 		return nil, err
 	}
 
 	// Top users
-	if err := s.loadTopUsers(ctx, since, analytics); err != nil {
+	if err := s.loadTopUsers(ctx, sinceStr, analytics); err != nil {
 		return nil, err
 	}
 
 	// Recent matches
-	if err := s.loadRecentMatches(ctx, since, analytics); err != nil {
+	if err := s.loadRecentMatches(ctx, sinceStr, analytics); err != nil {
 		return nil, err
 	}
 
 	// Hourly stats
-	if err := s.loadHourlyBlacklistStats(ctx, since, analytics); err != nil {
+	if err := s.loadHourlyBlacklistStats(ctx, sinceStr, analytics); err != nil {
 		return nil, err
 	}
 
 	return analytics, nil
 }
 
-func (s *Storage) loadTopDomains(ctx context.Context, since time.Time, analytics *models.BlacklistAnalytics) error {
+func (s *Storage) loadTopDomains(ctx context.Context, sinceStr string, analytics *models.BlacklistAnalytics) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT destination, matched_rule, COUNT(*) as hits, COUNT(DISTINCT user_email) as users
 		FROM blacklist_matches
@@ -82,7 +84,7 @@ func (s *Storage) loadTopDomains(ctx context.Context, since time.Time, analytics
 		GROUP BY destination
 		ORDER BY hits DESC
 		LIMIT 50
-	`, since)
+	`, sinceStr)
 	if err != nil {
 		return fmt.Errorf("query top domains: %w", err)
 	}
@@ -98,7 +100,7 @@ func (s *Storage) loadTopDomains(ctx context.Context, since time.Time, analytics
 	return nil
 }
 
-func (s *Storage) loadTopUsers(ctx context.Context, since time.Time, analytics *models.BlacklistAnalytics) error {
+func (s *Storage) loadTopUsers(ctx context.Context, sinceStr string, analytics *models.BlacklistAnalytics) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT 
 			bm.user_email, 
@@ -111,7 +113,7 @@ func (s *Storage) loadTopUsers(ctx context.Context, since time.Time, analytics *
 		GROUP BY bm.user_email
 		ORDER BY hits DESC
 		LIMIT 50
-	`, since)
+	`, sinceStr)
 	if err != nil {
 		return fmt.Errorf("query top users: %w", err)
 	}
@@ -135,14 +137,14 @@ func (s *Storage) loadTopUsers(ctx context.Context, since time.Time, analytics *
 	return nil
 }
 
-func (s *Storage) loadRecentMatches(ctx context.Context, since time.Time, analytics *models.BlacklistAnalytics) error {
+func (s *Storage) loadRecentMatches(ctx context.Context, sinceStr string, analytics *models.BlacklistAnalytics) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT node_id, user_email, source_ip, destination, matched_rule, COALESCE(timestamp, '') as timestamp
 		FROM blacklist_matches
 		WHERE timestamp > ?
 		ORDER BY timestamp DESC
 		LIMIT 100
-	`, since)
+	`, sinceStr)
 	if err != nil {
 		return fmt.Errorf("query recent matches: %w", err)
 	}
@@ -160,7 +162,7 @@ func (s *Storage) loadRecentMatches(ctx context.Context, since time.Time, analyt
 	return nil
 }
 
-func (s *Storage) loadHourlyBlacklistStats(ctx context.Context, since time.Time, analytics *models.BlacklistAnalytics) error {
+func (s *Storage) loadHourlyBlacklistStats(ctx context.Context, sinceStr string, analytics *models.BlacklistAnalytics) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as hour, COUNT(*) as hits
 		FROM blacklist_matches
@@ -168,7 +170,7 @@ func (s *Storage) loadHourlyBlacklistStats(ctx context.Context, since time.Time,
 		GROUP BY hour
 		HAVING hour IS NOT NULL
 		ORDER BY hour
-	`, since)
+	`, sinceStr)
 	if err != nil {
 		return fmt.Errorf("query hourly stats: %w", err)
 	}
@@ -188,13 +190,14 @@ func (s *Storage) loadHourlyBlacklistStats(ctx context.Context, since time.Time,
 
 // GetUserBlacklistDetails returns detailed blacklist info for a user
 func (s *Storage) GetUserBlacklistDetails(ctx context.Context, userEmail string, since time.Time) ([]models.BlacklistMatchInfo, error) {
+	sinceStr := since.UTC().Format(time.RFC3339)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT node_id, source_ip, destination, matched_rule, COALESCE(timestamp, '') as timestamp
 		FROM blacklist_matches
 		WHERE user_email = ? AND timestamp > ?
 		ORDER BY timestamp DESC
 		LIMIT 500
-	`, userEmail, since)
+	`, userEmail, sinceStr)
 	if err != nil {
 		return nil, err
 	}
