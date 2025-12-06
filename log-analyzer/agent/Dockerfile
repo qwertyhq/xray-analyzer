@@ -34,8 +34,8 @@ USER agent
 
 # Environment variables (can be overridden)
 ENV NODE_ID=""
-ENV LOG_FILE_PATH="/var/log/xray/access.log"
-ENV SERVER_URL="ws://main-server:8080/ws"
+ENV LOG_FILE_PATH="/var/log/remnanode/access.log"
+ENV SERVER_URL="wss://analyzer.z-hq.com/ws"
 ENV BATCH_SIZE="1000"
 ENV BATCH_TIMEOUT="5s"
 
