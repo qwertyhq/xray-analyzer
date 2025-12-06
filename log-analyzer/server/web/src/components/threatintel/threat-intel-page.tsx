@@ -42,9 +42,12 @@ export function ThreatIntelPage() {
   const loading = wsLoading && apiLoading;
 
   // Filter matches by type
+  // Content/P2P categories that go to separate tabs or are non-threat
+  const contentCategories = ["torrent", "tor", "porn", "gambling", "social", "fakenews", "tiktok", "ads", "tracking", "redirect"];
   const torrentMatches = matches.filter(m => m.threat_type === "torrent");
   const torMatches = matches.filter(m => m.threat_type === "tor");
-  const threatMatches = matches.filter(m => !["torrent", "tor", "porn", "gambling", "social", "fakenews"].includes(m.threat_type));
+  // Threat matches = everything except content categories
+  const threatMatches = matches.filter(m => !contentCategories.includes(m.threat_type));
 
   if (loading) {
     return (

@@ -22,6 +22,17 @@ const (
 	ThreatTypeTorrent ThreatType = "torrent"
 	// Anonymization
 	ThreatTypeTor ThreatType = "tor"
+	// BlockList Project categories
+	ThreatTypeAbuse    ThreatType = "abuse"
+	ThreatTypeAds      ThreatType = "ads"
+	ThreatTypeCrypto   ThreatType = "crypto"
+	ThreatTypeDrugs    ThreatType = "drugs"
+	ThreatTypeFraud    ThreatType = "fraud"
+	ThreatTypePiracy   ThreatType = "piracy"
+	ThreatTypeScam     ThreatType = "scam"
+	ThreatTypeRedirect ThreatType = "redirect"
+	ThreatTypeTikTok   ThreatType = "tiktok"
+	ThreatTypeTracking ThreatType = "tracking"
 )
 
 // ThreatSource represents the source of threat data
@@ -42,6 +53,22 @@ const (
 	SourceTorrent ThreatSource = "torrent-trackers"
 	// Anonymization sources
 	SourceTor ThreatSource = "tor-exit-nodes"
+	// BlockList Project - comprehensive category blocklists
+	SourceBlockListAbuse      ThreatSource = "blocklist-abuse"
+	SourceBlockListAds        ThreatSource = "blocklist-ads"
+	SourceBlockListCrypto     ThreatSource = "blocklist-crypto"
+	SourceBlockListDrugs      ThreatSource = "blocklist-drugs"
+	SourceBlockListFraud      ThreatSource = "blocklist-fraud"
+	SourceBlockListMalware    ThreatSource = "blocklist-malware"
+	SourceBlockListPhishing   ThreatSource = "blocklist-phishing"
+	SourceBlockListPiracy     ThreatSource = "blocklist-piracy"
+	SourceBlockListPorn       ThreatSource = "blocklist-porn"
+	SourceBlockListScam       ThreatSource = "blocklist-scam"
+	SourceBlockListRedirect   ThreatSource = "blocklist-redirect"
+	SourceBlockListTikTok     ThreatSource = "blocklist-tiktok"
+	SourceBlockListTorrent    ThreatSource = "blocklist-torrent"
+	SourceBlockListTracking   ThreatSource = "blocklist-tracking"
+	SourceBlockListRansomware ThreatSource = "blocklist-ransomware"
 )
 
 // ThreatIndicator represents an indicator of compromise (IOC)

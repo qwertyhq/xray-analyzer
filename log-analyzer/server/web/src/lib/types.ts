@@ -147,8 +147,21 @@ export interface PaginatedAlertsResponse extends PaginatedResponse<Alert> {
 export type TimeRange = "1h" | "6h" | "24h" | "7d" | "30d" | "custom";
 
 // Threat Intelligence types
-export type ThreatType = "malware" | "c2" | "phishing" | "adware" | "tracker" | "botnet" | "ransomware" | "porn" | "gambling" | "social" | "fakenews" | "torrent" | "tor";
-export type ThreatSource = "urlhaus" | "feodo" | "threatfox" | "sslbl" | "stevenblack" | "porn-blocklist" | "gambling-blocklist" | "social-blocklist" | "fakenews-blocklist" | "torrent-trackers" | "tor-exit-nodes";
+export type ThreatType = 
+  | "malware" | "c2" | "phishing" | "adware" | "tracker" | "botnet" | "ransomware" 
+  | "porn" | "gambling" | "social" | "fakenews" | "torrent" | "tor"
+  // BlockList Project categories
+  | "abuse" | "ads" | "crypto" | "drugs" | "fraud" | "piracy" | "scam" | "redirect" | "tiktok" | "tracking";
+
+export type ThreatSource = 
+  | "urlhaus" | "feodo" | "threatfox" | "sslbl" | "stevenblack" 
+  | "porn-blocklist" | "gambling-blocklist" | "social-blocklist" | "fakenews-blocklist" 
+  | "torrent-trackers" | "tor-exit-nodes"
+  // BlockList Project sources
+  | "blocklist-abuse" | "blocklist-ads" | "blocklist-crypto" | "blocklist-drugs" 
+  | "blocklist-fraud" | "blocklist-malware" | "blocklist-phishing" | "blocklist-piracy" 
+  | "blocklist-porn" | "blocklist-scam" | "blocklist-redirect" | "blocklist-tiktok" 
+  | "blocklist-torrent" | "blocklist-tracking" | "blocklist-ransomware";
 
 export interface ThreatMatch {
   id: number;
