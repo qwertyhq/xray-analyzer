@@ -36,7 +36,7 @@ func NewFeedLoader() *FeedLoader {
 // LoadAllFeeds loads all threat intelligence feeds
 func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 	var wg sync.WaitGroup
-	errChan := make(chan error, 5)
+	errChan := make(chan error, 10)
 
 	// Load feeds concurrently
 	feeds := []struct {
@@ -47,6 +47,11 @@ func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 		{SourceFeodoTracker, f.loadFeodoTracker},
 		{SourceThreatFox, f.loadThreatFox},
 		{SourceStevenBlack, f.loadStevenBlack},
+		// Content category blocklists
+		{SourcePorn, f.loadPornBlocklist},
+		{SourceGambling, f.loadGamblingBlocklist},
+		{SourceSocial, f.loadSocialBlocklist},
+		{SourceFakeNews, f.loadFakeNewsBlocklist},
 	}
 
 	for _, feed := range feeds {
@@ -482,4 +487,122 @@ func isIP(s string) bool {
 	}
 	// IPv6 check
 	return strings.Contains(s, ":")
+}
+
+// loadCategoryHosts loads a StevenBlack category-specific hosts file
+func (f *FeedLoader) loadCategoryHosts(ctx context.Context, url string, source ThreatSource, threatType ThreatType, description string, confidence int) (int, error) {
+	resp, err := f.client.Get(url)
+	if err != nil {
+		return 0, fmt.Errorf("fetch %s: %w", source, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("%s returned status %d", source, resp.StatusCode)
+	}
+
+	count := 0
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	scanner := bufio.NewScanner(resp.Body)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip comments and empty lines
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse hosts file format: 0.0.0.0 domain.com
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Skip localhost entries
+		domain := strings.ToLower(parts[1])
+		if domain == "localhost" || domain == "localhost.localdomain" ||
+			domain == "local" || strings.HasPrefix(domain, "broadcasthost") ||
+			domain == "0.0.0.0" {
+			continue
+		}
+
+		// Skip if already in indicators with higher confidence
+		if existing, ok := f.indicators[domain]; ok && existing.Confidence >= confidence {
+			continue
+		}
+
+		indicator := &ThreatIndicator{
+			Indicator:   domain,
+			Type:        "domain",
+			ThreatType:  threatType,
+			Source:      source,
+			Confidence:  confidence,
+			Description: description,
+			FirstSeen:   time.Now(),
+			LastSeen:    time.Now(),
+			CreatedAt:   time.Now(),
+		}
+
+		f.indicators[indicator.Indicator] = indicator
+		count++
+	}
+
+	if err := scanner.Err(); err != nil && err != io.EOF {
+		return count, fmt.Errorf("scan %s: %w", source, err)
+	}
+
+	return count, nil
+}
+
+// loadPornBlocklist loads porn/adult content domains
+func (f *FeedLoader) loadPornBlocklist(ctx context.Context) (int, error) {
+	return f.loadCategoryHosts(
+		ctx,
+		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/porn/clefspeare13/hosts",
+		SourcePorn,
+		ThreatTypePorn,
+		"Adult/Porn content",
+		50,
+	)
+}
+
+// loadGamblingBlocklist loads gambling/casino domains
+func (f *FeedLoader) loadGamblingBlocklist(ctx context.Context) (int, error) {
+	return f.loadCategoryHosts(
+		ctx,
+		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/gambling/hosts",
+		SourceGambling,
+		ThreatTypeGambling,
+		"Gambling/Casino site",
+		50,
+	)
+}
+
+// loadSocialBlocklist loads social media domains
+func (f *FeedLoader) loadSocialBlocklist(ctx context.Context) (int, error) {
+	return f.loadCategoryHosts(
+		ctx,
+		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/social/hosts",
+		SourceSocial,
+		ThreatTypeSocial,
+		"Social media site",
+		50,
+	)
+}
+
+// loadFakeNewsBlocklist loads fake news domains
+func (f *FeedLoader) loadFakeNewsBlocklist(ctx context.Context) (int, error) {
+	return f.loadCategoryHosts(
+		ctx,
+		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/fakenews/hosts",
+		SourceFakeNews,
+		ThreatTypeFakeNews,
+		"Fake news site",
+		50,
+	)
 }
