@@ -27,6 +27,20 @@ interface DashboardUpdate {
   data: unknown;
 }
 
+// Get WebSocket URL based on environment
+function getWebSocketUrl(): string {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const hostname = window.location.hostname;
+  
+  // In development (Next.js on port 3925), connect to Go backend on 8237
+  if (window.location.port === "3925") {
+    return `ws://${hostname}:8237/ws/dashboard`;
+  }
+  
+  // In production, use same host (nginx will proxy)
+  return `${protocol}//${window.location.host}/ws/dashboard`;
+}
+
 export function useDashboardWebSocket() {
   const [state, setState] = useState<DashboardState>({
     stats: defaultStats,
@@ -47,13 +61,7 @@ export function useDashboardWebSocket() {
       return;
     }
 
-    // Determine WebSocket URL
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    
-    // Use same host - Next.js rewrites will proxy to Go backend
-    const wsUrl = `${protocol}//${host}/ws/dashboard`;
-
+    const wsUrl = getWebSocketUrl();
     console.log("[WS] Connecting to:", wsUrl);
     
     const ws = new WebSocket(wsUrl);
