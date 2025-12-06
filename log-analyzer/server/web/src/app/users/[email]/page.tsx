@@ -17,13 +17,7 @@ import {
 } from "@/components/ui/table";
 import { ArrowLeft, User, Activity, ShieldAlert, Globe } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
-
-// Check if date is valid (not zero time or year 1)
-function isValidDate(dateStr: string): boolean {
-  if (!dateStr) return false;
-  const date = new Date(dateStr);
-  return !isNaN(date.getTime()) && date.getFullYear() > 2000;
-}
+import { isValidDate } from "@/lib/utils/date";
 
 export default function UserDetailsPage() {
   const params = useParams();

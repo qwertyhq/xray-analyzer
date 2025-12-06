@@ -6,13 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, TrendingUp, User } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
-
-// Check if date is valid (not zero time or year 1)
-function isValidDate(dateStr: string): boolean {
-  if (!dateStr) return false;
-  const date = new Date(dateStr);
-  return !isNaN(date.getTime()) && date.getFullYear() > 2000;
-}
+import { isValidDate } from "@/lib/utils/date";
 
 interface AnomaliesCardProps {
   anomalies: Anomaly[];

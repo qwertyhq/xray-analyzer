@@ -13,13 +13,7 @@ import { Button } from "@/components/ui/button";
 import { NodeStats } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { Trash2, RefreshCw } from "lucide-react";
-
-// Check if date is valid (not zero time or year 1)
-function isValidDate(dateStr: string): boolean {
-  if (!dateStr) return false;
-  const date = new Date(dateStr);
-  return !isNaN(date.getTime()) && date.getFullYear() > 2000;
-}
+import { isValidDate } from "@/lib/utils/date";
 
 interface NodesTableProps {
   nodes: NodeStats[];

@@ -13,13 +13,7 @@ import {
 } from "@/components/ui/table";
 import { BlacklistMatchInfo } from "@/lib/types";
 import { format } from "date-fns";
-
-// Check if date is valid (not zero time or year 1)
-function isValidDate(dateStr: string): boolean {
-  if (!dateStr) return false;
-  const date = new Date(dateStr);
-  return !isNaN(date.getTime()) && date.getFullYear() > 2000;
-}
+import { isValidDate } from "@/lib/utils/date";
 
 interface RecentBlocksProps {
   matches: BlacklistMatchInfo[];

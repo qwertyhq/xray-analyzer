@@ -19,13 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { TimeRange } from "@/lib/types";
-
-// Check if date is valid (not zero time or year 1)
-function isValidDate(dateStr: string): boolean {
-  if (!dateStr) return false;
-  const date = new Date(dateStr);
-  return !isNaN(date.getTime()) && date.getFullYear() > 2000;
-}
+import { isValidDate } from "@/lib/utils/date";
 import {
   AreaChart,
   Area,
