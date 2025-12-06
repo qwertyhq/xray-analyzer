@@ -118,6 +118,40 @@ type BlacklistMatchInfo struct {
 	Timestamp   time.Time `json:"timestamp"`
 }
 
+// BlacklistAnalytics represents detailed blacklist analytics
+type BlacklistAnalytics struct {
+	TotalHits     int64                  `json:"total_hits"`
+	UniqueUsers   int                    `json:"unique_users"`
+	UniqueDomains int                    `json:"unique_domains"`
+	TopDomains    []DomainStats          `json:"top_domains"`
+	TopUsers      []UserBlacklistStats   `json:"top_users"`
+	RecentMatches []BlacklistMatchInfo   `json:"recent_matches"`
+	HourlyStats   []HourlyBlacklistStats `json:"hourly_stats"`
+}
+
+// DomainStats represents stats for a blocked domain
+type DomainStats struct {
+	Domain      string `json:"domain"`
+	MatchedRule string `json:"matched_rule"`
+	HitCount    int64  `json:"hit_count"`
+	UniqueUsers int    `json:"unique_users"`
+}
+
+// UserBlacklistStats represents a user's blacklist activity
+type UserBlacklistStats struct {
+	UserEmail     string   `json:"user_email"`
+	HitCount      int64    `json:"hit_count"`
+	UniqueDomains int      `json:"unique_domains"`
+	TopDomains    []string `json:"top_domains"`
+	LastIP        string   `json:"last_ip"`
+}
+
+// HourlyBlacklistStats represents hourly blacklist stats
+type HourlyBlacklistStats struct {
+	Hour     time.Time `json:"hour"`
+	HitCount int64     `json:"hit_count"`
+}
+
 // GlobalStats represents aggregated global statistics
 type GlobalStats struct {
 	TotalRequests      int64 `json:"total_requests"`

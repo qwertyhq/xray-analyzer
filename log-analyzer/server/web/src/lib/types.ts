@@ -66,6 +66,36 @@ export interface BlacklistMatchInfo {
   timestamp: string;
 }
 
+export interface BlacklistAnalytics {
+  total_hits: number;
+  unique_users: number;
+  unique_domains: number;
+  top_domains: DomainStats[];
+  top_users: UserBlacklistStats[];
+  recent_matches: BlacklistMatchInfo[];
+  hourly_stats: HourlyBlacklistStats[];
+}
+
+export interface DomainStats {
+  domain: string;
+  matched_rule: string;
+  hit_count: number;
+  unique_users: number;
+}
+
+export interface UserBlacklistStats {
+  user_email: string;
+  hit_count: number;
+  unique_domains: number;
+  top_domains: string[];
+  last_ip: string;
+}
+
+export interface HourlyBlacklistStats {
+  hour: string;
+  hit_count: number;
+}
+
 export interface Anomaly {
   type: "blacklist_spike" | "traffic_spike" | "user_spike";
   hour: string;

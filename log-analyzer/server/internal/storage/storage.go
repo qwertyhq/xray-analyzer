@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/models"
@@ -687,4 +688,163 @@ func (s *Storage) GetRecentAlerts(ctx context.Context, limit int) ([]*models.Ale
 		alerts = append(alerts, a)
 	}
 	return alerts, nil
+}
+
+// GetBlacklistAnalytics returns detailed blacklist analytics for a time period
+func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*models.BlacklistAnalytics, error) {
+	analytics := &models.BlacklistAnalytics{}
+
+	// Total hits in period
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM blacklist_matches WHERE timestamp > ?
+	`, since).Scan(&analytics.TotalHits)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unique users
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT user_email) FROM blacklist_matches WHERE timestamp > ?
+	`, since).Scan(&analytics.UniqueUsers)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unique domains
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT destination) FROM blacklist_matches WHERE timestamp > ?
+	`, since).Scan(&analytics.UniqueDomains)
+	if err != nil {
+		return nil, err
+	}
+
+	// Top domains
+	domainRows, err := s.db.QueryContext(ctx, `
+		SELECT destination, matched_rule, COUNT(*) as hits, COUNT(DISTINCT user_email) as users
+		FROM blacklist_matches
+		WHERE timestamp > ?
+		GROUP BY destination
+		ORDER BY hits DESC
+		LIMIT 50
+	`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer domainRows.Close()
+
+	for domainRows.Next() {
+		var d models.DomainStats
+		if err := domainRows.Scan(&d.Domain, &d.MatchedRule, &d.HitCount, &d.UniqueUsers); err != nil {
+			return nil, err
+		}
+		analytics.TopDomains = append(analytics.TopDomains, d)
+	}
+
+	// Top users with their domains
+	userRows, err := s.db.QueryContext(ctx, `
+		SELECT 
+			bm.user_email, 
+			COUNT(*) as hits, 
+			COUNT(DISTINCT bm.destination) as domains,
+			GROUP_CONCAT(DISTINCT bm.destination) as top_domains,
+			COALESCE((SELECT last_ip FROM user_stats WHERE user_email = bm.user_email LIMIT 1), '') as last_ip
+		FROM blacklist_matches bm
+		WHERE bm.timestamp > ?
+		GROUP BY bm.user_email
+		ORDER BY hits DESC
+		LIMIT 50
+	`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer userRows.Close()
+
+	for userRows.Next() {
+		var u models.UserBlacklistStats
+		var topDomainsStr sql.NullString
+		if err := userRows.Scan(&u.UserEmail, &u.HitCount, &u.UniqueDomains, &topDomainsStr, &u.LastIP); err != nil {
+			return nil, err
+		}
+		if topDomainsStr.Valid && topDomainsStr.String != "" {
+			// Take first 5 domains
+			domains := strings.Split(topDomainsStr.String, ",")
+			if len(domains) > 5 {
+				domains = domains[:5]
+			}
+			u.TopDomains = domains
+		}
+		analytics.TopUsers = append(analytics.TopUsers, u)
+	}
+
+	// Recent matches
+	matchRows, err := s.db.QueryContext(ctx, `
+		SELECT node_id, user_email, source_ip, destination, matched_rule, timestamp
+		FROM blacklist_matches
+		WHERE timestamp > ?
+		ORDER BY timestamp DESC
+		LIMIT 100
+	`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer matchRows.Close()
+
+	for matchRows.Next() {
+		var m models.BlacklistMatchInfo
+		var userEmail string
+		if err := matchRows.Scan(&m.NodeID, &userEmail, &m.SourceIP, &m.Destination, &m.MatchedRule, &m.Timestamp); err != nil {
+			return nil, err
+		}
+		analytics.RecentMatches = append(analytics.RecentMatches, m)
+	}
+
+	// Hourly stats
+	hourlyRows, err := s.db.QueryContext(ctx, `
+		SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as hour, COUNT(*) as hits
+		FROM blacklist_matches
+		WHERE timestamp > ?
+		GROUP BY hour
+		ORDER BY hour
+	`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer hourlyRows.Close()
+
+	for hourlyRows.Next() {
+		var h models.HourlyBlacklistStats
+		var hourStr string
+		if err := hourlyRows.Scan(&hourStr, &h.HitCount); err != nil {
+			return nil, err
+		}
+		h.Hour, _ = time.Parse("2006-01-02 15:04:05", hourStr)
+		analytics.HourlyStats = append(analytics.HourlyStats, h)
+	}
+
+	return analytics, nil
+}
+
+// GetUserBlacklistDetails returns detailed blacklist info for a user
+func (s *Storage) GetUserBlacklistDetails(ctx context.Context, userEmail string, since time.Time) ([]models.BlacklistMatchInfo, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT node_id, source_ip, destination, matched_rule, timestamp
+		FROM blacklist_matches
+		WHERE user_email = ? AND timestamp > ?
+		ORDER BY timestamp DESC
+		LIMIT 500
+	`, userEmail, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var matches []models.BlacklistMatchInfo
+	for rows.Next() {
+		var m models.BlacklistMatchInfo
+		if err := rows.Scan(&m.NodeID, &m.SourceIP, &m.Destination, &m.MatchedRule, &m.Timestamp); err != nil {
+			return nil, err
+		}
+		matches = append(matches, m)
+	}
+	return matches, nil
 }

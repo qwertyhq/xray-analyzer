@@ -9,6 +9,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/nodes", label: "Nodes" },
   { href: "/users", label: "Users" },
+  { href: "/blacklist", label: "Blacklist" },
 ];
 
 export function Header() {

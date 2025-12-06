@@ -74,6 +74,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/anomalies", s.handleAnomalies)
 	mux.HandleFunc("/api/alerts", s.handleAlerts)
 	mux.HandleFunc("/api/blacklist/stats", s.handleBlacklistStats)
+	mux.HandleFunc("/api/blacklist/analytics", s.handleBlacklistAnalytics)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	// Start cleanup job for inactive nodes (older than 24 hours)
@@ -329,6 +330,38 @@ func (s *Server) handleBlacklistStats(w http.ResponseWriter, r *http.Request) {
 		"total":              exact + wildcards,
 		"last_remote_update": lastRemote,
 	})
+}
+
+// handleBlacklistAnalytics returns detailed blacklist analytics
+func (s *Server) handleBlacklistAnalytics(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Parse period from query param (default 24h)
+	period := 24 * time.Hour
+	if p := r.URL.Query().Get("period"); p != "" {
+		switch p {
+		case "1h":
+			period = 1 * time.Hour
+		case "6h":
+			period = 6 * time.Hour
+		case "24h":
+			period = 24 * time.Hour
+		case "7d":
+			period = 7 * 24 * time.Hour
+		case "30d":
+			period = 30 * 24 * time.Hour
+		}
+	}
+
+	since := time.Now().Add(-period)
+	analytics, err := s.storage.GetBlacklistAnalytics(ctx, since)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(analytics)
 }
 
 // handleDeleteNode deletes a node and its data
