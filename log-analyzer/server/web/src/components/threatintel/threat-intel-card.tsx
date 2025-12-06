@@ -322,71 +322,93 @@ export function ThreatIntelPage() {
 
       {/* Top Users by Content Category */}
       {topUsers && (
-        <Card>
-          <CardHeader>
-            <CardTitle>🏆 Топ пользователей по категориям контента</CardTitle>
-            <CardDescription>
-              Пользователи с наибольшим количеством срабатываний и посещённые сайты
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-              {(["porn", "gambling", "social", "fakenews"] as const).map((category) => {
-                const users = topUsers[category] || [];
-                const config = threatTypeConfig[category];
-                return (
-                  <div key={category} className="space-y-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {(["porn", "gambling", "social", "fakenews"] as const).map((category) => {
+            const users = topUsers[category] || [];
+            const config = threatTypeConfig[category];
+            const totalCount = users.reduce((sum, u) => sum + u.match_count, 0);
+            
+            return (
+              <Card key={category} className="overflow-hidden">
+                <CardHeader className={`${config.color} text-white py-3`}>
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className={`p-1.5 rounded ${config.color}`}>
-                        {config.icon}
-                      </div>
-                      <span className="font-semibold">{config.label}</span>
+                      {config.icon}
+                      <CardTitle className="text-base">{config.label}</CardTitle>
                     </div>
-                    {users.length > 0 ? (
-                      <div className="space-y-3">
-                        {users.map((user, idx) => (
-                          <div key={user.user_email} className="space-y-1">
-                            <div className="flex items-center justify-between text-sm">
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground w-4">{idx + 1}.</span>
+                    {totalCount > 0 && (
+                      <Badge variant="secondary" className="bg-white/20 text-white border-0">
+                        {totalCount}
+                      </Badge>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {users.length > 0 ? (
+                    <div className="divide-y">
+                      {users.map((user, idx) => (
+                        <div key={user.user_email} className="p-3 hover:bg-muted/50 transition-colors">
+                          <div className="flex items-start gap-3">
+                            {/* Rank badge */}
+                            <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                              idx === 0 ? "bg-yellow-500 text-white" :
+                              idx === 1 ? "bg-gray-400 text-white" :
+                              idx === 2 ? "bg-amber-700 text-white" :
+                              "bg-muted text-muted-foreground"
+                            }`}>
+                              {idx + 1}
+                            </div>
+                            
+                            <div className="flex-1 min-w-0">
+                              {/* User info */}
+                              <div className="flex items-center justify-between gap-2">
                                 <Link
                                   href={`/users/${encodeURIComponent(user.user_email)}`}
-                                  className="hover:underline text-primary truncate max-w-[120px]"
+                                  className="font-medium text-sm hover:underline text-primary truncate"
                                   title={user.user_email}
                                 >
                                   {user.user_email}
                                 </Link>
+                                <span className="flex-shrink-0 text-sm font-semibold text-muted-foreground">
+                                  {user.match_count}
+                                </span>
                               </div>
-                              <Badge variant="secondary" className="font-mono">
-                                {user.match_count}
-                              </Badge>
+                              
+                              {/* Domains */}
+                              {user.domains && user.domains.length > 0 && (
+                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                  {user.domains.slice(0, 3).map((domain) => (
+                                    <span
+                                      key={domain}
+                                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-muted text-muted-foreground truncate max-w-[140px]"
+                                      title={domain}
+                                    >
+                                      {domain}
+                                    </span>
+                                  ))}
+                                  {user.domains.length > 3 && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-muted/50 text-muted-foreground">
+                                      +{user.domains.length - 3}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                            {user.domains && user.domains.length > 0 && (
-                              <div className="ml-6 text-xs text-muted-foreground space-y-0.5">
-                                {user.domains.slice(0, 3).map((domain) => (
-                                  <div key={domain} className="truncate" title={domain}>
-                                    • {domain}
-                                  </div>
-                                ))}
-                                {user.domains.length > 3 && (
-                                  <div className="text-muted-foreground/60">
-                                    +{user.domains.length - 3} ещё...
-                                  </div>
-                                )}
-                              </div>
-                            )}
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">Нет данных</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-sm text-muted-foreground">
+                      <div className="opacity-40 mb-1">{config.icon}</div>
+                      Нет данных
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       )}
 
       {/* Recent Matches */}
