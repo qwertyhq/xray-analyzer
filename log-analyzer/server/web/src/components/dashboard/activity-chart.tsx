@@ -122,7 +122,10 @@ export function ActivityChart({
                   fontSize: "12px",
                 }}
                 labelStyle={{ color: "hsl(var(--foreground))" }}
-                labelFormatter={(_, payload) => payload?.[0]?.payload?.fullDate || ""}
+                labelFormatter={(label) => {
+                  const item = chartData.find(d => d.hour === label);
+                  return item?.fullDate || label;
+                }}
                 formatter={(value: number, name: string) => [
                   value.toLocaleString(),
                   name === "requests" ? "Requests" : "Blacklist"
