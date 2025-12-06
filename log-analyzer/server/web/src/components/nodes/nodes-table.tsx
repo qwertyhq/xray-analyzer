@@ -29,9 +29,9 @@ export function NodesTable({ nodes, onDelete, showActions = false }: NodesTableP
           <TableHead>Status</TableHead>
           <TableHead className="text-right">Requests</TableHead>
           <TableHead className="text-right">Blacklist</TableHead>
-          <TableHead className="text-right">Users</TableHead>
+          <TableHead className="text-right">Online</TableHead>
+          <TableHead className="text-right">Total Users</TableHead>
           <TableHead>Last Seen</TableHead>
-          <TableHead>Last Batch</TableHead>
           {showActions && <TableHead className="w-[100px]">Actions</TableHead>}
         </TableRow>
       </TableHeader>
@@ -56,20 +56,14 @@ export function NodesTable({ nodes, onDelete, showActions = false }: NodesTableP
                 "0"
               )}
             </TableCell>
+            <TableCell className="text-right">
+              <span className="text-green-500 font-medium">{node.online_users || 0}</span>
+            </TableCell>
             <TableCell className="text-right">{node.unique_users}</TableCell>
             <TableCell className="text-muted-foreground text-sm">
               {formatDistanceToNow(new Date(node.last_seen), {
                 addSuffix: true,
               })}
-            </TableCell>
-            <TableCell className="text-muted-foreground text-sm">
-              {node.last_batch_count > 0 ? (
-                <span>
-                  {node.last_batch_count} entries
-                </span>
-              ) : (
-                "—"
-              )}
             </TableCell>
             {showActions && (
               <TableCell>

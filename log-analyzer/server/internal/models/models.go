@@ -62,6 +62,7 @@ type NodeStats struct {
 	TotalRequests  int64     `json:"total_requests"`
 	BlacklistHits  int64     `json:"blacklist_hits"`
 	UniqueUsers    int       `json:"unique_users"`
+	OnlineUsers    int       `json:"online_users"`
 	LastSeen       time.Time `json:"last_seen"`
 	IsConnected    bool      `json:"is_connected"`
 	LastBatchTime  time.Time `json:"last_batch_time"`

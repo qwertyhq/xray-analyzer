@@ -14,6 +14,7 @@ export interface NodeStats {
   total_requests: number;
   blacklist_hits: number;
   unique_users: number;
+  online_users: number;
   last_seen: string;
   last_batch_time: string;
   last_batch_count: number;

@@ -308,9 +308,17 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 // GetNodeStats gets statistics for all nodes
 func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT node_id, total_requests, blacklist_hits, unique_users, last_seen, last_batch_time, last_batch_count
-		FROM node_stats
-		ORDER BY last_seen DESC
+		SELECT 
+			n.node_id, 
+			n.total_requests, 
+			n.blacklist_hits, 
+			n.unique_users, 
+			COALESCE((SELECT COUNT(DISTINCT user_email) FROM user_stats WHERE node_id = n.node_id AND last_seen > datetime('now', '-5 minutes')), 0) as online_users,
+			n.last_seen, 
+			n.last_batch_time, 
+			n.last_batch_count
+		FROM node_stats n
+		ORDER BY n.last_seen DESC
 	`)
 	if err != nil {
 		return nil, err
@@ -320,7 +328,7 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 	var nodes []*models.NodeStats
 	for rows.Next() {
 		n := &models.NodeStats{}
-		err := rows.Scan(&n.NodeID, &n.TotalRequests, &n.BlacklistHits, &n.UniqueUsers, &n.LastSeen, &n.LastBatchTime, &n.LastBatchCount)
+		err := rows.Scan(&n.NodeID, &n.TotalRequests, &n.BlacklistHits, &n.UniqueUsers, &n.OnlineUsers, &n.LastSeen, &n.LastBatchTime, &n.LastBatchCount)
 		if err != nil {
 			return nil, err
 		}
