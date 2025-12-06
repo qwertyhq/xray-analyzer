@@ -1,26 +1,55 @@
-import { getStats, getNodes, getAllUsers } from "@/lib/api";
+"use client";
+
+import { useEffect, useState } from "react";
+import { Stats, NodeStats, UserStats } from "@/lib/types";
 import { StatsCards } from "@/components/stats-cards";
 import { NodesTable } from "@/components/nodes-table";
 import { UsersTable } from "@/components/users-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export default function Dashboard() {
+  const [stats, setStats] = useState<Stats>({ 
+    total_requests: 0, 
+    total_blacklist: 0, 
+    nodes_total: 0, 
+    nodes_connected: 0 
+  });
+  const [nodes, setNodes] = useState<NodeStats[]>([]);
+  const [users, setUsers] = useState<UserStats[]>([]);
+  const [loading, setLoading] = useState(true);
 
-export default async function Dashboard() {
-  let stats = { total_requests: 0, total_blacklist: 0, nodes_total: 0, nodes_connected: 0 };
-  let nodes: Awaited<ReturnType<typeof getNodes>> = [];
-  let users: Awaited<ReturnType<typeof getAllUsers>> = [];
+  const fetchData = async () => {
+    try {
+      const [statsRes, nodesRes, usersRes] = await Promise.all([
+        fetch("/api/stats"),
+        fetch("/api/nodes"),
+        fetch("/api/users/all"),
+      ]);
+      
+      if (statsRes.ok) setStats(await statsRes.json());
+      if (nodesRes.ok) setNodes(await nodesRes.json());
+      if (usersRes.ok) setUsers(await usersRes.json());
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  try {
-    [stats, nodes, users] = await Promise.all([
-      getStats(),
-      getNodes(),
-      getAllUsers(),
-    ]);
-  } catch (error) {
-    console.error("Failed to fetch data:", error);
+  useEffect(() => {
+    fetchData();
+    // Auto-refresh every 5 seconds
+    const interval = setInterval(fetchData, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
   }
 
   return (
