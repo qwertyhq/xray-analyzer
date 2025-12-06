@@ -104,7 +104,6 @@ func (s *Server) Start(ctx context.Context) error {
 		server.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("server: listening on %s", s.addr)
 	return server.ListenAndServe()
 }
 
@@ -152,8 +151,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.clients[handshake.NodeID] = client
 	s.clientsMu.Unlock()
 
-	log.Printf("server: agent connected: %s", handshake.NodeID)
-
 	// Handle messages
 	s.handleClient(client)
 
@@ -162,7 +159,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	delete(s.clients, handshake.NodeID)
 	s.clientsMu.Unlock()
 
-	log.Printf("server: agent disconnected: %s", handshake.NodeID)
 }
 
 // handleClient processes messages from a client
@@ -224,9 +220,6 @@ func (s *Server) handleClient(client *Client) {
 		if err != nil {
 			log.Printf("server: process error: %v", err)
 		}
-
-		log.Printf("server: processed batch from %s: %d entries, %d blacklist hits",
-			client.NodeID, processed, blacklistHits)
 
 		// Send acknowledgement
 		ack := models.ServerMessage{
@@ -306,6 +299,7 @@ func (s *Server) handleAllUsers(w http.ResponseWriter, r *http.Request) {
 
 	users, err := s.storage.GetAllUsers(ctx, limit)
 	if err != nil {
+		log.Printf("Error getting all users: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

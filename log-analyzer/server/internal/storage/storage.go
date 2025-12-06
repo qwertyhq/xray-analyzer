@@ -304,44 +304,38 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserStats, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT 
-			GROUP_CONCAT(DISTINCT node_id) as nodes,
+			COALESCE(GROUP_CONCAT(DISTINCT node_id), '') as nodes,
 			user_email, 
-			SUM(total_requests) as total_requests, 
-			SUM(blacklist_hits) as blacklist_hits, 
+			COALESCE(SUM(total_requests), 0) as total_requests, 
+			COALESCE(SUM(blacklist_hits), 0) as blacklist_hits, 
 			MAX(last_seen) as last_seen, 
-			MAX(last_ip) as last_ip,
+			COALESCE(MAX(last_ip), '') as last_ip,
 			MAX(last_blacklist_hit) as last_blacklist_hit, 
-			MAX(last_blacklist_domain) as last_blacklist_domain
+			COALESCE(MAX(last_blacklist_domain), '') as last_blacklist_domain
 		FROM user_stats
 		GROUP BY user_email
 		ORDER BY total_requests DESC
 		LIMIT ?
 	`, limit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query users: %w", err)
 	}
 	defer rows.Close()
 
 	var users []*models.UserStats
 	for rows.Next() {
 		u := &models.UserStats{}
+		var lastSeen sql.NullTime
 		var lastHit sql.NullTime
-		var lastDomain, lastIP, nodes sql.NullString
-		err := rows.Scan(&nodes, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &u.LastSeen, &lastIP, &lastHit, &lastDomain)
+		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &lastSeen, &u.LastIP, &lastHit, &u.LastBlacklistDomain)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan user: %w", err)
 		}
-		if nodes.Valid {
-			u.NodeID = nodes.String
+		if lastSeen.Valid {
+			u.LastSeen = lastSeen.Time
 		}
 		if lastHit.Valid {
 			u.LastBlacklistHit = lastHit.Time
-		}
-		if lastDomain.Valid {
-			u.LastBlacklistDomain = lastDomain.String
-		}
-		if lastIP.Valid {
-			u.LastIP = lastIP.String
 		}
 		users = append(users, u)
 	}
@@ -392,9 +386,7 @@ func (s *Storage) CleanupOldData(ctx context.Context, olderThan time.Duration) e
 	}
 
 	affected, _ := result.RowsAffected()
-	if affected > 0 {
-		log.Printf("storage: cleaned up %d old blacklist matches", affected)
-	}
+	_ = affected // suppress unused
 
 	return nil
 }
@@ -444,10 +436,6 @@ func (s *Storage) CleanupInactiveNodes(ctx context.Context, olderThan time.Durat
 		if err := s.DeleteNode(ctx, nodeID); err != nil {
 			log.Printf("storage: failed to delete node %s: %v", nodeID, err)
 		}
-	}
-
-	if len(nodeIDs) > 0 {
-		log.Printf("storage: cleaned up %d inactive nodes", len(nodeIDs))
 	}
 
 	return len(nodeIDs), nil
