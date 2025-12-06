@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
         destination: "http://localhost:8237/ws",
       },
       {
+        source: "/ws/dashboard",
+        destination: "http://localhost:8237/ws/dashboard",
+      },
+      {
         source: "/health",
         destination: "http://localhost:8237/health",
       },

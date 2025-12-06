@@ -30,24 +30,24 @@ function getMatchKey(match: BlacklistMatchInfo): string {
 
 export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps) {
   const [newKeys, setNewKeys] = useState<Set<string>>(new Set());
-  const prevMatchesRef = useRef<string[]>([]);
+  const prevMatchesRef = useRef<Set<string>>(new Set());
   const isFirstRender = useRef(true);
 
   useEffect(() => {
     if (!matches || matches.length === 0) return;
 
     const currentKeys = matches.slice(0, limit).map(getMatchKey);
+    const currentSet = new Set(currentKeys);
     
     // Skip animation on first render
     if (isFirstRender.current) {
       isFirstRender.current = false;
-      prevMatchesRef.current = currentKeys;
+      prevMatchesRef.current = currentSet;
       return;
     }
 
     // Find new items that weren't in the previous list
-    const prevSet = new Set(prevMatchesRef.current);
-    const newItems = currentKeys.filter(key => !prevSet.has(key));
+    const newItems = currentKeys.filter(key => !prevMatchesRef.current.has(key));
 
     if (newItems.length > 0) {
       setNewKeys(new Set(newItems));
@@ -57,11 +57,14 @@ export function RecentBlocks({ matches, loading, limit = 10 }: RecentBlocksProps
         setNewKeys(new Set());
       }, 2000);
 
-      prevMatchesRef.current = currentKeys;
+      // Update previous keys
+      prevMatchesRef.current = currentSet;
+      
       return () => clearTimeout(timer);
     }
 
-    prevMatchesRef.current = currentKeys;
+    // Always update previous keys
+    prevMatchesRef.current = currentSet;
   }, [matches, limit]);
 
   if (loading) {

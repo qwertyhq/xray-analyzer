@@ -345,7 +345,7 @@ export function useAlerts(limit = 50) {
   return { alerts, loading };
 }
 
-export function useBlacklistAnalytics(period: TimeRange = "24h", refreshInterval = 30000) {
+export function useBlacklistAnalytics(period: TimeRange = "24h", refreshInterval = 5000) {
   const [analytics, setAnalytics] = useState<BlacklistAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
 

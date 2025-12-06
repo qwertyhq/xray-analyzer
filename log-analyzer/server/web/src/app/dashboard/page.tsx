@@ -1,23 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { useApi, useHourlyStatsWithRange, useAnomalies, useBlacklistAnalytics } from "@/hooks/use-api";
+import { useDashboardWebSocket } from "@/hooks/use-websocket";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { ActivityChart } from "@/components/dashboard/activity-chart";
-import { TimeRangeSelector } from "@/components/dashboard/time-range-selector";
 import { AnomaliesCard } from "@/components/dashboard/anomalies-card";
 import { RecentBlocks } from "@/components/dashboard/recent-blocks";
 import { NodesTable } from "@/components/nodes/nodes-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TimeRange } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
+import { Wifi, WifiOff } from "lucide-react";
 
 export default function DashboardPage() {
-  const [timeRange, setTimeRange] = useState<TimeRange>("24h");
-  const { stats, nodes, loading } = useApi();
-  const { stats: hourlyStats, loading: hourlyLoading } = useHourlyStatsWithRange(timeRange);
-  const { anomalies, loading: anomaliesLoading } = useAnomalies();
-  const { analytics: blacklistAnalytics, loading: blacklistLoading } = useBlacklistAnalytics(timeRange);
+  const { stats, nodes, hourly, anomalies, blacklist, connected, loading } = useDashboardWebSocket();
 
   if (loading) {
     return (
@@ -39,16 +34,6 @@ export default function DashboardPage() {
   // Filter only online nodes for dashboard
   const onlineNodes = nodes.filter(n => n.is_connected);
 
-  // Get chart title based on time range
-  const chartTitles: Record<TimeRange, string> = {
-    "1h": "Activity (Last Hour)",
-    "6h": "Activity (Last 6 Hours)",
-    "24h": "Activity (Last 24 Hours)",
-    "7d": "Activity (Last 7 Days)",
-    "30d": "Activity (Last 30 Days)",
-    "custom": "Activity",
-  };
-
   return (
     <div className="p-4 md:p-8 space-y-6">
       <div className="flex items-center justify-between">
@@ -58,7 +43,22 @@ export default function DashboardPage() {
             Real-time overview of Xray proxy activity
           </p>
         </div>
-        <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+        <Badge 
+          variant={connected ? "default" : "destructive"} 
+          className="flex items-center gap-1.5"
+        >
+          {connected ? (
+            <>
+              <Wifi className="h-3 w-3" />
+              Live
+            </>
+          ) : (
+            <>
+              <WifiOff className="h-3 w-3" />
+              Disconnected
+            </>
+          )}
+        </Badge>
       </div>
 
       <StatsCards stats={stats} />
@@ -66,14 +66,14 @@ export default function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <ActivityChart 
-            data={hourlyStats} 
-            title={chartTitles[timeRange]}
+            data={hourly} 
+            title="Activity (Last 24 Hours)"
             description="Requests and blacklist hits over time"
-            loading={hourlyLoading}
-            timeRange={timeRange}
+            loading={false}
+            timeRange="24h"
           />
         </div>
-        <AnomaliesCard anomalies={anomalies} loading={anomaliesLoading} />
+        <AnomaliesCard anomalies={anomalies} loading={false} />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -98,8 +98,8 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <RecentBlocks 
-              matches={blacklistAnalytics?.recent_matches || []} 
-              loading={blacklistLoading}
+              matches={blacklist?.recent_matches || []} 
+              loading={false}
               limit={10}
             />
           </CardContent>

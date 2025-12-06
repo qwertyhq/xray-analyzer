@@ -21,6 +21,11 @@ type Server struct {
 	blacklist *blacklist.Blacklist
 	clients   map[string]*Client
 	clientsMu sync.RWMutex
+
+	// Dashboard WebSocket clients
+	dashboardClients   map[*websocket.Conn]bool
+	dashboardClientsMu sync.RWMutex
+	broadcastChan      chan *DashboardUpdate
 }
 
 // Client represents a connected agent
@@ -32,25 +37,35 @@ type Client struct {
 	mu          sync.Mutex
 }
 
+// DashboardUpdate represents an update to send to dashboard clients
+type DashboardUpdate struct {
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
+}
+
 // New creates a new Server
 func New(addr string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl *blacklist.Blacklist) *Server {
-	return &Server{
-		addr:      addr,
-		analyzer:  analyzer,
-		storage:   storage,
-		blacklist: bl,
-		clients:   make(map[string]*Client),
+	s := &Server{
+		addr:             addr,
+		analyzer:         analyzer,
+		storage:          storage,
+		blacklist:        bl,
+		clients:          make(map[string]*Client),
+		dashboardClients: make(map[*websocket.Conn]bool),
+		broadcastChan:    make(chan *DashboardUpdate, 100),
 	}
+	return s
 }
 
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 
-	// WebSocket endpoint
+	// WebSocket endpoints
 	mux.HandleFunc("/ws", s.handleWebSocket)
+	mux.HandleFunc("/ws/dashboard", s.handleDashboardWebSocket)
 
-	// API endpoints
+	// API endpoints (keep for backwards compatibility)
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/nodes", s.handleNodes)
 	mux.HandleFunc("/api/nodes/delete", s.handleDeleteNode)
@@ -64,8 +79,10 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/blacklist/analytics", s.handleBlacklistAnalytics)
 	mux.HandleFunc("/health", s.handleHealth)
 
-	// Start cleanup job for inactive nodes
+	// Start background jobs
 	go s.startCleanupJob(ctx)
+	go s.startBroadcastLoop(ctx)
+	go s.startPeriodicBroadcast(ctx)
 
 	server := &http.Server{
 		Addr:    s.addr,
