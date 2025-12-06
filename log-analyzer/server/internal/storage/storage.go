@@ -534,3 +534,125 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 
 	return stats, nil
 }
+
+// GetHourlyStatsRange gets hourly statistics for a specific time range
+func (s *Storage) GetHourlyStatsRange(ctx context.Context, from, to time.Time) ([]models.HourlyStats, error) {
+	// Default to last 7 days if not specified
+	if from.IsZero() {
+		from = time.Now().UTC().Add(-7 * 24 * time.Hour)
+	}
+	if to.IsZero() {
+		to = time.Now().UTC()
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT hour, SUM(total_requests) as total_requests, SUM(blacklist_hits) as blacklist_hits, SUM(unique_users) as unique_users
+		FROM hourly_stats
+		WHERE hour >= ? AND hour <= ?
+		GROUP BY hour
+		ORDER BY hour ASC
+	`, from.Truncate(time.Hour), to.Truncate(time.Hour))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []models.HourlyStats
+	for rows.Next() {
+		var s models.HourlyStats
+		if err := rows.Scan(&s.Hour, &s.TotalRequests, &s.BlacklistHits, &s.UniqueUsers); err != nil {
+			return nil, err
+		}
+		stats = append(stats, s)
+	}
+	return stats, nil
+}
+
+// GetUserAnomalies finds users with unusual activity spikes
+func (s *Storage) GetUserAnomalies(ctx context.Context, limit int) ([]models.Anomaly, error) {
+	// Find users whose recent blacklist hits (last 2 hours) are significantly higher than their average
+	rows, err := s.db.QueryContext(ctx, `
+		WITH user_recent AS (
+			SELECT user_email, COUNT(*) as recent_hits
+			FROM blacklist_matches
+			WHERE timestamp > datetime('now', '-2 hours')
+			GROUP BY user_email
+		),
+		user_baseline AS (
+			SELECT user_email, COUNT(*) / 24.0 as avg_hits
+			FROM blacklist_matches
+			WHERE timestamp > datetime('now', '-24 hours')
+			AND timestamp <= datetime('now', '-2 hours')
+			GROUP BY user_email
+		)
+		SELECT r.user_email, r.recent_hits, COALESCE(b.avg_hits, 0) as avg_hits
+		FROM user_recent r
+		LEFT JOIN user_baseline b ON r.user_email = b.user_email
+		WHERE r.recent_hits > 5
+		AND (b.avg_hits IS NULL OR r.recent_hits > b.avg_hits * 3)
+		ORDER BY r.recent_hits DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var anomalies []models.Anomaly
+	for rows.Next() {
+		var userEmail string
+		var recentHits int64
+		var avgHits float64
+		if err := rows.Scan(&userEmail, &recentHits, &avgHits); err != nil {
+			return nil, err
+		}
+
+		deviation := float64(recentHits)
+		if avgHits > 0 {
+			deviation = float64(recentHits) / avgHits
+		}
+
+		anomalies = append(anomalies, models.Anomaly{
+			Type:      "user_spike",
+			Hour:      time.Now().UTC().Truncate(time.Hour),
+			UserEmail: userEmail,
+			Value:     recentHits,
+			Baseline:  int64(avgHits),
+			Deviation: deviation,
+			Message:   fmt.Sprintf("User %s: %d blacklist hits in last 2h (avg: %.1f/2h)", userEmail, recentHits, avgHits*2),
+		})
+	}
+	return anomalies, nil
+}
+
+// GetRecentAlerts gets recent alerts
+func (s *Storage) GetRecentAlerts(ctx context.Context, limit int) ([]*models.Alert, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, type, node_id, user_email, source_ip, destination, count, message, created_at, sent
+		FROM alerts
+		ORDER BY created_at DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var alerts []*models.Alert
+	for rows.Next() {
+		a := &models.Alert{}
+		var sourceIP, destination sql.NullString
+		err := rows.Scan(&a.ID, &a.Type, &a.NodeID, &a.UserEmail, &sourceIP, &destination, &a.Count, &a.Message, &a.CreatedAt, &a.Sent)
+		if err != nil {
+			return nil, err
+		}
+		if sourceIP.Valid {
+			a.SourceIP = sourceIP.String
+		}
+		if destination.Valid {
+			a.Destination = destination.String
+		}
+		alerts = append(alerts, a)
+	}
+	return alerts, nil
+}

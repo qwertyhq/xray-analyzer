@@ -124,3 +124,15 @@ type GlobalStats struct {
 	NodesConnected     int   `json:"nodes_connected"`
 	TotalUniqueUsers   int   `json:"total_unique_users"`
 }
+
+// Anomaly represents a detected anomaly
+type Anomaly struct {
+	Type      string    `json:"type"` // blacklist_spike, traffic_spike, user_spike
+	Hour      time.Time `json:"hour"`
+	UserEmail string    `json:"user_email,omitempty"`
+	NodeID    string    `json:"node_id,omitempty"`
+	Value     int64     `json:"value"`
+	Baseline  int64     `json:"baseline"`
+	Deviation float64   `json:"deviation"`
+	Message   string    `json:"message"`
+}

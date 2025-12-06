@@ -62,3 +62,29 @@ export interface BlacklistMatchInfo {
   matched_rule: string;
   timestamp: string;
 }
+
+export interface Anomaly {
+  type: "blacklist_spike" | "traffic_spike" | "user_spike";
+  hour: string;
+  user_email?: string;
+  node_id?: string;
+  value: number;
+  baseline: number;
+  deviation: number;
+  message: string;
+}
+
+export interface Alert {
+  id: number;
+  type: string;
+  node_id: string;
+  user_email: string;
+  source_ip?: string;
+  destination?: string;
+  count: number;
+  message: string;
+  created_at: string;
+  sent: boolean;
+}
+
+export type TimeRange = "1h" | "6h" | "24h" | "7d" | "30d" | "custom";

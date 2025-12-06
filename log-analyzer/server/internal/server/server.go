@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -67,6 +68,8 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/users/all", s.handleAllUsers)
 	mux.HandleFunc("/api/users/", s.handleUserDetails)
 	mux.HandleFunc("/api/hourly", s.handleHourlyStats)
+	mux.HandleFunc("/api/anomalies", s.handleAnomalies)
+	mux.HandleFunc("/api/alerts", s.handleAlerts)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	// Start cleanup job for inactive nodes (older than 24 hours)
@@ -396,7 +399,28 @@ func (s *Server) handleHourlyStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stats, err := s.storage.GetHourlyStats(r.Context(), hours)
+	// Time range filter
+	var from, to time.Time
+	if fromStr := r.URL.Query().Get("from"); fromStr != "" {
+		if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			from = t
+		}
+	}
+	if toStr := r.URL.Query().Get("to"); toStr != "" {
+		if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			to = t
+		}
+	}
+
+	var stats []models.HourlyStats
+	var err error
+
+	if !from.IsZero() || !to.IsZero() {
+		stats, err = s.storage.GetHourlyStatsRange(r.Context(), from, to)
+	} else {
+		stats, err = s.storage.GetHourlyStats(r.Context(), hours)
+	}
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -404,4 +428,87 @@ func (s *Server) handleHourlyStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// handleAnomalies detects and returns anomalies (spikes in blacklist hits)
+func (s *Server) handleAnomalies(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get hourly stats for the last 48 hours to calculate baseline
+	stats, err := s.storage.GetHourlyStats(ctx, 48)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if len(stats) < 6 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]models.Anomaly{})
+		return
+	}
+
+	// Calculate baseline (average) excluding last 2 hours
+	var sumRequests, sumBlacklist int64
+	baseline := stats[:len(stats)-2]
+	for _, s := range baseline {
+		sumRequests += s.TotalRequests
+		sumBlacklist += s.BlacklistHits
+	}
+	avgRequests := float64(sumRequests) / float64(len(baseline))
+	avgBlacklist := float64(sumBlacklist) / float64(len(baseline))
+
+	// Detect anomalies in recent hours (2x or more than average)
+	var anomalies []models.Anomaly
+	recent := stats[len(stats)-2:]
+	for _, s := range recent {
+		if avgBlacklist > 0 && float64(s.BlacklistHits) > avgBlacklist*2 {
+			anomalies = append(anomalies, models.Anomaly{
+				Type:      "blacklist_spike",
+				Hour:      s.Hour,
+				Value:     s.BlacklistHits,
+				Baseline:  int64(avgBlacklist),
+				Deviation: float64(s.BlacklistHits) / avgBlacklist,
+				Message:   fmt.Sprintf("Blacklist hits spike: %d (avg: %.0f)", s.BlacklistHits, avgBlacklist),
+			})
+		}
+		if avgRequests > 0 && float64(s.TotalRequests) > avgRequests*3 {
+			anomalies = append(anomalies, models.Anomaly{
+				Type:      "traffic_spike",
+				Hour:      s.Hour,
+				Value:     s.TotalRequests,
+				Baseline:  int64(avgRequests),
+				Deviation: float64(s.TotalRequests) / avgRequests,
+				Message:   fmt.Sprintf("Traffic spike: %d (avg: %.0f)", s.TotalRequests, avgRequests),
+			})
+		}
+	}
+
+	// Also check for users with sudden spikes
+	userAnomalies, _ := s.storage.GetUserAnomalies(ctx, 5) // Top 5 users with spikes
+	anomalies = append(anomalies, userAnomalies...)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(anomalies)
+}
+
+// handleAlerts returns recent alerts
+func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
+			limit = l
+		}
+	}
+
+	alerts, err := s.storage.GetRecentAlerts(ctx, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(alerts)
 }

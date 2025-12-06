@@ -3,18 +3,21 @@
 import { useMemo } from "react";
 import { HourlyStats } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 
 interface ActivityChartProps {
   data: HourlyStats[];
   title?: string;
   description?: string;
+  loading?: boolean;
 }
 
 export function ActivityChart({ 
   data, 
   title = "Activity",
-  description = "Requests over time"
+  description = "Requests over time",
+  loading = false,
 }: ActivityChartProps) {
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -28,6 +31,7 @@ export function ActivityChart({
 
     return data.map(d => ({
       hour: format(new Date(d.hour), "HH:mm"),
+      date: format(new Date(d.hour), "MMM d"),
       requests: d.total_requests,
       blacklist: d.blacklist_hits,
     }));
@@ -37,6 +41,20 @@ export function ActivityChart({
     if (chartData.length === 0) return 100;
     return Math.max(...chartData.map(d => d.requests), 100);
   }, [chartData]);
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-[200px] w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (chartData.length === 0) {
     return (

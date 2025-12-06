@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Stats, NodeStats, UserStats, HourlyStats, UserDetails } from "@/lib/types";
+import { Stats, NodeStats, UserStats, HourlyStats, UserDetails, Anomaly, Alert, TimeRange } from "@/lib/types";
 
 interface ApiState {
   stats: Stats;
@@ -232,4 +232,108 @@ export function useUserDetails(userEmail: string) {
   }, [userEmail]);
 
   return { details, loading, error };
+}
+
+// Helper to convert TimeRange to hours or date range
+function getTimeRangeParams(range: TimeRange): { hours?: number; from?: string; to?: string } {
+  switch (range) {
+    case "1h":
+      return { hours: 1 };
+    case "6h":
+      return { hours: 6 };
+    case "24h":
+      return { hours: 24 };
+    case "7d":
+      return { hours: 168 };
+    case "30d":
+      const from = new Date();
+      from.setDate(from.getDate() - 30);
+      return { from: from.toISOString(), to: new Date().toISOString() };
+    default:
+      return { hours: 24 };
+  }
+}
+
+export function useHourlyStatsWithRange(range: TimeRange = "24h") {
+  const [stats, setStats] = useState<HourlyStats[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const params = getTimeRangeParams(range);
+        const searchParams = new URLSearchParams();
+        if (params.hours) searchParams.set("hours", params.hours.toString());
+        if (params.from) searchParams.set("from", params.from);
+        if (params.to) searchParams.set("to", params.to);
+        
+        const res = await fetch(`/api/hourly?${searchParams.toString()}`);
+        if (res.ok) setStats(await res.json());
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+    const interval = setInterval(fetchStats, 60000);
+    return () => clearInterval(interval);
+  }, [range]);
+
+  return { stats, loading };
+}
+
+export function useAnomalies(refreshInterval = 30000) {
+  const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAnomalies = async () => {
+      try {
+        const res = await fetch("/api/anomalies");
+        if (res.ok) {
+          const data = await res.json();
+          setAnomalies(data || []);
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAnomalies();
+    const interval = setInterval(fetchAnomalies, refreshInterval);
+    return () => clearInterval(interval);
+  }, [refreshInterval]);
+
+  return { anomalies, loading };
+}
+
+export function useAlerts(limit = 50) {
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        const res = await fetch(`/api/alerts?limit=${limit}`);
+        if (res.ok) {
+          const data = await res.json();
+          setAlerts(data || []);
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 30000);
+    return () => clearInterval(interval);
+  }, [limit]);
+
+  return { alerts, loading };
 }
