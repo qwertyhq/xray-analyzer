@@ -28,11 +28,11 @@ func New(filePath string, entryCh chan *models.LogEntry) *Tailer {
 // Start begins tailing the log file
 func (t *Tailer) Start(ctx context.Context) error {
 	cfg := tail.Config{
-		Follow:    true,           // Follow file like tail -f
-		ReOpen:    true,           // Reopen file if rotated (logrotate support)
-		MustExist: false,          // Don't fail if file doesn't exist yet
-		Poll:      false,          // Use inotify instead of polling
-		Location:  &tail.SeekInfo{ // Start from end of file
+		Follow:    true,  // Follow file like tail -f
+		ReOpen:    true,  // Reopen file if rotated (logrotate support)
+		MustExist: false, // Don't fail if file doesn't exist yet
+		Poll:      false, // Use inotify instead of polling
+		Location: &tail.SeekInfo{ // Start from end of file
 			Offset: 0,
 			Whence: 2, // SEEK_END
 		},

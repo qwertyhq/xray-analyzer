@@ -10,6 +10,7 @@ services:
       dockerfile: Dockerfile
     container_name: xray-log-agent
     restart: unless-stopped
+    user: root
     volumes:
       # Монтируем директорию с логами Remnanode
       - ${LOG_HOST_PATH:-/var/log/remnanode}:/var/log/remnanode:ro
