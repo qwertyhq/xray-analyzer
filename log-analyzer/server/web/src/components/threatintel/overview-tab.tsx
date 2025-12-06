@@ -126,14 +126,14 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches }: OverviewT
 
       {/* Top Users by Content Category */}
       {topUsers && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {(["porn", "gambling", "social", "fakenews"] as const).map((category) => {
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {(["porn", "gambling", "social", "fakenews", "torrent", "tor"] as const).map((category) => {
             const users = topUsers[category] || [];
             const config = threatTypeConfig[category];
             const totalCount = users.reduce((sum, u) => sum + u.match_count, 0);
             
             return (
-              <Card key={category}>
+              <Card key={category} className="overflow-hidden">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">

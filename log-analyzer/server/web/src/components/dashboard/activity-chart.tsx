@@ -78,13 +78,13 @@ export function ActivityChart({
   }
 
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <CardTitle className="text-sm sm:text-base">{title}</CardTitle>
+        <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="h-[300px] w-full">
+      <CardContent className="p-2 sm:p-6">
+        <div className="h-[250px] sm:h-[300px] w-full min-w-0">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={chartData}

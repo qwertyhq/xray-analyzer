@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Activity, ShieldAlert, LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
@@ -58,6 +59,7 @@ export function Header() {
           <span className="text-xs text-muted-foreground hidden lg:block">
             analyzer.example.com
           </span>
+          <ThemeToggle />
           {isAuthenticated && (
             <Button
               variant="ghost"

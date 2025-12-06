@@ -221,32 +221,34 @@ export default function BlacklistPage() {
 
       {/* Tabs for different views */}
       <Tabs defaultValue="domains" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="domains">
-            Top Domains
-            {analytics.top_domains?.length > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {analytics.top_domains.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="users">
-            Top Users
-            {analytics.top_users?.length > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {analytics.top_users.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="recent">
-            Recent Matches
-            {analytics.recent_matches?.length > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {analytics.recent_matches.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <TabsList className="w-max md:w-auto">
+            <TabsTrigger value="domains" className="text-xs sm:text-sm whitespace-nowrap">
+              Top Domains
+              {analytics.top_domains?.length > 0 && (
+                <Badge variant="secondary" className="ml-1 sm:ml-2">
+                  {analytics.top_domains.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="users" className="text-xs sm:text-sm whitespace-nowrap">
+              Top Users
+              {analytics.top_users?.length > 0 && (
+                <Badge variant="secondary" className="ml-1 sm:ml-2">
+                  {analytics.top_users.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="recent" className="text-xs sm:text-sm whitespace-nowrap">
+              Recent Matches
+              {analytics.recent_matches?.length > 0 && (
+                <Badge variant="secondary" className="ml-1 sm:ml-2">
+                  {analytics.recent_matches.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Top Domains Tab */}
         <TabsContent value="domains">

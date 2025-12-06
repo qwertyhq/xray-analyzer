@@ -18,9 +18,9 @@ export function UserList({ users }: UserListProps) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 overflow-hidden">
       {users.map((user, idx) => (
-        <div key={user.user_email} className="flex items-start gap-2.5">
+        <div key={user.user_email} className="flex items-start gap-2.5 overflow-hidden">
           <span className={`text-sm font-medium w-4 ${
             idx === 0 ? "text-yellow-500" :
             idx === 1 ? "text-gray-400" :
@@ -45,7 +45,7 @@ export function UserList({ users }: UserListProps) {
             </div>
             
             {user.domains && user.domains.length > 0 && (
-              <div className="mt-1 text-xs text-muted-foreground truncate" title={user.domains.join(", ")}>
+              <div className="mt-1 text-xs text-muted-foreground truncate max-w-full overflow-hidden" title={user.domains.join(", ")}>
                 {user.domains.slice(0, 2).join(", ")}
                 {user.domains.length > 2 && ` +${user.domains.length - 2}`}
               </div>
