@@ -77,78 +77,82 @@ export function UsersTable({
         </div>
       )}
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>User</TableHead>
-            <TableHead>Node</TableHead>
-            <TableHead>IP</TableHead>
-            <TableHead className="text-right">Requests</TableHead>
-            <TableHead className="text-right">Blacklist Hits</TableHead>
-            <TableHead className="text-right">Destinations</TableHead>
-            <TableHead>Last Seen</TableHead>
-            <TableHead>Last Blocked Domain</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {paginatedUsers.map((user) => (
-            <TableRow key={`${user.node_id}-${user.user_email}`}>
-              <TableCell className="font-medium max-w-[200px]">
-                <Link 
-                  href={`/users/${encodeURIComponent(user.user_email)}`}
-                  className="hover:underline text-primary flex items-center gap-1 truncate"
-                >
-                  {user.user_email}
-                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                </Link>
-              </TableCell>
-              <TableCell>
-                <Badge variant="outline">{user.node_id}</Badge>
-              </TableCell>
-              <TableCell className="font-mono text-sm text-muted-foreground">
-                {user.last_ip || "—"}
-              </TableCell>
-              <TableCell className="text-right">
-                {user.total_requests.toLocaleString()}
-              </TableCell>
-              <TableCell className="text-right">
-                {user.blacklist_hits > 0 ? (
-                  <Badge variant="destructive">{user.blacklist_hits}</Badge>
-                ) : (
-                  <span className="text-muted-foreground">0</span>
-                )}
-              </TableCell>
-              <TableCell className="text-right">
-                {user.unique_destinations}
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sm">
-                {isValidDate(user.last_seen) 
-                  ? formatDistanceToNow(new Date(user.last_seen), { addSuffix: true })
-                  : "—"
-                }
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
-                {user.last_blacklist_domain || "—"}
-              </TableCell>
-            </TableRow>
-          ))}
-          {paginatedUsers.length === 0 && (
-            <TableRow>
-              <TableCell 
-                colSpan={8} 
-                className="text-center text-muted-foreground"
-              >
-                {showBlacklistOnly ? "No blacklist hits" : "No users found"}
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+      <div className="overflow-x-auto -mx-4 sm:mx-0">
+        <div className="inline-block min-w-full align-middle px-4 sm:px-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="whitespace-nowrap">User</TableHead>
+                <TableHead className="whitespace-nowrap hidden sm:table-cell">Node</TableHead>
+                <TableHead className="whitespace-nowrap hidden lg:table-cell">IP</TableHead>
+                <TableHead className="text-right whitespace-nowrap hidden md:table-cell">Requests</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Blacklist</TableHead>
+                <TableHead className="text-right whitespace-nowrap hidden lg:table-cell">Destinations</TableHead>
+                <TableHead className="whitespace-nowrap hidden md:table-cell">Last Seen</TableHead>
+                <TableHead className="whitespace-nowrap hidden xl:table-cell">Last Blocked</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginatedUsers.map((user) => (
+                <TableRow key={`${user.node_id}-${user.user_email}`}>
+                  <TableCell className="font-medium max-w-[150px] sm:max-w-[200px]">
+                    <Link 
+                      href={`/users/${encodeURIComponent(user.user_email)}`}
+                      className="hover:underline text-primary flex items-center gap-1 truncate"
+                    >
+                      <span className="truncate">{user.user_email}</span>
+                      <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                    </Link>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    <Badge variant="outline" className="whitespace-nowrap">{user.node_id}</Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-sm text-muted-foreground hidden lg:table-cell">
+                    {user.last_ip || "—"}
+                  </TableCell>
+                  <TableCell className="text-right hidden md:table-cell">
+                    {user.total_requests.toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {user.blacklist_hits > 0 ? (
+                      <Badge variant="destructive">{user.blacklist_hits}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">0</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right hidden lg:table-cell">
+                    {user.unique_destinations}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm hidden md:table-cell whitespace-nowrap">
+                    {isValidDate(user.last_seen) 
+                      ? formatDistanceToNow(new Date(user.last_seen), { addSuffix: true })
+                      : "—"
+                    }
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate hidden xl:table-cell">
+                    {user.last_blacklist_domain || "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {paginatedUsers.length === 0 && (
+                <TableRow>
+                  <TableCell 
+                    colSpan={8} 
+                    className="text-center text-muted-foreground"
+                  >
+                    {showBlacklistOnly ? "No blacklist hits" : "No users found"}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className="text-sm text-muted-foreground">
-            Showing {page * pageSize + 1}-{Math.min((page + 1) * pageSize, filteredUsers.length)} of {filteredUsers.length}
+            {page * pageSize + 1}-{Math.min((page + 1) * pageSize, filteredUsers.length)} из {filteredUsers.length}
           </p>
           <div className="flex gap-2">
             <button
@@ -156,14 +160,14 @@ export function UsersTable({
               disabled={page === 0}
               className="px-3 py-1 text-sm border rounded disabled:opacity-50"
             >
-              Previous
+              Назад
             </button>
             <button
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={page >= totalPages - 1}
               className="px-3 py-1 text-sm border rounded disabled:opacity-50"
             >
-              Next
+              Далее
             </button>
           </div>
         </div>

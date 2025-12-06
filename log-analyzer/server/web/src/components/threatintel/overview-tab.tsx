@@ -80,21 +80,21 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches }: OverviewT
           <CardTitle>Feed Status</CardTitle>
           <CardDescription>Status of threat intelligence data sources</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Source</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Indicators</TableHead>
-                <TableHead>Last Update</TableHead>
-                <TableHead>Next Update</TableHead>
+                <TableHead className="whitespace-nowrap">Source</TableHead>
+                <TableHead className="whitespace-nowrap">Status</TableHead>
+                <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Indicators</TableHead>
+                <TableHead className="whitespace-nowrap hidden md:table-cell">Last Update</TableHead>
+                <TableHead className="whitespace-nowrap hidden lg:table-cell">Next Update</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {feeds.map((feed) => (
                 <TableRow key={feed.source}>
-                  <TableCell className="font-medium">
+                  <TableCell className="font-medium text-xs sm:text-sm">
                     {sourceLabels[feed.source] || feed.source}
                   </TableCell>
                   <TableCell>
@@ -104,15 +104,15 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches }: OverviewT
                       {feed.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right hidden sm:table-cell">
                     {feed.indicators.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-muted-foreground hidden md:table-cell">
                     {feed.last_update
                       ? formatDistanceToNow(new Date(feed.last_update), { addSuffix: true })
                       : "—"}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-muted-foreground hidden lg:table-cell">
                     {feed.next_update
                       ? formatDistanceToNow(new Date(feed.next_update), { addSuffix: true })
                       : "—"}

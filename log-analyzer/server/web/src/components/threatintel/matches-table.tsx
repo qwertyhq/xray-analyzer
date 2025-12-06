@@ -31,44 +31,44 @@ export function MatchesTable({ matches, title, description }: MatchesTableProps)
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
+            <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
+            <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
           </div>
           {totalPages > 1 && (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-3 py-1 text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-2 sm:px-3 py-1 text-xs sm:text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Prev
+                Назад
               </button>
-              <span className="text-sm text-muted-foreground">
-                Page {page} of {totalPages}
+              <span className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
+                {page} / {totalPages}
               </span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="px-3 py-1 text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-2 sm:px-3 py-1 text-xs sm:text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Next
+                Далее
               </button>
             </div>
           )}
         </div>
       </CardHeader>
-      <CardContent className="max-h-[500px] overflow-y-auto">
+      <CardContent className="max-h-[500px] overflow-y-auto overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Time</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>User</TableHead>
-              <TableHead>Destination</TableHead>
-              <TableHead>Source</TableHead>
-              <TableHead className="text-right">Confidence</TableHead>
+              <TableHead className="whitespace-nowrap hidden sm:table-cell">Time</TableHead>
+              <TableHead className="whitespace-nowrap">Type</TableHead>
+              <TableHead className="whitespace-nowrap">User</TableHead>
+              <TableHead className="whitespace-nowrap hidden md:table-cell">Destination</TableHead>
+              <TableHead className="whitespace-nowrap hidden lg:table-cell">Source</TableHead>
+              <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Conf</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -76,29 +76,29 @@ export function MatchesTable({ matches, title, description }: MatchesTableProps)
               const config = threatTypeConfig[match.threat_type] || threatTypeConfig.malware;
               return (
                 <TableRow key={match.id}>
-                  <TableCell className="text-muted-foreground whitespace-nowrap">
-                    {format(new Date(match.matched_at), "MMM d, HH:mm")}
+                  <TableCell className="text-muted-foreground whitespace-nowrap hidden sm:table-cell">
+                    {format(new Date(match.matched_at), "HH:mm")}
                   </TableCell>
                   <TableCell>
-                    <Badge className={`${config.color} text-white`}>
+                    <Badge className={`${config.color} text-white text-xs`}>
                       {config.label}
                     </Badge>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-w-[100px] sm:max-w-none">
                     <Link
                       href={`/users/${encodeURIComponent(match.user_email)}`}
-                      className="hover:underline text-primary"
+                      className="hover:underline text-primary truncate block"
                     >
                       {match.user_email}
                     </Link>
                   </TableCell>
-                  <TableCell className="font-mono text-sm max-w-[250px] truncate">
+                  <TableCell className="font-mono text-xs sm:text-sm max-w-[200px] truncate hidden md:table-cell">
                     {match.destination}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
+                  <TableCell className="text-muted-foreground text-sm hidden lg:table-cell">
                     {sourceLabels[match.source] || match.source}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right hidden sm:table-cell">
                     <Badge
                       variant={match.confidence >= 80 ? "destructive" : "secondary"}
                     >

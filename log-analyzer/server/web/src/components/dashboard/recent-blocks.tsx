@@ -57,45 +57,47 @@ export function RecentBlocks({ matches, loading, limit = 12 }: RecentBlocksProps
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>User</TableHead>
-          <TableHead>Node</TableHead>
-          <TableHead>Destination</TableHead>
-          <TableHead>Time</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {sortedMatches.map((match, index) => (
-          <TableRow key={getMatchKey(match, index)}>
-            <TableCell className="font-medium">
-              {match.user_email ? (
-                <Link
-                  href={`/users/${encodeURIComponent(match.user_email)}`}
-                  className="text-primary hover:underline"
-                >
-                  {match.user_email}
-                </Link>
-              ) : (
-                <span className="text-muted-foreground">Unknown</span>
-              )}
-            </TableCell>
-            <TableCell>
-              <Badge variant="outline">{match.node_id}</Badge>
-            </TableCell>
-            <TableCell className="font-mono text-sm max-w-[200px] truncate text-destructive">
-              {match.destination}
-            </TableCell>
-            <TableCell className="text-sm text-muted-foreground">
-              {isValidDate(match.timestamp)
-                ? format(new Date(match.timestamp), "HH:mm:ss")
-                : "—"
-              }
-            </TableCell>
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="whitespace-nowrap">User</TableHead>
+            <TableHead className="whitespace-nowrap hidden sm:table-cell">Node</TableHead>
+            <TableHead className="whitespace-nowrap hidden md:table-cell">Destination</TableHead>
+            <TableHead className="whitespace-nowrap">Time</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {sortedMatches.map((match, index) => (
+            <TableRow key={getMatchKey(match, index)}>
+              <TableCell className="font-medium max-w-[100px] sm:max-w-none">
+                {match.user_email ? (
+                  <Link
+                    href={`/users/${encodeURIComponent(match.user_email)}`}
+                    className="text-primary hover:underline truncate block"
+                  >
+                    {match.user_email}
+                  </Link>
+                ) : (
+                  <span className="text-muted-foreground">Unknown</span>
+                )}
+              </TableCell>
+              <TableCell className="hidden sm:table-cell">
+                <Badge variant="outline">{match.node_id}</Badge>
+              </TableCell>
+              <TableCell className="font-mono text-xs sm:text-sm max-w-[150px] sm:max-w-[200px] truncate text-destructive hidden md:table-cell">
+                {match.destination}
+              </TableCell>
+              <TableCell className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
+                {isValidDate(match.timestamp)
+                  ? format(new Date(match.timestamp), "HH:mm:ss")
+                  : "—"
+                }
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }

@@ -95,17 +95,17 @@ export default function BlacklistPage() {
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <ShieldAlert className="h-6 w-6 text-destructive" />
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5 sm:h-6 sm:w-6 text-destructive" />
             Blacklist Analytics
           </h2>
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Detailed analysis of blocked resource access
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Badge 
             variant={connected ? "default" : "destructive"} 
             className="flex items-center gap-1.5"
@@ -257,31 +257,31 @@ export default function BlacklistPage() {
                 Domains sorted by total hits across all users
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[50px]">#</TableHead>
-                    <TableHead>Domain</TableHead>
-                    <TableHead>Matched Rule</TableHead>
-                    <TableHead className="text-right">Hits</TableHead>
-                    <TableHead className="text-right">Users</TableHead>
+                    <TableHead className="w-[40px]">#</TableHead>
+                    <TableHead className="whitespace-nowrap">Domain</TableHead>
+                    <TableHead className="whitespace-nowrap hidden md:table-cell">Matched Rule</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Hits</TableHead>
+                    <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Users</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {analytics.top_domains?.map((domain, idx) => (
                     <TableRow key={domain.domain}>
                       <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                      <TableCell className="font-mono text-sm max-w-[300px] truncate">
+                      <TableCell className="font-mono text-xs sm:text-sm max-w-[150px] sm:max-w-[300px] truncate">
                         {domain.domain}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
+                      <TableCell className="text-muted-foreground text-sm hidden md:table-cell">
                         {domain.matched_rule}
                       </TableCell>
                       <TableCell className="text-right">
                         <Badge variant="destructive">{domain.hit_count}</Badge>
                       </TableCell>
-                      <TableCell className="text-right">{domain.unique_users}</TableCell>
+                      <TableCell className="text-right hidden sm:table-cell">{domain.unique_users}</TableCell>
                     </TableRow>
                   ))}
                   {(!analytics.top_domains || analytics.top_domains.length === 0) && (
@@ -306,39 +306,39 @@ export default function BlacklistPage() {
                 Users sorted by number of blacklist hits
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[50px]">#</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead>Last IP</TableHead>
-                    <TableHead className="text-right">Hits</TableHead>
-                    <TableHead className="text-right">Domains</TableHead>
-                    <TableHead>Top Blocked Domains</TableHead>
+                    <TableHead className="w-[40px]">#</TableHead>
+                    <TableHead className="whitespace-nowrap">User</TableHead>
+                    <TableHead className="whitespace-nowrap hidden lg:table-cell">Last IP</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Hits</TableHead>
+                    <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Domains</TableHead>
+                    <TableHead className="hidden md:table-cell">Top Blocked Domains</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {analytics.top_users?.map((user, idx) => (
                     <TableRow key={user.user_email}>
                       <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium max-w-[120px] sm:max-w-none">
                         <Link 
                           href={`/users/${encodeURIComponent(user.user_email)}`}
-                          className="hover:underline text-primary flex items-center gap-1"
+                          className="hover:underline text-primary flex items-center gap-1 truncate"
                         >
-                          {user.user_email}
-                          <ExternalLink className="h-3 w-3" />
+                          <span className="truncate">{user.user_email}</span>
+                          <ExternalLink className="h-3 w-3 flex-shrink-0" />
                         </Link>
                       </TableCell>
-                      <TableCell className="font-mono text-sm text-muted-foreground">
+                      <TableCell className="font-mono text-sm text-muted-foreground hidden lg:table-cell">
                         {user.last_ip || "—"}
                       </TableCell>
                       <TableCell className="text-right">
                         <Badge variant="destructive">{user.hit_count}</Badge>
                       </TableCell>
-                      <TableCell className="text-right">{user.unique_domains}</TableCell>
-                      <TableCell className="max-w-[300px]">
+                      <TableCell className="text-right hidden sm:table-cell">{user.unique_domains}</TableCell>
+                      <TableCell className="max-w-[300px] hidden md:table-cell">
                         <div className="flex flex-wrap gap-1">
                           {user.top_domains?.slice(0, 3).map((domain) => (
                             <Badge key={domain} variant="outline" className="text-xs truncate max-w-[150px]">
@@ -376,36 +376,36 @@ export default function BlacklistPage() {
                 Last 100 blocked requests
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Node</TableHead>
-                    <TableHead>Source IP</TableHead>
-                    <TableHead>Destination</TableHead>
-                    <TableHead>Matched Rule</TableHead>
+                    <TableHead className="whitespace-nowrap">Time</TableHead>
+                    <TableHead className="whitespace-nowrap hidden sm:table-cell">Node</TableHead>
+                    <TableHead className="whitespace-nowrap hidden lg:table-cell">Source IP</TableHead>
+                    <TableHead className="whitespace-nowrap">Destination</TableHead>
+                    <TableHead className="whitespace-nowrap hidden md:table-cell">Matched Rule</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {analytics.recent_matches?.map((match, idx) => (
                     <TableRow key={idx}>
-                      <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+                      <TableCell className="text-muted-foreground text-xs sm:text-sm whitespace-nowrap">
                         {isValidDate(match.timestamp)
-                          ? format(new Date(match.timestamp), "MMM d, HH:mm:ss")
+                          ? format(new Date(match.timestamp), "HH:mm:ss")
                           : "—"
                         }
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <Badge variant="outline">{match.node_id}</Badge>
                       </TableCell>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="font-mono text-sm hidden lg:table-cell">
                         {match.source_ip}
                       </TableCell>
-                      <TableCell className="font-mono text-sm max-w-[250px] truncate">
+                      <TableCell className="font-mono text-xs sm:text-sm max-w-[150px] sm:max-w-[250px] truncate">
                         {match.destination}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate">
+                      <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate hidden md:table-cell">
                         {match.matched_rule}
                       </TableCell>
                     </TableRow>

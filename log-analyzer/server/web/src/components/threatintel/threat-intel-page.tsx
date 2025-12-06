@@ -62,46 +62,47 @@ export function ThreatIntelPage() {
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <ShieldAlert className="h-6 w-6 text-destructive" />
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5 sm:h-6 sm:w-6 text-destructive" />
             Threat Intelligence
           </h2>
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Real-time threat detection from open source feeds
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant={connected ? "default" : "secondary"} className="flex items-center gap-1.5">
             <span className={`h-2 w-2 rounded-full ${connected ? "bg-green-400 animate-pulse" : "bg-gray-400"}`} />
             {connected ? "Live" : "Offline"}
           </Badge>
           <Badge variant="outline" className="flex items-center gap-1.5">
             <RefreshCw className="h-3 w-3" />
-            Feeds every 6h
+            <span className="hidden sm:inline">Feeds every</span> 6h
           </Badge>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3 max-w-md">
-          <TabsTrigger value="overview" className="flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4" />
-            Обзор
+          <TabsTrigger value="overview" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+            <ShieldAlert className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Обзор</span>
+            <span className="sm:hidden">Обзор</span>
           </TabsTrigger>
-          <TabsTrigger value="torrent" className="flex items-center gap-2">
-            <Download className="h-4 w-4" />
-            Торренты
+          <TabsTrigger value="torrent" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+            <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden xs:inline">Торренты</span>
             {torrentMatches.length > 0 && (
-              <Badge variant="secondary" className="ml-1 text-xs">{torrentMatches.length}</Badge>
+              <Badge variant="secondary" className="ml-1 text-xs h-5 px-1.5">{torrentMatches.length}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="tor" className="flex items-center gap-2">
-            <Globe className="h-4 w-4" />
+          <TabsTrigger value="tor" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+            <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             Tor
             {torMatches.length > 0 && (
-              <Badge variant="secondary" className="ml-1 text-xs">{torMatches.length}</Badge>
+              <Badge variant="secondary" className="ml-1 text-xs h-5 px-1.5">{torMatches.length}</Badge>
             )}
           </TabsTrigger>
         </TabsList>

@@ -62,31 +62,31 @@ export default function UserDetailsPage() {
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
         <Link href="/users">
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" className="shrink-0">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <User className="h-6 w-6" />
-            {details.user_email}
+        <div className="min-w-0">
+          <h2 className="text-lg sm:text-2xl font-bold tracking-tight flex items-center gap-2 truncate">
+            <User className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" />
+            <span className="truncate">{details.user_email}</span>
           </h2>
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             User activity across {details.nodes.length} node(s)
           </p>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-xs sm:text-sm font-medium">Requests</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground hidden sm:block" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-lg sm:text-2xl font-bold">
               {details.total_requests.toLocaleString()}
             </div>
           </CardContent>
@@ -94,11 +94,11 @@ export default function UserDetailsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Blacklist Hits</CardTitle>
-            <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-xs sm:text-sm font-medium">Blacklist</CardTitle>
+            <ShieldAlert className="h-4 w-4 text-muted-foreground hidden sm:block" />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${details.total_blacklist_hits > 0 ? "text-destructive" : ""}`}>
+            <div className={`text-lg sm:text-2xl font-bold ${details.total_blacklist_hits > 0 ? "text-destructive" : ""}`}>
               {details.total_blacklist_hits}
             </div>
           </CardContent>
@@ -106,37 +106,37 @@ export default function UserDetailsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Nodes</CardTitle>
-            <Globe className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-xs sm:text-sm font-medium">Nodes</CardTitle>
+            <Globe className="h-4 w-4 text-muted-foreground hidden sm:block" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{details.nodes.length}</div>
+            <div className="text-lg sm:text-2xl font-bold">{details.nodes.length}</div>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Activity by Node</CardTitle>
-          <CardDescription>User statistics per connected node</CardDescription>
+          <CardTitle className="text-base sm:text-lg">Activity by Node</CardTitle>
+          <CardDescription className="text-xs sm:text-sm">User statistics per connected node</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Node</TableHead>
-                <TableHead className="text-right">Requests</TableHead>
-                <TableHead className="text-right">Blacklist</TableHead>
-                <TableHead className="text-right">Destinations</TableHead>
-                <TableHead>Last Seen</TableHead>
-                <TableHead>Last Blocked Domain</TableHead>
+                <TableHead className="whitespace-nowrap">Node</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Requests</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Blacklist</TableHead>
+                <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Destinations</TableHead>
+                <TableHead className="whitespace-nowrap hidden md:table-cell">Last Seen</TableHead>
+                <TableHead className="whitespace-nowrap hidden lg:table-cell">Last Blocked</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {details.nodes.map((node) => (
                 <TableRow key={node.node_id}>
                   <TableCell>
-                    <Badge variant="outline">{node.node_id}</Badge>
+                    <Badge variant="outline" className="whitespace-nowrap">{node.node_id}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     {node.total_requests.toLocaleString()}
@@ -148,16 +148,16 @@ export default function UserDetailsPage() {
                       <span className="text-muted-foreground">0</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right hidden sm:table-cell">
                     {node.unique_destinations}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
+                  <TableCell className="text-muted-foreground text-sm hidden md:table-cell whitespace-nowrap">
                     {isValidDate(node.last_seen)
                       ? formatDistanceToNow(new Date(node.last_seen), { addSuffix: true })
                       : "—"
                     }
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
+                  <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate hidden lg:table-cell">
                     {node.last_blacklist_domain || "—"}
                   </TableCell>
                 </TableRow>

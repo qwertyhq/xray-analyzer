@@ -103,17 +103,17 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
   }, [nodes])
 
   return (
-    <div className="rounded-md border">
+    <div className="rounded-md border overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Node ID</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Requests</TableHead>
-            <TableHead className="text-right">Blacklist</TableHead>
-            <TableHead className="text-right">Online</TableHead>
-            <TableHead className="text-right">Total Users</TableHead>
-            <TableHead>Last Seen</TableHead>
+            <TableHead className="whitespace-nowrap">Node ID</TableHead>
+            <TableHead className="whitespace-nowrap">Status</TableHead>
+            <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Requests</TableHead>
+            <TableHead className="text-right whitespace-nowrap">Blacklist</TableHead>
+            <TableHead className="text-right whitespace-nowrap">Online</TableHead>
+            <TableHead className="text-right whitespace-nowrap hidden md:table-cell">Total Users</TableHead>
+            <TableHead className="whitespace-nowrap hidden lg:table-cell">Last Seen</TableHead>
             {showDeleteButton && <TableHead className="w-[50px]"></TableHead>}
           </TableRow>
         </TableHeader>
@@ -125,7 +125,7 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
               <TableRow 
                 key={node.node_id}
               >
-                <TableCell className="font-medium">{node.node_id}</TableCell>
+                <TableCell className="font-medium whitespace-nowrap">{node.node_id}</TableCell>
                 <TableCell>
                   <Badge
                     variant={node.is_connected ? 'default' : 'secondary'}
@@ -140,7 +140,7 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
                     {node.is_connected ? 'Online' : 'Offline'}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right">{node.total_requests.toLocaleString()}</TableCell>
+                <TableCell className="text-right hidden sm:table-cell">{node.total_requests.toLocaleString()}</TableCell>
                 <TableCell className={`text-right transition-colors duration-300 ${
                   changes?.blacklistIncreased ? 'text-red-500 font-bold' : ''
                 }`}>
@@ -151,8 +151,8 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
                 }`}>
                   {node.online_users.toLocaleString()}
                 </TableCell>
-                <TableCell className="text-right">{node.unique_users.toLocaleString()}</TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="text-right hidden md:table-cell">{node.unique_users.toLocaleString()}</TableCell>
+                <TableCell className="text-muted-foreground hidden lg:table-cell">
                   {isValidDate(node.last_seen) ? formatRelativeTime(node.last_seen) : 'Never'}
                 </TableCell>
                 {showDeleteButton && handleDelete && (

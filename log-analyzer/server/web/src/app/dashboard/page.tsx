@@ -37,16 +37,16 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Dashboard</h2>
+          <p className="text-sm text-muted-foreground">
             Real-time overview of Xray proxy activity
           </p>
         </div>
         <Badge 
           variant={connected ? "default" : "destructive"} 
-          className="flex items-center gap-1.5"
+          className="flex items-center gap-1.5 self-start sm:self-auto"
         >
           {connected ? (
             <>
