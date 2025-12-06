@@ -10,12 +10,14 @@ import (
 	"github.com/xray-log-analyzer/server/internal/blacklist"
 	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/storage"
+	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
 // Analyzer processes log batches and generates alerts
 type Analyzer struct {
 	blacklist         *blacklist.Blacklist
 	storage           *storage.Storage
+	threatIntel       *threatintel.Service
 	alertCh           chan *models.Alert
 	suspiciousCount   int
 	suspiciousWindow  time.Duration
@@ -37,6 +39,11 @@ func New(bl *blacklist.Blacklist, st *storage.Storage, alertCh chan *models.Aler
 	}
 }
 
+// SetThreatIntel sets the threat intelligence service
+func (a *Analyzer) SetThreatIntel(ti *threatintel.Service) {
+	a.threatIntel = ti
+}
+
 // ProcessBatch processes a batch of log entries
 func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (processed int, blacklistHits int, err error) {
 	// Track per-user stats in this batch
@@ -45,6 +52,7 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 	userLastDomain := make(map[string]string)
 	userLastIP := make(map[string]string)                // user -> last source IP
 	userDestinations := make(map[string]map[string]bool) // user -> set of destinations
+	threatHits := 0
 
 	for _, entry := range batch.Entries {
 		processed++
@@ -85,6 +93,17 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 
 			// Check if we need to generate an alert
 			a.checkAndAlert(ctx, batch.NodeID, entry, matchedRule)
+		}
+
+		// Check threat intelligence (only if not already blocked by blacklist)
+		if matchedRule == "" && a.threatIntel != nil {
+			if threatMatch := a.threatIntel.CheckAndRecord(ctx, entry.UserEmail, batch.NodeID, entry.SourceIP, entry.Destination); threatMatch != nil {
+				threatHits++
+				// Generate alert for high confidence threats
+				if threatMatch.Confidence >= 80 {
+					a.generateThreatAlert(ctx, batch.NodeID, entry, threatMatch)
+				}
+			}
 		}
 	}
 
@@ -194,4 +213,71 @@ func (a *Analyzer) CleanupAlertCache() {
 			delete(a.recentAlerts, key)
 		}
 	}
+}
+
+// generateThreatAlert generates an alert for a threat intelligence match
+func (a *Analyzer) generateThreatAlert(ctx context.Context, nodeID string, entry models.LogEntry, match *threatintel.ThreatMatch) {
+	// Check recent alerts to avoid spam
+	alertKey := fmt.Sprintf("threat:%s:%s:%s", nodeID, entry.UserEmail, entry.Destination)
+
+	a.recentAlertsMu.RLock()
+	lastAlert, exists := a.recentAlerts[alertKey]
+	a.recentAlertsMu.RUnlock()
+
+	if exists && time.Since(lastAlert) < a.alertDedupeWindow {
+		return // Skip duplicate alert
+	}
+
+	threatTypeLabels := map[threatintel.ThreatType]string{
+		threatintel.ThreatTypeMalware:    "🦠 Malware",
+		threatintel.ThreatTypeC2:         "🎯 C2 Server",
+		threatintel.ThreatTypePhishing:   "🎣 Phishing",
+		threatintel.ThreatTypeBotnet:     "🤖 Botnet",
+		threatintel.ThreatTypeRansomware: "💀 Ransomware",
+	}
+
+	threatLabel := threatTypeLabels[match.ThreatType]
+	if threatLabel == "" {
+		threatLabel = string(match.ThreatType)
+	}
+
+	alert := &models.Alert{
+		Type:        "threat_intel",
+		NodeID:      nodeID,
+		UserEmail:   entry.UserEmail,
+		SourceIP:    entry.SourceIP,
+		Destination: entry.Destination,
+		Count:       match.Confidence,
+		Message: fmt.Sprintf("🔴 THREAT INTEL: %s\n"+
+			"Пользователь: %s\n"+
+			"Нода: %s\n"+
+			"Назначение: %s\n"+
+			"Источник данных: %s\n"+
+			"Уверенность: %d%%\n"+
+			"Описание: %s\n"+
+			"IP: %s",
+			threatLabel, entry.UserEmail, nodeID, entry.Destination,
+			match.Source, match.Confidence, match.Description, entry.SourceIP),
+	}
+
+	// Save alert
+	if err := a.storage.CreateAlert(ctx, alert); err != nil {
+		log.Printf("analyzer: failed to create threat alert: %v", err)
+		return
+	}
+
+	// Send to alert channel
+	select {
+	case a.alertCh <- alert:
+	default:
+		log.Println("analyzer: alert channel full")
+	}
+
+	// Record this alert
+	a.recentAlertsMu.Lock()
+	a.recentAlerts[alertKey] = time.Now()
+	a.recentAlertsMu.Unlock()
+
+	log.Printf("analyzer: generated threat alert for user %s (type: %s, confidence: %d%%)",
+		entry.UserEmail, match.ThreatType, match.Confidence)
 }

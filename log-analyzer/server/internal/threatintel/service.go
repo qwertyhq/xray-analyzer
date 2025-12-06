@@ -1,0 +1,185 @@
+package threatintel
+
+import (
+	"context"
+	"log"
+	"sync"
+	"time"
+)
+
+// Service manages threat intelligence operations
+type Service struct {
+	loader         *FeedLoader
+	storage        Storage
+	mu             sync.RWMutex
+	updateInterval time.Duration
+	stopChan       chan struct{}
+	running        bool
+}
+
+// Storage interface for threat intel persistence
+type Storage interface {
+	SaveThreatMatch(ctx context.Context, match *ThreatMatch) error
+	GetThreatMatches(ctx context.Context, since time.Time, limit int) ([]*ThreatMatch, error)
+	GetThreatMatchesByUser(ctx context.Context, userEmail string, limit int) ([]*ThreatMatch, error)
+	GetThreatStats(ctx context.Context) (*ThreatStats, error)
+}
+
+// NewService creates a new threat intelligence service
+func NewService(storage Storage) *Service {
+	return &Service{
+		loader:         NewFeedLoader(),
+		storage:        storage,
+		updateInterval: 6 * time.Hour,
+		stopChan:       make(chan struct{}),
+	}
+}
+
+// Start starts the threat intelligence service
+func (s *Service) Start(ctx context.Context) error {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return nil
+	}
+	s.running = true
+	s.mu.Unlock()
+
+	log.Println("threatintel: starting service")
+
+	// Initial load
+	if err := s.loader.LoadAllFeeds(ctx); err != nil {
+		log.Printf("threatintel: initial load error: %v", err)
+	}
+
+	log.Printf("threatintel: loaded %d indicators", s.loader.GetIndicatorCount())
+
+	// Start background update loop
+	go s.updateLoop(ctx)
+
+	return nil
+}
+
+// Stop stops the threat intelligence service
+func (s *Service) Stop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.running {
+		return
+	}
+
+	close(s.stopChan)
+	s.running = false
+	log.Println("threatintel: stopped service")
+}
+
+// updateLoop periodically updates threat feeds
+func (s *Service) updateLoop(ctx context.Context) {
+	ticker := time.NewTicker(s.updateInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.stopChan:
+			return
+		case <-ticker.C:
+			log.Println("threatintel: updating feeds")
+			if err := s.loader.LoadAllFeeds(ctx); err != nil {
+				log.Printf("threatintel: update error: %v", err)
+			}
+			log.Printf("threatintel: updated, now have %d indicators", s.loader.GetIndicatorCount())
+		}
+	}
+}
+
+// CheckDestination checks if a destination is a known threat
+func (s *Service) CheckDestination(destination string) *ThreatIndicator {
+	return s.loader.CheckDestination(destination)
+}
+
+// CheckAndRecord checks a destination and records a match if found
+func (s *Service) CheckAndRecord(ctx context.Context, userEmail, nodeID, sourceIP, destination string) *ThreatMatch {
+	indicator := s.loader.CheckDestination(destination)
+	if indicator == nil {
+		return nil
+	}
+
+	// Don't record low confidence matches (adware/tracking from StevenBlack)
+	// unless confidence is >= 70
+	if indicator.Confidence < 70 {
+		return nil
+	}
+
+	match := &ThreatMatch{
+		UserEmail:   userEmail,
+		NodeID:      nodeID,
+		SourceIP:    sourceIP,
+		Destination: destination,
+		ThreatType:  indicator.ThreatType,
+		Source:      indicator.Source,
+		Confidence:  indicator.Confidence,
+		Description: indicator.Description,
+		MatchedAt:   time.Now(),
+	}
+
+	// Save to storage if available
+	if s.storage != nil {
+		if err := s.storage.SaveThreatMatch(ctx, match); err != nil {
+			log.Printf("threatintel: failed to save match: %v", err)
+		}
+	}
+
+	return match
+}
+
+// GetStats returns threat intelligence statistics
+func (s *Service) GetStats() *ThreatStats {
+	stats := s.loader.GetStats()
+
+	// Add match stats from storage if available
+	if s.storage != nil {
+		ctx := context.Background()
+		if dbStats, err := s.storage.GetThreatStats(ctx); err == nil {
+			stats.TotalMatches = dbStats.TotalMatches
+			stats.MatchesLast24h = dbStats.MatchesLast24h
+		}
+	}
+
+	return stats
+}
+
+// GetFeedStatus returns the status of all feeds
+func (s *Service) GetFeedStatus() []*FeedStatus {
+	return s.loader.GetFeedStatus()
+}
+
+// GetIndicatorCount returns the total number of loaded indicators
+func (s *Service) GetIndicatorCount() int {
+	return s.loader.GetIndicatorCount()
+}
+
+// GetRecentMatches returns recent threat matches
+func (s *Service) GetRecentMatches(ctx context.Context, limit int) ([]*ThreatMatch, error) {
+	if s.storage == nil {
+		return nil, nil
+	}
+	since := time.Now().Add(-24 * time.Hour)
+	return s.storage.GetThreatMatches(ctx, since, limit)
+}
+
+// GetUserMatches returns threat matches for a specific user
+func (s *Service) GetUserMatches(ctx context.Context, userEmail string, limit int) ([]*ThreatMatch, error) {
+	if s.storage == nil {
+		return nil, nil
+	}
+	return s.storage.GetThreatMatchesByUser(ctx, userEmail, limit)
+}
+
+// ForceUpdate forces an immediate update of all feeds
+func (s *Service) ForceUpdate(ctx context.Context) error {
+	log.Println("threatintel: forcing feed update")
+	return s.loader.LoadAllFeeds(ctx)
+}

@@ -140,6 +140,22 @@ func (s *Storage) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_user_dest_email ON user_destinations(user_email);
 	CREATE INDEX IF NOT EXISTS idx_user_dest_time ON user_destinations(last_seen DESC);
+
+	CREATE TABLE IF NOT EXISTS threat_matches (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_email TEXT NOT NULL,
+		node_id TEXT NOT NULL,
+		source_ip TEXT NOT NULL,
+		destination TEXT NOT NULL,
+		threat_type TEXT NOT NULL,
+		source TEXT NOT NULL,
+		confidence INTEGER DEFAULT 0,
+		description TEXT,
+		matched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_threat_user ON threat_matches(user_email);
+	CREATE INDEX IF NOT EXISTS idx_threat_time ON threat_matches(matched_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_threat_type ON threat_matches(threat_type);
 	`
 
 	_, err := s.db.Exec(schema)

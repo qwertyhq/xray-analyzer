@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Activity } from "lucide-react";
+import { Activity, ShieldAlert } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/nodes", label: "Nodes" },
   { href: "/users", label: "Users" },
   { href: "/blacklist", label: "Blacklist" },
+  { href: "/threatintel", label: "Threat Intel", icon: ShieldAlert },
 ];
 
 export function Header() {
@@ -29,12 +30,13 @@ export function Header() {
               key={item.href}
               href={item.href}
               className={cn(
-                "text-sm font-medium transition-colors hover:text-primary",
+                "text-sm font-medium transition-colors hover:text-primary flex items-center gap-1",
                 pathname === item.href
                   ? "text-foreground"
                   : "text-muted-foreground"
               )}
             >
+              {item.icon && <item.icon className="h-3.5 w-3.5" />}
               {item.label}
             </Link>
           ))}

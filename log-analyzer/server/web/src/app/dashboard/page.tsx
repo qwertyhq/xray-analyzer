@@ -6,6 +6,7 @@ import { ActivityChart } from "@/components/dashboard/activity-chart";
 import { AnomaliesCard } from "@/components/dashboard/anomalies-card";
 import { RecentBlocks } from "@/components/dashboard/recent-blocks";
 import { NodesTable } from "@/components/nodes/nodes-table";
+import { ThreatIntelCard } from "@/components/threatintel/threat-intel-card";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -73,7 +74,10 @@ export default function DashboardPage() {
             timeRange="24h"
           />
         </div>
-        <AnomaliesCard anomalies={anomalies} loading={false} />
+        <div className="space-y-6">
+          <AnomaliesCard anomalies={anomalies} loading={false} />
+          <ThreatIntelCard />
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">

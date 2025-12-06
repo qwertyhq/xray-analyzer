@@ -547,3 +547,67 @@ func (s *Server) handleUserBlacklistMatches(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
+// handleThreatIntelStats returns threat intelligence statistics
+func (s *Server) handleThreatIntelStats(w http.ResponseWriter, r *http.Request) {
+	if s.threatIntel == nil {
+		http.Error(w, "Threat intelligence not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	stats := s.threatIntel.GetStats()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// handleThreatIntelMatches returns recent threat matches
+func (s *Server) handleThreatIntelMatches(w http.ResponseWriter, r *http.Request) {
+	if s.threatIntel == nil {
+		http.Error(w, "Threat intelligence not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	limit := 100
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 500 {
+			limit = parsed
+		}
+	}
+
+	// Check if user-specific query
+	userEmail := r.URL.Query().Get("user")
+
+	var matches interface{}
+	var err error
+
+	if userEmail != "" {
+		matches, err = s.threatIntel.GetUserMatches(ctx, userEmail, limit)
+	} else {
+		matches, err = s.threatIntel.GetRecentMatches(ctx, limit)
+	}
+
+	if err != nil {
+		log.Printf("Error getting threat matches: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(matches)
+}
+
+// handleThreatIntelFeeds returns threat feed statuses
+func (s *Server) handleThreatIntelFeeds(w http.ResponseWriter, r *http.Request) {
+	if s.threatIntel == nil {
+		http.Error(w, "Threat intelligence not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	feeds := s.threatIntel.GetFeedStatus()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(feeds)
+}

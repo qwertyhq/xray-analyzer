@@ -11,16 +11,18 @@ import (
 	"github.com/xray-log-analyzer/server/internal/analyzer"
 	"github.com/xray-log-analyzer/server/internal/blacklist"
 	"github.com/xray-log-analyzer/server/internal/storage"
+	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
 // Server handles WebSocket connections from agents and HTTP API
 type Server struct {
-	addr      string
-	analyzer  *analyzer.Analyzer
-	storage   *storage.Storage
-	blacklist *blacklist.Blacklist
-	clients   map[string]*Client
-	clientsMu sync.RWMutex
+	addr        string
+	analyzer    *analyzer.Analyzer
+	storage     *storage.Storage
+	blacklist   *blacklist.Blacklist
+	threatIntel *threatintel.Service
+	clients     map[string]*Client
+	clientsMu   sync.RWMutex
 
 	// Dashboard WebSocket clients
 	dashboardClients   map[*websocket.Conn]bool
@@ -57,6 +59,11 @@ func New(addr string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl 
 	return s
 }
 
+// SetThreatIntel sets the threat intelligence service
+func (s *Server) SetThreatIntel(ti *threatintel.Service) {
+	s.threatIntel = ti
+}
+
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
@@ -76,6 +83,9 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/alerts", s.handleAlerts)
 	mux.HandleFunc("/api/blacklist/stats", s.handleBlacklistStats)
 	mux.HandleFunc("/api/blacklist/analytics", s.handleBlacklistAnalytics)
+	mux.HandleFunc("/api/threatintel/stats", s.handleThreatIntelStats)
+	mux.HandleFunc("/api/threatintel/matches", s.handleThreatIntelMatches)
+	mux.HandleFunc("/api/threatintel/feeds", s.handleThreatIntelFeeds)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	// User-specific endpoints (must be registered before /api/users/)

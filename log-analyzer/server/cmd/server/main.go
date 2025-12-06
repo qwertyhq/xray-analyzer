@@ -15,6 +15,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/server"
 	"github.com/xray-log-analyzer/server/internal/storage"
 	"github.com/xray-log-analyzer/server/internal/telegram"
+	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
 func main() {
@@ -61,6 +62,15 @@ func main() {
 		cfg.SuspiciousTimeWindow,
 	)
 
+	// Initialize threat intelligence service
+	threatIntelSvc := threatintel.NewService(store)
+	if err := threatIntelSvc.Start(ctx); err != nil {
+		log.Printf("threatintel: failed to start (continuing without): %v", err)
+	} else {
+		anal.SetThreatIntel(threatIntelSvc)
+		log.Printf("threatintel: started with %d indicators", threatIntelSvc.GetIndicatorCount())
+	}
+
 	// Initialize Telegram bot if enabled
 	if cfg.TelegramEnabled && cfg.TelegramToken != "" && cfg.TelegramChatID != "" {
 		bot := telegram.New(cfg.TelegramToken, cfg.TelegramChatID, alertCh)
@@ -99,6 +109,12 @@ func main() {
 				if err := store.CleanupOldData(ctx, 30); err != nil {
 					log.Printf("cleanup error: %v", err)
 				}
+				// Cleanup old threat matches (keep 30 days)
+				if deleted, err := store.CleanupOldThreatMatches(ctx, 30*24*time.Hour); err != nil {
+					log.Printf("cleanup threat matches error: %v", err)
+				} else if deleted > 0 {
+					log.Printf("cleanup: deleted %d old threat matches", deleted)
+				}
 				// Cleanup analyzer alert cache
 				anal.CleanupAlertCache()
 			}
@@ -107,6 +123,7 @@ func main() {
 
 	// Initialize and start server
 	srv := server.New(cfg.ListenAddr, anal, store, bl)
+	srv.SetThreatIntel(threatIntelSvc)
 	go func() {
 		if err := srv.Start(ctx); err != nil {
 			log.Printf("server error: %v", err)
@@ -123,6 +140,9 @@ func main() {
 
 	log.Println("shutting down...")
 	cancel()
+
+	// Stop threat intelligence service
+	threatIntelSvc.Stop()
 
 	// Give goroutines time to cleanup
 	time.Sleep(2 * time.Second)

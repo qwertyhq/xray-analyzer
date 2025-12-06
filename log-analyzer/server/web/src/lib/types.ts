@@ -145,3 +145,38 @@ export interface PaginatedAlertsResponse extends PaginatedResponse<Alert> {
 }
 
 export type TimeRange = "1h" | "6h" | "24h" | "7d" | "30d" | "custom";
+
+// Threat Intelligence types
+export type ThreatType = "malware" | "c2" | "phishing" | "adware" | "tracker" | "botnet" | "ransomware";
+export type ThreatSource = "urlhaus" | "feodo" | "threatfox" | "sslbl" | "stevenblack";
+
+export interface ThreatMatch {
+  id: number;
+  user_email: string;
+  node_id: string;
+  source_ip: string;
+  destination: string;
+  threat_type: ThreatType;
+  source: ThreatSource;
+  confidence: number;
+  description?: string;
+  matched_at: string;
+}
+
+export interface ThreatStats {
+  total_indicators: number;
+  indicators_by_type: Record<string, number>;
+  indicators_by_source: Record<string, number>;
+  total_matches: number;
+  matches_24h: number;
+  last_updated: string;
+}
+
+export interface FeedStatus {
+  source: ThreatSource;
+  last_update: string;
+  next_update: string;
+  indicators: number;
+  status: "ok" | "error" | "updating";
+  error?: string;
+}
