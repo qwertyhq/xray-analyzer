@@ -326,7 +326,7 @@ export function ThreatIntelPage() {
           <CardHeader>
             <CardTitle>🏆 Топ пользователей по категориям контента</CardTitle>
             <CardDescription>
-              Пользователи с наибольшим количеством срабатываний по категориям
+              Пользователи с наибольшим количеством срабатываний и посещённые сайты
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -343,22 +343,38 @@ export function ThreatIntelPage() {
                       <span className="font-semibold">{config.label}</span>
                     </div>
                     {users.length > 0 ? (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {users.map((user, idx) => (
-                          <div key={user.user_email} className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className="text-muted-foreground w-4">{idx + 1}.</span>
-                              <Link
-                                href={`/users/${encodeURIComponent(user.user_email)}`}
-                                className="hover:underline text-primary truncate max-w-[120px]"
-                                title={user.user_email}
-                              >
-                                {user.user_email}
-                              </Link>
+                          <div key={user.user_email} className="space-y-1">
+                            <div className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground w-4">{idx + 1}.</span>
+                                <Link
+                                  href={`/users/${encodeURIComponent(user.user_email)}`}
+                                  className="hover:underline text-primary truncate max-w-[120px]"
+                                  title={user.user_email}
+                                >
+                                  {user.user_email}
+                                </Link>
+                              </div>
+                              <Badge variant="secondary" className="font-mono">
+                                {user.match_count}
+                              </Badge>
                             </div>
-                            <Badge variant="secondary" className="font-mono">
-                              {user.match_count}
-                            </Badge>
+                            {user.domains && user.domains.length > 0 && (
+                              <div className="ml-6 text-xs text-muted-foreground space-y-0.5">
+                                {user.domains.slice(0, 3).map((domain) => (
+                                  <div key={domain} className="truncate" title={domain}>
+                                    • {domain}
+                                  </div>
+                                ))}
+                                {user.domains.length > 3 && (
+                                  <div className="text-muted-foreground/60">
+                                    +{user.domains.length - 3} ещё...
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

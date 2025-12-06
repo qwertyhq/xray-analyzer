@@ -185,6 +185,7 @@ export interface CategoryUserStats {
   user_email: string;
   category: string;
   match_count: number;
+  domains: string[]; // Top visited domains in this category
 }
 
 export type CategoryTopUsers = Record<string, CategoryUserStats[]>;

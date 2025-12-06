@@ -169,8 +169,9 @@ func (s *Storage) CleanupOldThreatMatches(ctx context.Context, retention time.Du
 	return result.RowsAffected()
 }
 
-// GetTopUsersByCategory returns top users by content category violations
+// GetTopUsersByCategory returns top users by content category violations with their visited domains
 func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, limit int) ([]*threatintel.CategoryUserStats, error) {
+	// First get top users
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT user_email, threat_type, COUNT(*) as cnt
 		FROM threat_matches
@@ -192,8 +193,49 @@ func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, li
 		}
 		stats = append(stats, &st)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-	return stats, rows.Err()
+	// Now get top domains for each user
+	for _, st := range stats {
+		domainRows, err := s.db.QueryContext(ctx, `
+			SELECT destination, COUNT(*) as cnt
+			FROM threat_matches
+			WHERE user_email = ? AND threat_type = ?
+			GROUP BY destination
+			ORDER BY cnt DESC
+			LIMIT 5
+		`, st.UserEmail, category)
+		if err != nil {
+			continue
+		}
+
+		for domainRows.Next() {
+			var domain string
+			var cnt int
+			if domainRows.Scan(&domain, &cnt) == nil {
+				// Extract just the host part (remove port)
+				if idx := lastIndex(domain, ':'); idx > 0 {
+					domain = domain[:idx]
+				}
+				st.Domains = append(st.Domains, domain)
+			}
+		}
+		domainRows.Close()
+	}
+
+	return stats, nil
+}
+
+// lastIndex returns last index of sep in s, or -1
+func lastIndex(s string, sep byte) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == sep {
+			return i
+		}
+	}
+	return -1
 }
 
 // GetTopUsersByAllCategories returns top users for all content categories (porn, gambling, social, fakenews)
