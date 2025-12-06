@@ -174,3 +174,30 @@ type Anomaly struct {
 	Deviation float64   `json:"deviation"`
 	Message   string    `json:"message"`
 }
+
+// UserDestination represents a destination visited by a user
+type UserDestination struct {
+	NodeID       string    `json:"node_id"`
+	Destination  string    `json:"destination"`
+	RequestCount int64     `json:"request_count"`
+	FirstSeen    time.Time `json:"first_seen"`
+	LastSeen     time.Time `json:"last_seen"`
+}
+
+// UserDestinationsResponse represents paginated destinations response
+type UserDestinationsResponse struct {
+	Destinations []UserDestination `json:"destinations"`
+	Total        int               `json:"total"`
+	Page         int               `json:"page"`
+	PageSize     int               `json:"page_size"`
+	TotalPages   int               `json:"total_pages"`
+}
+
+// PaginatedAlertsResponse represents paginated alerts response
+type PaginatedAlertsResponse struct {
+	Alerts     []Alert `json:"alerts"`
+	Total      int     `json:"total"`
+	Page       int     `json:"page"`
+	PageSize   int     `json:"page_size"`
+	TotalPages int     `json:"total_pages"`
+}

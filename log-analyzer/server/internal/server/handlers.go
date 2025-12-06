@@ -89,6 +89,26 @@ func (s *Server) handleAllUsers(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(users)
 }
 
+// handleUserRouter routes user-specific requests
+func (s *Server) handleUserRouter(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+
+	// Check for /api/users/{email}/destinations
+	if strings.HasSuffix(path, "/destinations") {
+		s.handleUserDestinations(w, r)
+		return
+	}
+
+	// Check for /api/users/{email}/alerts
+	if strings.HasSuffix(path, "/alerts") {
+		s.handleUserAlerts(w, r)
+		return
+	}
+
+	// Default: user details
+	s.handleUserDetails(w, r)
+}
+
 // handleUserDetails returns detailed stats for a specific user
 func (s *Server) handleUserDetails(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
@@ -345,4 +365,115 @@ func (s *Server) handleBlacklistAnalytics(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(analytics)
+}
+
+// handleUserDestinations returns paginated destinations for a user
+func (s *Server) handleUserDestinations(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Extract email from URL path: /api/users/{email}/destinations
+	path := r.URL.Path
+	parts := strings.Split(path, "/")
+	if len(parts) < 5 {
+		http.Error(w, "email required", http.StatusBadRequest)
+		return
+	}
+
+	email, err := url.PathUnescape(parts[3])
+	if err != nil {
+		http.Error(w, "invalid email", http.StatusBadRequest)
+		return
+	}
+
+	// Parse pagination params
+	page := 1
+	pageSize := 50
+	if p := r.URL.Query().Get("page"); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
+			pageSize = parsed
+		}
+	}
+
+	// Default: last 24 hours
+	since := time.Now().Add(-24 * time.Hour)
+	if p := r.URL.Query().Get("period"); p != "" {
+		switch p {
+		case "1h":
+			since = time.Now().Add(-1 * time.Hour)
+		case "6h":
+			since = time.Now().Add(-6 * time.Hour)
+		case "24h":
+			since = time.Now().Add(-24 * time.Hour)
+		case "7d":
+			since = time.Now().Add(-7 * 24 * time.Hour)
+		case "30d":
+			since = time.Now().Add(-30 * 24 * time.Hour)
+		}
+	}
+
+	response, err := s.storage.GetUserDestinations(ctx, email, since, page, pageSize)
+	if err != nil {
+		log.Printf("Error getting user destinations: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if response.Destinations == nil {
+		response.Destinations = []models.UserDestination{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleUserAlerts returns paginated alerts for a user
+func (s *Server) handleUserAlerts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Extract email from URL path: /api/users/{email}/alerts
+	path := r.URL.Path
+	parts := strings.Split(path, "/")
+	if len(parts) < 5 {
+		http.Error(w, "email required", http.StatusBadRequest)
+		return
+	}
+
+	email, err := url.PathUnescape(parts[3])
+	if err != nil {
+		http.Error(w, "invalid email", http.StatusBadRequest)
+		return
+	}
+
+	// Parse pagination params
+	page := 1
+	pageSize := 20
+	if p := r.URL.Query().Get("page"); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
+			pageSize = parsed
+		}
+	}
+
+	response, err := s.storage.GetUserAlerts(ctx, email, page, pageSize)
+	if err != nil {
+		log.Printf("Error getting user alerts: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if response.Alerts == nil {
+		response.Alerts = []models.Alert{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

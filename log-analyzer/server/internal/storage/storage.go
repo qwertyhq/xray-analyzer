@@ -127,6 +127,19 @@ func (s *Storage) migrate() error {
 		UNIQUE(node_id, hour)
 	);
 	CREATE INDEX IF NOT EXISTS idx_hourly_hour ON hourly_stats(hour);
+
+	CREATE TABLE IF NOT EXISTS user_destinations (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_email TEXT NOT NULL,
+		node_id TEXT NOT NULL,
+		destination TEXT NOT NULL,
+		request_count INTEGER DEFAULT 1,
+		first_seen DATETIME,
+		last_seen DATETIME,
+		UNIQUE(user_email, node_id, destination)
+	);
+	CREATE INDEX IF NOT EXISTS idx_user_dest_email ON user_destinations(user_email);
+	CREATE INDEX IF NOT EXISTS idx_user_dest_time ON user_destinations(last_seen DESC);
 	`
 
 	_, err := s.db.Exec(schema)

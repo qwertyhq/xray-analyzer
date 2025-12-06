@@ -71,13 +71,15 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/nodes/delete", s.handleDeleteNode)
 	mux.HandleFunc("/api/users", s.handleUsers)
 	mux.HandleFunc("/api/users/all", s.handleAllUsers)
-	mux.HandleFunc("/api/users/", s.handleUserDetails)
 	mux.HandleFunc("/api/hourly", s.handleHourlyStats)
 	mux.HandleFunc("/api/anomalies", s.handleAnomalies)
 	mux.HandleFunc("/api/alerts", s.handleAlerts)
 	mux.HandleFunc("/api/blacklist/stats", s.handleBlacklistStats)
 	mux.HandleFunc("/api/blacklist/analytics", s.handleBlacklistAnalytics)
 	mux.HandleFunc("/health", s.handleHealth)
+
+	// User-specific endpoints (must be registered before /api/users/)
+	mux.HandleFunc("/api/users/", s.handleUserRouter)
 
 	// Start background jobs
 	go s.startCleanupJob(ctx)

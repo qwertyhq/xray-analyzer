@@ -121,4 +121,27 @@ export interface Alert {
   sent: boolean;
 }
 
+export interface UserDestination {
+  node_id: string;
+  destination: string;
+  request_count: number;
+  first_seen: string;
+  last_seen: string;
+}
+
+export interface PaginatedResponse<T> {
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface UserDestinationsResponse extends PaginatedResponse<UserDestination> {
+  destinations: UserDestination[];
+}
+
+export interface PaginatedAlertsResponse extends PaginatedResponse<Alert> {
+  alerts: Alert[];
+}
+
 export type TimeRange = "1h" | "6h" | "24h" | "7d" | "30d" | "custom";

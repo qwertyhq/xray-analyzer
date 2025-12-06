@@ -55,3 +55,58 @@ func (s *Storage) MarkAlertSent(ctx context.Context, alertID int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE alerts SET sent = 1 WHERE id = ?`, alertID)
 	return err
 }
+
+// GetUserAlerts returns paginated alerts for a specific user
+func (s *Storage) GetUserAlerts(ctx context.Context, userEmail string, page, pageSize int) (*models.PaginatedAlertsResponse, error) {
+	offset := (page - 1) * pageSize
+
+	// Get total count
+	var total int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM alerts WHERE user_email = ?
+	`, userEmail).Scan(&total)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get paginated results
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, type, node_id, user_email, COALESCE(source_ip, '') as source_ip, 
+			   COALESCE(destination, '') as destination, count, message, 
+			   COALESCE(created_at, '') as created_at, sent
+		FROM alerts
+		WHERE user_email = ?
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, userEmail, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var alerts []models.Alert
+	for rows.Next() {
+		var a models.Alert
+		var createdAtStr string
+		var sent int
+		if err := rows.Scan(&a.ID, &a.Type, &a.NodeID, &a.UserEmail, &a.SourceIP, &a.Destination, &a.Count, &a.Message, &createdAtStr, &sent); err != nil {
+			return nil, err
+		}
+		a.CreatedAt = parseDateTime(createdAtStr)
+		a.Sent = sent == 1
+		alerts = append(alerts, a)
+	}
+
+	totalPages := (total + pageSize - 1) / pageSize
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
+	return &models.PaginatedAlertsResponse{
+		Alerts:     alerts,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+	}, nil
+}

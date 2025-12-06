@@ -101,6 +101,13 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 		if err := a.storage.UpdateUserStats(ctx, batch.NodeID, user, requests, hits, domain, uniqueDests, lastIP); err != nil {
 			log.Printf("analyzer: failed to update user stats: %v", err)
 		}
+
+		// Record user destinations for detailed tracking
+		for dest := range userDestinations[user] {
+			if err := a.storage.RecordUserDestination(ctx, user, batch.NodeID, dest); err != nil {
+				log.Printf("analyzer: failed to record user destination: %v", err)
+			}
+		}
 	}
 
 	// Update unique users count for this node

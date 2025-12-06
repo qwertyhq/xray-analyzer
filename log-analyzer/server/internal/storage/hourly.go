@@ -130,6 +130,15 @@ func (s *Storage) CleanupOldData(ctx context.Context, retentionDays int) error {
 		log.Printf("storage: cleaned up %d old user stats", rows)
 	}
 
+	// Delete old user destinations
+	result, err = s.db.ExecContext(ctx, `DELETE FROM user_destinations WHERE last_seen < ?`, cutoff)
+	if err != nil {
+		return fmt.Errorf("cleanup user_destinations: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows > 0 {
+		log.Printf("storage: cleaned up %d old user destinations", rows)
+	}
+
 	// Checkpoint WAL to reclaim space
 	s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 

@@ -18,6 +18,8 @@ import {
 import { ArrowLeft, User, Activity, ShieldAlert, Globe } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { isValidDate } from "@/lib/utils/date";
+import { UserDestinationsTable } from "@/components/users/user-destinations-table";
+import { UserAlertsTable } from "@/components/users/user-alerts-table";
 
 export default function UserDetailsPage() {
   const params = useParams();
@@ -165,13 +167,33 @@ export default function UserDetailsPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Visited Destinations</CardTitle>
+          <CardDescription>Resources visited by this user (sorted by request count)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <UserDestinationsTable email={email} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-destructive">Alerts History</CardTitle>
+          <CardDescription>All alerts generated for this user</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <UserAlertsTable email={email} />
+        </CardContent>
+      </Card>
+
       {details.recent_matches && details.recent_matches.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-destructive">Recent Blacklist Matches</CardTitle>
             <CardDescription>Last 50 blocked requests</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="max-h-[400px] overflow-y-auto">
             <Table>
               <TableHeader>
                 <TableRow>
