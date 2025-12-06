@@ -447,7 +447,7 @@ func (s *Storage) GetHourlyStats(ctx context.Context, hours int) ([]models.Hourl
 	}
 	defer rows.Close()
 
-	var stats []models.HourlyStats
+	stats := []models.HourlyStats{} // Initialize as empty slice, not nil
 	for rows.Next() {
 		var s models.HourlyStats
 		if err := rows.Scan(&s.Hour, &s.TotalRequests, &s.BlacklistHits, &s.UniqueUsers); err != nil {
@@ -574,7 +574,7 @@ func (s *Storage) GetHourlyStatsRange(ctx context.Context, from, to time.Time) (
 	}
 	defer rows.Close()
 
-	var stats []models.HourlyStats
+	stats := []models.HourlyStats{} // Initialize as empty slice, not nil
 	for rows.Next() {
 		var s models.HourlyStats
 		if err := rows.Scan(&s.Hour, &s.TotalRequests, &s.BlacklistHits, &s.UniqueUsers); err != nil {
