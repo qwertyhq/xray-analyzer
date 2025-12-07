@@ -325,6 +325,26 @@ func (s *Storage) migrate() error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE INDEX IF NOT EXISTS idx_user_dns_blocked ON user_dns_stats(blocked_queries DESC);
+
+	-- Reports table
+	CREATE TABLE IF NOT EXISTS reports (
+		id TEXT PRIMARY KEY,
+		type TEXT NOT NULL,
+		format TEXT NOT NULL,
+		title TEXT NOT NULL,
+		description TEXT,
+		start_date DATETIME,
+		end_date DATETIME,
+		generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		status TEXT DEFAULT 'pending',
+		sections TEXT,      -- JSON array
+		top_threats TEXT,   -- JSON array
+		top_users TEXT,     -- JSON array
+		top_countries TEXT, -- JSON array
+		summary TEXT        -- JSON object
+	);
+	CREATE INDEX IF NOT EXISTS idx_reports_generated ON reports(generated_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_reports_type ON reports(type);
 	`
 
 	_, err := s.db.Exec(schema)

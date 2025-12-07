@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldAlert, RefreshCw, Download, Globe } from "lucide-react";
-import { FeedStatus, TimeStats, GeoSummary, AnomalySummary, UserRiskSummary, DNSAnalysisSummary } from "@/lib/types";
+import { FeedStatus, TimeStats, GeoSummary, AnomalySummary, UserRiskSummary, DNSAnalysisSummary, ReportSummary, ReportConfig } from "@/lib/types";
 import { useWsThreatIntel } from "@/contexts/websocket-context";
 import { OverviewTab } from "./overview-tab";
 import { TorrentTab } from "./torrent-tab";
@@ -20,6 +20,7 @@ export function ThreatIntelPage() {
   const [anomalies, setAnomalies] = useState<AnomalySummary | null>(null);
   const [riskProfiles, setRiskProfiles] = useState<UserRiskSummary | null>(null);
   const [dnsAnalysis, setDnsAnalysis] = useState<DNSAnalysisSummary | null>(null);
+  const [reports, setReports] = useState<ReportSummary | null>(null);
   const [apiLoading, setApiLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -85,6 +86,42 @@ export function ThreatIntelPage() {
     }
   }, []);
 
+  // Fetch reports
+  const fetchReports = useCallback(async () => {
+    try {
+      const res = await fetch("/api/threatintel/reports");
+      if (res.ok) setReports(await res.json());
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Generate report
+  const generateReport = useCallback(async (config: ReportConfig) => {
+    try {
+      const res = await fetch("/api/threatintel/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      });
+      if (res.ok) {
+        await fetchReports();
+      }
+    } catch {
+      // ignore
+    }
+  }, [fetchReports]);
+
+  // Delete report
+  const deleteReport = useCallback(async (id: string) => {
+    try {
+      await fetch(`/api/threatintel/reports?id=${id}`, { method: "DELETE" });
+      await fetchReports();
+    } catch {
+      // ignore
+    }
+  }, [fetchReports]);
+
   // Run anomaly detection
   const runAnomalyDetection = useCallback(async () => {
     try {
@@ -102,12 +139,14 @@ export function ThreatIntelPage() {
     fetchAnomalies();
     fetchRiskProfiles();
     fetchDnsAnalysis();
+    fetchReports();
     const feedsInterval = setInterval(fetchFeeds, 60000);
     const timeInterval = setInterval(fetchTimeStats, 30000);
     const geoInterval = setInterval(fetchGeoStats, 60000);
     const anomalyInterval = setInterval(fetchAnomalies, 60000);
     const riskInterval = setInterval(fetchRiskProfiles, 120000);
     const dnsInterval = setInterval(fetchDnsAnalysis, 60000);
+    const reportsInterval = setInterval(fetchReports, 60000);
     return () => {
       clearInterval(feedsInterval);
       clearInterval(timeInterval);
@@ -115,8 +154,9 @@ export function ThreatIntelPage() {
       clearInterval(anomalyInterval);
       clearInterval(riskInterval);
       clearInterval(dnsInterval);
+      clearInterval(reportsInterval);
     };
-  }, [fetchAnomalies, fetchRiskProfiles, fetchDnsAnalysis]);
+  }, [fetchAnomalies, fetchRiskProfiles, fetchDnsAnalysis, fetchReports]);
 
   const stats = threatIntel.stats;
   const matches = threatIntel.matches || [];
@@ -201,8 +241,12 @@ export function ThreatIntelPage() {
             anomalies={anomalies}
             riskProfiles={riskProfiles}
             dnsAnalysis={dnsAnalysis}
+            reports={reports}
             onRiskRefresh={fetchRiskProfiles}
             onDnsRefresh={fetchDnsAnalysis}
+            onReportsRefresh={fetchReports}
+            onGenerateReport={generateReport}
+            onDeleteReport={deleteReport}
           />
         </TabsContent>
 

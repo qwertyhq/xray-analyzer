@@ -394,3 +394,77 @@ export interface DNSAnalysisSummary {
   trend_direction: "up" | "down" | "stable";
   risk_score: number;
 }
+
+// Report types
+export type ReportType = "summary" | "threat_summary" | "user_risk" | "geo_analysis" | "dns_analysis" | "detailed" | "user" | "incident" | "compliance";
+export type ReportFormat = "json" | "csv" | "html" | "pdf";
+export type ReportStatus = "pending" | "generating" | "completed" | "failed";
+
+export interface ReportSection {
+  title: string;
+  content: string;
+  order: number;
+}
+
+export interface ReportThreat {
+  type: string;
+  source: string;
+  count: number;
+  blocked: boolean;
+}
+
+export interface ReportUser {
+  email: string;
+  threat_count: number;
+  risk_score: number;
+}
+
+export interface ReportCountry {
+  country: string;
+  code: string;
+  count: number;
+}
+
+export interface ReportStats {
+  total_threats: number;
+  blocked_threats: number;
+  unique_users: number;
+  unique_countries: number;
+  high_risk_users: number;
+  dns_queries: number;
+  suspicious_domains: number;
+}
+
+export interface Report {
+  id: string;
+  type: ReportType;
+  format: ReportFormat;
+  title: string;
+  description?: string;
+  start_date: string;
+  end_date: string;
+  generated_at: string;
+  status: ReportStatus;
+  sections?: ReportSection[];
+  top_threats?: ReportThreat[];
+  top_users?: ReportUser[];
+  top_countries?: ReportCountry[];
+  summary: ReportStats;
+}
+
+export interface ReportConfig {
+  type: ReportType;
+  format: ReportFormat;
+  title: string;
+  description?: string;
+  start_date: string;
+  end_date: string;
+}
+
+export interface ReportSummary {
+  total_reports: number;
+  completed_reports: number;
+  pending_reports: number;
+  last_generated?: string;
+  reports: Report[];
+}
