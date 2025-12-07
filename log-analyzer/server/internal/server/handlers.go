@@ -966,3 +966,244 @@ func (s *Server) handleDNSAnalysis(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(summary)
 	}
 }
+
+// handleReports handles report generation and export
+func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		// Get report by ID or list reports
+		reportID := r.URL.Query().Get("id")
+		if reportID != "" {
+			report, err := s.storage.GetReport(ctx, reportID)
+			if err != nil {
+				log.Printf("Error getting report: %v", err)
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+
+			// Check if specific format requested
+			format := r.URL.Query().Get("format")
+			if format != "" {
+				s.exportReport(w, report, format)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(report)
+			return
+		}
+
+		// List reports
+		summary, err := s.storage.GetReportSummary(ctx)
+		if err != nil {
+			log.Printf("Error getting report summary: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(summary)
+
+	case http.MethodPost:
+		// Generate new report
+		var config threatintel.ReportConfig
+		if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		report, err := s.storage.GenerateReport(ctx, config)
+		if err != nil {
+			log.Printf("Error generating report: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(report)
+
+	case http.MethodDelete:
+		// Delete report
+		reportID := r.URL.Query().Get("id")
+		if reportID == "" {
+			http.Error(w, "Report ID required", http.StatusBadRequest)
+			return
+		}
+
+		if err := s.storage.DeleteReport(ctx, reportID); err != nil {
+			log.Printf("Error deleting report: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// exportReport exports report in specified format
+func (s *Server) exportReport(w http.ResponseWriter, report *threatintel.Report, format string) {
+	switch threatintel.ReportFormat(format) {
+	case threatintel.FormatJSON:
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.json\"", report.Title))
+		json.NewEncoder(w).Encode(report)
+
+	case threatintel.FormatCSV:
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.csv\"", report.Title))
+		s.writeReportCSV(w, report)
+
+	case threatintel.FormatHTML:
+		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.html\"", report.Title))
+		s.writeReportHTML(w, report)
+
+	default:
+		http.Error(w, "Unsupported format", http.StatusBadRequest)
+	}
+}
+
+// writeReportCSV writes report data as CSV
+func (s *Server) writeReportCSV(w http.ResponseWriter, report *threatintel.Report) {
+	// Header
+	fmt.Fprintf(w, "Threat Intelligence Report: %s\n", report.Title)
+	fmt.Fprintf(w, "Generated: %s\n", report.GeneratedAt.Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(w, "Period: %s to %s\n\n", report.StartDate.Format("2006-01-02"), report.EndDate.Format("2006-01-02"))
+
+	// Summary section
+	fmt.Fprintln(w, "=== SUMMARY ===")
+	fmt.Fprintf(w, "Total Threats,%d\n", report.Summary.TotalThreats)
+	fmt.Fprintf(w, "Blocked,%d\n", report.Summary.BlockedThreats)
+	fmt.Fprintf(w, "Unique Users,%d\n", report.Summary.UniqueUsers)
+	fmt.Fprintf(w, "Countries,%d\n", report.Summary.UniqueCountries)
+	fmt.Fprintf(w, "High Risk Users,%d\n", report.Summary.HighRiskUsers)
+	fmt.Fprintf(w, "DNS Queries,%d\n", report.Summary.DNSQueries)
+	fmt.Fprintf(w, "Suspicious Domains,%d\n\n", report.Summary.SuspiciousDomains)
+
+	// Sections
+	for _, section := range report.Sections {
+		fmt.Fprintf(w, "=== %s ===\n", section.Title)
+		fmt.Fprintf(w, "%s\n\n", section.Content)
+	}
+
+	// Top threats
+	if len(report.TopThreats) > 0 {
+		fmt.Fprintln(w, "=== TOP THREATS ===")
+		fmt.Fprintln(w, "Type,Source,Count,Blocked")
+		for _, t := range report.TopThreats {
+			fmt.Fprintf(w, "%s,%s,%d,%v\n", t.Type, t.Source, t.Count, t.Blocked)
+		}
+		fmt.Fprintln(w)
+	}
+
+	// Top users
+	if len(report.TopUsers) > 0 {
+		fmt.Fprintln(w, "=== TOP AFFECTED USERS ===")
+		fmt.Fprintln(w, "Email,Threats,Risk Score")
+		for _, u := range report.TopUsers {
+			fmt.Fprintf(w, "%s,%d,%.1f\n", u.Email, u.ThreatCount, u.RiskScore)
+		}
+		fmt.Fprintln(w)
+	}
+
+	// Top countries
+	if len(report.TopCountries) > 0 {
+		fmt.Fprintln(w, "=== TOP COUNTRIES ===")
+		fmt.Fprintln(w, "Country,Threats")
+		for _, c := range report.TopCountries {
+			fmt.Fprintf(w, "%s,%d\n", c.Country, c.Count)
+		}
+	}
+}
+
+// writeReportHTML writes report as HTML
+func (s *Server) writeReportHTML(w http.ResponseWriter, report *threatintel.Report) {
+	fmt.Fprintln(w, `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Threat Intelligence Report</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+.container { max-width: 900px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+h1 { color: #1a1a2e; border-bottom: 3px solid #e94560; padding-bottom: 10px; }
+h2 { color: #16213e; margin-top: 30px; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; margin: 20px 0; }
+.stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center; }
+.stat-card .value { font-size: 2em; font-weight: bold; }
+.stat-card .label { opacity: 0.9; margin-top: 5px; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+th { background: #16213e; color: white; }
+tr:hover { background: #f5f5f5; }
+.section { margin: 30px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+.high-risk { color: #e94560; font-weight: bold; }
+.footer { margin-top: 40px; text-align: center; color: #666; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<div class="container">`)
+
+	fmt.Fprintf(w, "<h1>%s</h1>\n", report.Title)
+	fmt.Fprintf(w, "<p><strong>Generated:</strong> %s</p>\n", report.GeneratedAt.Format("January 2, 2006 at 3:04 PM"))
+	fmt.Fprintf(w, "<p><strong>Period:</strong> %s to %s</p>\n",
+		report.StartDate.Format("January 2, 2006"),
+		report.EndDate.Format("January 2, 2006"))
+
+	// Summary cards
+	fmt.Fprintln(w, `<h2>Summary</h2><div class="summary">`)
+	fmt.Fprintf(w, `<div class="stat-card"><div class="value">%d</div><div class="label">Total Threats</div></div>`, report.Summary.TotalThreats)
+	fmt.Fprintf(w, `<div class="stat-card"><div class="value">%d</div><div class="label">Blocked</div></div>`, report.Summary.BlockedThreats)
+	fmt.Fprintf(w, `<div class="stat-card"><div class="value">%d</div><div class="label">Unique Users</div></div>`, report.Summary.UniqueUsers)
+	fmt.Fprintf(w, `<div class="stat-card"><div class="value">%d</div><div class="label">Countries</div></div>`, report.Summary.UniqueCountries)
+	fmt.Fprintf(w, `<div class="stat-card"><div class="value">%d</div><div class="label">High Risk Users</div></div>`, report.Summary.HighRiskUsers)
+	fmt.Fprintf(w, `<div class="stat-card"><div class="value">%d</div><div class="label">DNS Queries</div></div>`, report.Summary.DNSQueries)
+	fmt.Fprintln(w, `</div>`)
+
+	// Sections
+	for _, section := range report.Sections {
+		fmt.Fprintf(w, `<div class="section"><h2>%s</h2><p>%s</p></div>`, section.Title, section.Content)
+	}
+
+	// Top threats table
+	if len(report.TopThreats) > 0 {
+		fmt.Fprintln(w, `<h2>Top Threats</h2><table><tr><th>Type</th><th>Source</th><th>Count</th><th>Blocked</th></tr>`)
+		for _, t := range report.TopThreats {
+			blocked := "No"
+			if t.Blocked {
+				blocked = "Yes"
+			}
+			fmt.Fprintf(w, `<tr><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>`, t.Type, t.Source, t.Count, blocked)
+		}
+		fmt.Fprintln(w, `</table>`)
+	}
+
+	// Top users table
+	if len(report.TopUsers) > 0 {
+		fmt.Fprintln(w, `<h2>Top Affected Users</h2><table><tr><th>User</th><th>Threats</th><th>Risk Score</th></tr>`)
+		for _, u := range report.TopUsers {
+			riskClass := ""
+			if u.RiskScore >= 70 {
+				riskClass = ` class="high-risk"`
+			}
+			fmt.Fprintf(w, `<tr><td>%s</td><td>%d</td><td%s>%.1f</td></tr>`, u.Email, u.ThreatCount, riskClass, u.RiskScore)
+		}
+		fmt.Fprintln(w, `</table>`)
+	}
+
+	// Top countries table
+	if len(report.TopCountries) > 0 {
+		fmt.Fprintln(w, `<h2>Top Countries</h2><table><tr><th>Country</th><th>Threats</th></tr>`)
+		for _, c := range report.TopCountries {
+			fmt.Fprintf(w, `<tr><td>%s</td><td>%d</td></tr>`, c.Country, c.Count)
+		}
+		fmt.Fprintln(w, `</table>`)
+	}
+
+	fmt.Fprintln(w, `<div class="footer">Generated by Xray Threat Intelligence System</div></div></body></html>`)
+}

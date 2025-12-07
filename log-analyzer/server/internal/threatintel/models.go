@@ -409,3 +409,231 @@ type UserDNSStats struct {
 	TopDomains     []string  `json:"top_domains"`
 	RiskLevel      RiskLevel `json:"risk_level"`
 }
+
+// ReportType represents the type of report
+type ReportType string
+
+const (
+	ReportTypeSummary    ReportType = "summary"
+	ReportTypeDetailed   ReportType = "detailed"
+	ReportTypeUser       ReportType = "user"
+	ReportTypeIncident   ReportType = "incident"
+	ReportTypeCompliance ReportType = "compliance"
+)
+
+// ReportFormat represents the export format
+type ReportFormat string
+
+const (
+	FormatJSON ReportFormat = "json"
+	FormatCSV  ReportFormat = "csv"
+	FormatPDF  ReportFormat = "pdf"
+)
+
+// ReportRequest represents a request to generate a report
+type ReportRequest struct {
+	Type      ReportType    `json:"type"`
+	Format    ReportFormat  `json:"format"`
+	StartDate time.Time     `json:"start_date"`
+	EndDate   time.Time     `json:"end_date"`
+	UserEmail string        `json:"user_email,omitempty"` // For user-specific reports
+	Filters   ReportFilters `json:"filters,omitempty"`
+}
+
+// ReportFilters contains filters for report generation
+type ReportFilters struct {
+	ThreatTypes     []string `json:"threat_types,omitempty"`
+	RiskLevels      []string `json:"risk_levels,omitempty"`
+	MinRiskScore    int      `json:"min_risk_score,omitempty"`
+	IncludeResolved bool     `json:"include_resolved"`
+}
+
+// ReportMetadata contains information about a generated report
+type ReportMetadata struct {
+	ID          string       `json:"id"`
+	Type        ReportType   `json:"type"`
+	Format      ReportFormat `json:"format"`
+	GeneratedAt time.Time    `json:"generated_at"`
+	StartDate   time.Time    `json:"start_date"`
+	EndDate     time.Time    `json:"end_date"`
+	RecordCount int          `json:"record_count"`
+	FileSize    int64        `json:"file_size"`
+	DownloadURL string       `json:"download_url,omitempty"`
+}
+
+// SummaryReport contains a summary of threat intelligence data
+type SummaryReport struct {
+	Metadata         ReportMetadata     `json:"metadata"`
+	Period           string             `json:"period"`
+	TotalMatches     int                `json:"total_matches"`
+	UniqueUsers      int                `json:"unique_users"`
+	UniqueDomains    int                `json:"unique_domains"`
+	ThreatsByType    map[string]int     `json:"threats_by_type"`
+	ThreatsBySource  map[string]int     `json:"threats_by_source"`
+	TopUsers         []*UserRiskProfile `json:"top_users"`
+	TopDomains       []*DomainStats     `json:"top_domains"`
+	RiskDistribution map[string]int     `json:"risk_distribution"`
+	Anomalies        int                `json:"anomalies_detected"`
+	TrendSummary     TrendSummary       `json:"trend_summary"`
+}
+
+// TrendSummary contains trend analysis data
+type TrendSummary struct {
+	MatchesTrend    string  `json:"matches_trend"`  // "up", "down", "stable"
+	MatchesChange   float64 `json:"matches_change"` // Percentage change
+	UsersTrend      string  `json:"users_trend"`
+	UsersChange     float64 `json:"users_change"`
+	RiskTrend       string  `json:"risk_trend"`
+	AverageRiskNow  float64 `json:"average_risk_now"`
+	AverageRiskPrev float64 `json:"average_risk_prev"`
+}
+
+// DetailedReport contains detailed threat match data
+type DetailedReport struct {
+	Metadata ReportMetadata `json:"metadata"`
+	Matches  []*ThreatMatch `json:"matches"`
+	Summary  *SummaryReport `json:"summary,omitempty"`
+}
+
+// UserReport contains user-specific threat data
+type UserReport struct {
+	Metadata    ReportMetadata   `json:"metadata"`
+	UserEmail   string           `json:"user_email"`
+	RiskProfile *UserRiskProfile `json:"risk_profile"`
+	Matches     []*ThreatMatch   `json:"matches"`
+	Anomalies   []*Anomaly       `json:"anomalies"`
+	DNSStats    *UserDNSStats    `json:"dns_stats"`
+	Timeline    []*TimelineEvent `json:"timeline"`
+}
+
+// TimelineEvent represents an event in user's activity timeline
+type TimelineEvent struct {
+	Timestamp   time.Time      `json:"timestamp"`
+	EventType   string         `json:"event_type"` // "match", "anomaly", "risk_change"
+	Description string         `json:"description"`
+	Severity    string         `json:"severity"`
+	Details     map[string]any `json:"details,omitempty"`
+}
+
+// IncidentReport contains data about a specific incident
+type IncidentReport struct {
+	Metadata        ReportMetadata   `json:"metadata"`
+	IncidentID      string           `json:"incident_id"`
+	Severity        string           `json:"severity"`
+	Status          string           `json:"status"` // "open", "investigating", "resolved"
+	AffectedUsers   []string         `json:"affected_users"`
+	RelatedMatches  []*ThreatMatch   `json:"related_matches"`
+	Timeline        []*TimelineEvent `json:"timeline"`
+	Recommendations []string         `json:"recommendations"`
+}
+
+// ExportData represents raw export data
+type ExportData struct {
+	ThreatMatches []*ThreatMatch      `json:"threat_matches,omitempty"`
+	Anomalies     []*Anomaly          `json:"anomalies,omitempty"`
+	RiskProfiles  []*UserRiskProfile  `json:"risk_profiles,omitempty"`
+	DNSStats      *DNSAnalysisSummary `json:"dns_stats,omitempty"`
+	GeoStats      *GeoSummary         `json:"geo_stats,omitempty"`
+}
+
+// Additional report types for storage
+
+// ReportStatus represents the status of a report
+type ReportStatus string
+
+const (
+	StatusPending    ReportStatus = "pending"
+	StatusGenerating ReportStatus = "generating"
+	StatusCompleted  ReportStatus = "completed"
+	StatusFailed     ReportStatus = "failed"
+)
+
+// Extended ReportType constants
+const (
+	ReportTypeThreatSummary ReportType = "threat_summary"
+	ReportTypeUserRisk      ReportType = "user_risk"
+	ReportTypeGeoAnalysis   ReportType = "geo_analysis"
+	ReportTypeDNSAnalysis   ReportType = "dns_analysis"
+)
+
+// Extended ReportFormat constants
+const (
+	FormatHTML ReportFormat = "html"
+)
+
+// Report represents a generated report
+type Report struct {
+	ID           string           `json:"id"`
+	Type         ReportType       `json:"type"`
+	Format       ReportFormat     `json:"format"`
+	Title        string           `json:"title"`
+	Description  string           `json:"description,omitempty"`
+	StartDate    time.Time        `json:"start_date"`
+	EndDate      time.Time        `json:"end_date"`
+	GeneratedAt  time.Time        `json:"generated_at"`
+	Status       ReportStatus     `json:"status"`
+	Sections     []*ReportSection `json:"sections,omitempty"`
+	TopThreats   []*ReportThreat  `json:"top_threats,omitempty"`
+	TopUsers     []*ReportUser    `json:"top_users,omitempty"`
+	TopCountries []*ReportCountry `json:"top_countries,omitempty"`
+	Summary      ReportStats      `json:"summary"`
+}
+
+// ReportSection represents a section in a report
+type ReportSection struct {
+	Title   string `json:"title"`
+	Content string `json:"content"`
+	Order   int    `json:"order"`
+}
+
+// ReportThreat represents threat data for reports
+type ReportThreat struct {
+	Type    string `json:"type"`
+	Source  string `json:"source"`
+	Count   int    `json:"count"`
+	Blocked bool   `json:"blocked"`
+}
+
+// ReportUser represents user data for reports
+type ReportUser struct {
+	Email       string  `json:"email"`
+	ThreatCount int     `json:"threat_count"`
+	RiskScore   float64 `json:"risk_score"`
+}
+
+// ReportCountry represents country data for reports
+type ReportCountry struct {
+	Country string `json:"country"`
+	Code    string `json:"code"`
+	Count   int    `json:"count"`
+}
+
+// ReportStats contains summary statistics for a report
+type ReportStats struct {
+	TotalThreats      int `json:"total_threats"`
+	BlockedThreats    int `json:"blocked_threats"`
+	UniqueUsers       int `json:"unique_users"`
+	UniqueCountries   int `json:"unique_countries"`
+	HighRiskUsers     int `json:"high_risk_users"`
+	DNSQueries        int `json:"dns_queries"`
+	SuspiciousDomains int `json:"suspicious_domains"`
+}
+
+// ReportConfig contains configuration for generating a report
+type ReportConfig struct {
+	Type        ReportType   `json:"type"`
+	Format      ReportFormat `json:"format"`
+	Title       string       `json:"title"`
+	Description string       `json:"description,omitempty"`
+	StartDate   time.Time    `json:"start_date"`
+	EndDate     time.Time    `json:"end_date"`
+}
+
+// ReportSummary contains a summary of available reports
+type ReportSummary struct {
+	TotalReports     int       `json:"total_reports"`
+	CompletedReports int       `json:"completed_reports"`
+	PendingReports   int       `json:"pending_reports"`
+	LastGenerated    time.Time `json:"last_generated,omitempty"`
+	Reports          []*Report `json:"reports"`
+}
