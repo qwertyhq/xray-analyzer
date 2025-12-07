@@ -303,3 +303,37 @@ export interface AnomalySummary {
   affected_users: number;
   threat_burst_count: number;
 }
+
+// User Risk Profile types
+export type RiskLevel = "low" | "medium" | "high" | "critical";
+
+export interface RiskFactor {
+  type: string;
+  description: string;
+  weight: number;
+  detected_at: string;
+}
+
+export interface UserRiskProfile {
+  user_email: string;
+  risk_level: RiskLevel;
+  risk_score: number;
+  total_matches: number;
+  threats_by_type: Record<string, number>;
+  unique_countries: number;
+  anomaly_count: number;
+  last_activity: string;
+  first_seen: string;
+  days_active: number;
+  top_domains: string[];
+  risk_factors: RiskFactor[];
+  trend_direction: "up" | "down" | "stable";
+}
+
+export interface UserRiskSummary {
+  total_users: number;
+  by_risk_level: Record<string, number>;
+  high_risk_users: UserRiskProfile[];
+  recent_escalations: number;
+  average_risk_score: number;
+}

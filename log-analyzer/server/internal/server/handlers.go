@@ -856,3 +856,63 @@ func (s *Server) handleIPInfo(w http.ResponseWriter, r *http.Request) {
 
 	http.Error(w, "IP address required", http.StatusBadRequest)
 }
+
+// handleUserRiskProfiles handles user risk profile requests
+func (s *Server) handleUserRiskProfiles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		// Get summary or specific user
+		if email := r.URL.Query().Get("email"); email != "" {
+			profile, err := s.storage.GetUserRiskProfile(ctx, email)
+			if err != nil {
+				log.Printf("Error getting risk profile: %v", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(profile)
+			return
+		}
+
+		// Return summary
+		summary, err := s.storage.GetUserRiskSummary(ctx)
+		if err != nil {
+			log.Printf("Error getting risk summary: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(summary)
+
+	case http.MethodPost:
+		// Recalculate specific user or all
+		if email := r.URL.Query().Get("email"); email != "" {
+			profile, err := s.storage.CalculateUserRiskProfile(ctx, email)
+			if err != nil {
+				log.Printf("Error calculating risk profile: %v", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(profile)
+			return
+		}
+
+		// Recalculate all
+		if err := s.storage.RecalculateAllUserRiskProfiles(ctx); err != nil {
+			log.Printf("Error recalculating all profiles: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		summary, _ := s.storage.GetUserRiskSummary(ctx)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(summary)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}

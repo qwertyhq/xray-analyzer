@@ -294,3 +294,47 @@ type AnomalySummary struct {
 	AffectedUsers    int            `json:"affected_users"`
 	ThreatBurstCount int            `json:"threat_burst_count"`
 }
+
+// RiskLevel represents the risk level of a user
+type RiskLevel string
+
+const (
+	RiskLevelLow      RiskLevel = "low"
+	RiskLevelMedium   RiskLevel = "medium"
+	RiskLevelHigh     RiskLevel = "high"
+	RiskLevelCritical RiskLevel = "critical"
+)
+
+// UserRiskProfile represents the risk profile of a user
+type UserRiskProfile struct {
+	UserEmail       string         `json:"user_email"`
+	RiskLevel       RiskLevel      `json:"risk_level"`
+	RiskScore       int            `json:"risk_score"` // 0-100
+	TotalMatches    int            `json:"total_matches"`
+	ThreatsByType   map[string]int `json:"threats_by_type"`
+	UniqueCountries int            `json:"unique_countries"`
+	AnomalyCount    int            `json:"anomaly_count"`
+	LastActivity    time.Time      `json:"last_activity"`
+	FirstSeen       time.Time      `json:"first_seen"`
+	DaysActive      int            `json:"days_active"`
+	TopDomains      []string       `json:"top_domains"`
+	RiskFactors     []RiskFactor   `json:"risk_factors"`
+	TrendDirection  string         `json:"trend_direction"` // "up", "down", "stable"
+}
+
+// RiskFactor represents a specific risk factor contributing to user's risk score
+type RiskFactor struct {
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Weight      int    `json:"weight"` // Points added to risk score
+	DetectedAt  string `json:"detected_at"`
+}
+
+// UserRiskSummary provides an overview of user risk profiles
+type UserRiskSummary struct {
+	TotalUsers        int                `json:"total_users"`
+	ByRiskLevel       map[string]int     `json:"by_risk_level"`
+	HighRiskUsers     []*UserRiskProfile `json:"high_risk_users"`
+	RecentEscalations int                `json:"recent_escalations"` // Users whose risk increased in last 24h
+	AverageRiskScore  float64            `json:"average_risk_score"`
+}
