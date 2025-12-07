@@ -192,6 +192,50 @@ func (s *Storage) migrate() error {
 		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (user_email, threat_type, domain)
 	);
+
+	-- Hourly threat statistics for time-based analytics
+	CREATE TABLE IF NOT EXISTS threat_hourly_stats (
+		hour TEXT NOT NULL,  -- Format: 2025-12-07T14 (YYYY-MM-DDTHH)
+		threat_type TEXT NOT NULL,
+		match_count INTEGER DEFAULT 0,
+		unique_users INTEGER DEFAULT 0,
+		PRIMARY KEY (hour, threat_type)
+	);
+	CREATE INDEX IF NOT EXISTS idx_threat_hourly_time ON threat_hourly_stats(hour DESC);
+
+	-- Daily threat statistics for trend analysis
+	CREATE TABLE IF NOT EXISTS threat_daily_stats (
+		day TEXT NOT NULL,  -- Format: 2025-12-07 (YYYY-MM-DD)
+		threat_type TEXT NOT NULL,
+		match_count INTEGER DEFAULT 0,
+		unique_users INTEGER DEFAULT 0,
+		PRIMARY KEY (day, threat_type)
+	);
+	CREATE INDEX IF NOT EXISTS idx_threat_daily_time ON threat_daily_stats(day DESC);
+
+	-- GeoIP statistics for threat matches by country
+	CREATE TABLE IF NOT EXISTS threat_geo_stats (
+		country_code TEXT NOT NULL,
+		country_name TEXT NOT NULL,
+		threat_type TEXT NOT NULL,
+		match_count INTEGER DEFAULT 0,
+		unique_users INTEGER DEFAULT 0,
+		last_match DATETIME,
+		PRIMARY KEY (country_code, threat_type)
+	);
+	CREATE INDEX IF NOT EXISTS idx_threat_geo_country ON threat_geo_stats(country_code);
+
+	-- User location tracking for geo analysis
+	CREATE TABLE IF NOT EXISTS user_locations (
+		user_email TEXT NOT NULL,
+		country_code TEXT NOT NULL,
+		country_name TEXT NOT NULL,
+		city TEXT,
+		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		request_count INTEGER DEFAULT 1,
+		PRIMARY KEY (user_email, country_code)
+	);
+	CREATE INDEX IF NOT EXISTS idx_user_loc_email ON user_locations(user_email);
 	`
 
 	_, err := s.db.Exec(schema)

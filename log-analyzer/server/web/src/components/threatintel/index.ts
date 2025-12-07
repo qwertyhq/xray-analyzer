@@ -5,4 +5,6 @@ export { UserList } from "./user-list";
 export { OverviewTab } from "./overview-tab";
 export { TorrentTab } from "./torrent-tab";
 export { TorTab } from "./tor-tab";
+export { TimeChart } from "./time-chart";
+export { GeoChart } from "./geo-chart";
 export { threatTypeConfig, sourceLabels } from "./config";

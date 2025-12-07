@@ -5,12 +5,15 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/xray-log-analyzer/server/internal/ipinfo"
 )
 
 // Service manages threat intelligence operations
 type Service struct {
 	loader         *FeedLoader
 	storage        Storage
+	ipInfo         *ipinfo.Service
 	mu             sync.RWMutex
 	updateInterval time.Duration
 	stopChan       chan struct{}
@@ -25,6 +28,9 @@ type Storage interface {
 	GetThreatStats(ctx context.Context) (*ThreatStats, error)
 	GetTopUsersByCategory(ctx context.Context, category string, limit int) ([]*CategoryUserStats, error)
 	GetTopUsersByAllCategories(ctx context.Context, limit int) (map[string][]*CategoryUserStats, error)
+	// Geo stats
+	SaveGeoStats(ctx context.Context, countryCode, countryName, threatType, userEmail string) error
+	SaveUserLocation(ctx context.Context, userEmail, countryCode, countryName, city string) error
 }
 
 // CategoryUserStats represents user stats for a content category
@@ -36,10 +42,11 @@ type CategoryUserStats struct {
 }
 
 // NewService creates a new threat intelligence service
-func NewService(storage Storage) *Service {
+func NewService(storage Storage, ipInfoSvc *ipinfo.Service) *Service {
 	return &Service{
 		loader:         NewFeedLoader(),
 		storage:        storage,
+		ipInfo:         ipInfoSvc,
 		updateInterval: 6 * time.Hour,
 		stopChan:       make(chan struct{}),
 	}
@@ -139,6 +146,21 @@ func (s *Service) CheckAndRecord(ctx context.Context, userEmail, nodeID, sourceI
 	if s.storage != nil {
 		if err := s.storage.SaveThreatMatch(ctx, match); err != nil {
 			log.Printf("threatintel: failed to save match: %v", err)
+		}
+
+		// Save geo stats if IP info service is available
+		if s.ipInfo != nil && sourceIP != "" {
+			go func() {
+				geoCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				if ipData, err := s.ipInfo.Lookup(geoCtx, sourceIP); err == nil && ipData != nil {
+					// Save geo stats for threat
+					s.storage.SaveGeoStats(geoCtx, ipData.CountryCode, ipData.Country, string(indicator.ThreatType), userEmail)
+					// Save user location
+					s.storage.SaveUserLocation(geoCtx, userEmail, ipData.CountryCode, ipData.Country, ipData.City)
+				}
+			}()
 		}
 	}
 

@@ -189,3 +189,64 @@ type FeedStatus struct {
 	Status     string       `json:"status"` // ok, error, updating
 	Error      string       `json:"error,omitempty"`
 }
+
+// HourlyThreatStats represents threat statistics for a single hour
+type HourlyThreatStats struct {
+	Hour        string           `json:"hour"` // Format: 2025-12-07T14
+	TotalCount  int64            `json:"total_count"`
+	ByType      map[string]int64 `json:"by_type"`
+	UniqueUsers int64            `json:"unique_users"`
+}
+
+// DailyThreatStats represents threat statistics for a single day
+type DailyThreatStats struct {
+	Day         string           `json:"day"` // Format: 2025-12-07
+	TotalCount  int64            `json:"total_count"`
+	ByType      map[string]int64 `json:"by_type"`
+	UniqueUsers int64            `json:"unique_users"`
+}
+
+// TimeAnalytics represents time-based threat analytics
+type TimeAnalytics struct {
+	HourlyStats []*HourlyThreatStats `json:"hourly_stats"`
+	DailyStats  []*DailyThreatStats  `json:"daily_stats"`
+	PeakHour    string               `json:"peak_hour"`
+	PeakDay     string               `json:"peak_day"`
+	Trends      map[string]float64   `json:"trends"` // category -> growth rate
+}
+
+// GeoStats represents threat statistics by country
+type GeoStats struct {
+	CountryCode string    `json:"country_code"`
+	CountryName string    `json:"country_name"`
+	ThreatType  string    `json:"threat_type"`
+	MatchCount  int64     `json:"match_count"`
+	UniqueUsers int64     `json:"unique_users"`
+	LastMatch   time.Time `json:"last_match,omitempty"`
+}
+
+// GeoSummary provides aggregated geographic analysis
+type GeoSummary struct {
+	TotalCountries int                    `json:"total_countries"`
+	TopCountries   []*CountryStats        `json:"top_countries"`
+	ByThreatType   map[string][]*GeoStats `json:"by_threat_type"`
+}
+
+// CountryStats aggregates all threat types for a country
+type CountryStats struct {
+	CountryCode  string `json:"country_code"`
+	CountryName  string `json:"country_name"`
+	TotalMatches int64  `json:"total_matches"`
+	UniqueUsers  int64  `json:"unique_users"`
+	TopThreat    string `json:"top_threat"` // Most common threat type
+}
+
+// UserLocation tracks user access locations
+type UserLocation struct {
+	UserEmail    string    `json:"user_email"`
+	CountryCode  string    `json:"country_code"`
+	CountryName  string    `json:"country_name"`
+	City         string    `json:"city,omitempty"`
+	LastSeen     time.Time `json:"last_seen"`
+	RequestCount int64     `json:"request_count"`
+}

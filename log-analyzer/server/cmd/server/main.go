@@ -11,6 +11,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/analyzer"
 	"github.com/xray-log-analyzer/server/internal/blacklist"
 	"github.com/xray-log-analyzer/server/internal/config"
+	"github.com/xray-log-analyzer/server/internal/ipinfo"
 	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/server"
 	"github.com/xray-log-analyzer/server/internal/storage"
@@ -62,8 +63,11 @@ func main() {
 		cfg.SuspiciousTimeWindow,
 	)
 
+	// Initialize IP info service for geo lookups
+	ipInfoSvc := ipinfo.NewService()
+
 	// Initialize threat intelligence service
-	threatIntelSvc := threatintel.NewService(store)
+	threatIntelSvc := threatintel.NewService(store, ipInfoSvc)
 	if err := threatIntelSvc.Start(ctx); err != nil {
 		log.Printf("threatintel: failed to start (continuing without): %v", err)
 	} else {

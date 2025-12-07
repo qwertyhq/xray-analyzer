@@ -103,6 +103,8 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/threatintel/matches", s.handleThreatIntelMatches)
 	mux.HandleFunc("/api/threatintel/feeds", s.handleThreatIntelFeeds)
 	mux.HandleFunc("/api/threatintel/top-users", s.handleThreatIntelTopUsers)
+	mux.HandleFunc("/api/threatintel/time-stats", s.handleThreatIntelTimeStats)
+	mux.HandleFunc("/api/threatintel/geo-stats", s.handleThreatIntelGeoStats)
 	mux.HandleFunc("/api/ipinfo", s.handleIPInfo)
 	mux.HandleFunc("/health", s.handleHealth)
 

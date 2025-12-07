@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/models"
+	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
 // handleStats returns overall statistics
@@ -648,6 +649,95 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// handleThreatIntelTimeStats returns hourly and daily threat statistics
+func (s *Server) handleThreatIntelTimeStats(w http.ResponseWriter, r *http.Request) {
+	if s.storage == nil {
+		http.Error(w, "Storage not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get hours (default 24)
+	hours := 24
+	if h := r.URL.Query().Get("hours"); h != "" {
+		if parsed, err := strconv.Atoi(h); err == nil && parsed > 0 && parsed <= 168 {
+			hours = parsed
+		}
+	}
+
+	// Get days (default 7)
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 30 {
+			days = parsed
+		}
+	}
+
+	// Get hourly stats
+	hourlyStats, err := s.storage.GetHourlyThreatStats(ctx, hours)
+	if err != nil {
+		log.Printf("Error getting hourly threat stats: %v", err)
+		hourlyStats = []*threatintel.HourlyThreatStats{}
+	}
+
+	// Get daily stats
+	dailyStats, err := s.storage.GetDailyThreatStats(ctx, days)
+	if err != nil {
+		log.Printf("Error getting daily threat stats: %v", err)
+		dailyStats = []*threatintel.DailyThreatStats{}
+	}
+
+	response := map[string]interface{}{
+		"hourly": hourlyStats,
+		"daily":  dailyStats,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleThreatIntelGeoStats returns geographic threat statistics
+func (s *Server) handleThreatIntelGeoStats(w http.ResponseWriter, r *http.Request) {
+	if s.storage == nil {
+		http.Error(w, "Storage not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Check for summary request
+	if r.URL.Query().Get("summary") == "true" {
+		summary, err := s.storage.GetGeoSummary(ctx)
+		if err != nil {
+			log.Printf("Error getting geo summary: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(summary)
+		return
+	}
+
+	// Get limit
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	stats, err := s.storage.GetGeoStats(ctx, limit)
+	if err != nil {
+		log.Printf("Error getting geo stats: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
 }
 
 // handleIPInfo returns geolocation info for IP addresses

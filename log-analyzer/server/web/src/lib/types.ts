@@ -220,3 +220,51 @@ export interface IPInfo {
   lon: number;
   cached_at: string;
 }
+
+// Time-based threat statistics
+export interface HourlyThreatStats {
+  hour: string;
+  threat_type: string;
+  match_count: number;
+  unique_users: number;
+  top_domain: string;
+  total_count: number;
+}
+
+export interface DailyThreatStats {
+  day: string;
+  threat_type: string;
+  match_count: number;
+  unique_users: number;
+  top_domain: string;
+  total_count: number;
+}
+
+export interface TimeStats {
+  hourly: HourlyThreatStats[];
+  daily: DailyThreatStats[];
+}
+
+// GeoIP statistics types
+export interface GeoStats {
+  country_code: string;
+  country_name: string;
+  threat_type: string;
+  match_count: number;
+  unique_users: number;
+  last_match?: string;
+}
+
+export interface CountryStats {
+  country_code: string;
+  country_name: string;
+  total_matches: number;
+  unique_users: number;
+  top_threat: string;
+}
+
+export interface GeoSummary {
+  total_countries: number;
+  top_countries: CountryStats[];
+  by_threat_type: Record<string, GeoStats[]>;
+}

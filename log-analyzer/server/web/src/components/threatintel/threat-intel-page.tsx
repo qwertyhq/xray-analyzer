@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldAlert, RefreshCw, Download, Globe } from "lucide-react";
-import { FeedStatus } from "@/lib/types";
+import { FeedStatus, TimeStats, GeoSummary } from "@/lib/types";
 import { useWsThreatIntel } from "@/contexts/websocket-context";
 import { OverviewTab } from "./overview-tab";
 import { TorrentTab } from "./torrent-tab";
@@ -15,6 +15,8 @@ export function ThreatIntelPage() {
   const { threatIntel, loading: wsLoading, connected } = useWsThreatIntel();
   
   const [feeds, setFeeds] = useState<FeedStatus[]>([]);
+  const [timeStats, setTimeStats] = useState<TimeStats | null>(null);
+  const [geoStats, setGeoStats] = useState<GeoSummary | null>(null);
   const [apiLoading, setApiLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -30,10 +32,38 @@ export function ThreatIntelPage() {
     }
   };
 
+  // Fetch time-based statistics
+  const fetchTimeStats = async () => {
+    try {
+      const res = await fetch("/api/threatintel/time-stats");
+      if (res.ok) setTimeStats(await res.json());
+    } catch {
+      // ignore
+    }
+  };
+
+  // Fetch geo statistics
+  const fetchGeoStats = async () => {
+    try {
+      const res = await fetch("/api/threatintel/geo-stats?summary=true");
+      if (res.ok) setGeoStats(await res.json());
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     fetchFeeds();
-    const interval = setInterval(fetchFeeds, 60000);
-    return () => clearInterval(interval);
+    fetchTimeStats();
+    fetchGeoStats();
+    const feedsInterval = setInterval(fetchFeeds, 60000);
+    const timeInterval = setInterval(fetchTimeStats, 30000);
+    const geoInterval = setInterval(fetchGeoStats, 60000);
+    return () => {
+      clearInterval(feedsInterval);
+      clearInterval(timeInterval);
+      clearInterval(geoInterval);
+    };
   }, []);
 
   const stats = threatIntel.stats;
@@ -114,6 +144,8 @@ export function ThreatIntelPage() {
             feeds={feeds}
             topUsers={topUsers}
             threatMatches={allMatches}
+            timeStats={timeStats}
+            geoStats={geoStats}
           />
         </TabsContent>
 
