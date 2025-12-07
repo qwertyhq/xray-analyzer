@@ -337,3 +337,60 @@ export interface UserRiskSummary {
   recent_escalations: number;
   average_risk_score: number;
 }
+
+// DNS Analysis types
+export interface DomainStats {
+  domain: string;
+  total_hits: number;
+  unique_users: number;
+  threat_types: string[];
+  sources: string[];
+  first_seen: string;
+  last_seen: string;
+  risk_level: RiskLevel;
+  category_hits: Record<string, number>;
+}
+
+export interface HourlyDNS {
+  hour: string;
+  total_queries: number;
+  blocked_queries: number;
+  unique_users: number;
+}
+
+export interface DailyDNS {
+  day: string;
+  total_queries: number;
+  blocked_queries: number;
+  unique_users: number;
+}
+
+export interface DNSQueryStats {
+  total_queries: number;
+  blocked_queries: number;
+  block_rate: number;
+  unique_domains_all: number;
+  unique_domains_bad: number;
+  top_domains: DomainStats[];
+  top_blocked_types: Record<string, number>;
+  hourly_stats: HourlyDNS[];
+  daily_stats: DailyDNS[];
+}
+
+export interface UserDNSStats {
+  user_email: string;
+  total_queries: number;
+  blocked_queries: number;
+  block_rate: number;
+  top_domains: string[];
+  risk_level: RiskLevel;
+}
+
+export interface DNSAnalysisSummary {
+  query_stats: DNSQueryStats | null;
+  top_bad_domains: DomainStats[];
+  top_users_by_dns: UserDNSStats[];
+  category_breakdown: Record<string, number>;
+  trend_direction: "up" | "down" | "stable";
+  risk_score: number;
+}
