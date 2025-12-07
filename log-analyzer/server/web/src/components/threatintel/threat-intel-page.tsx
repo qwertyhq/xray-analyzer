@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldAlert, RefreshCw, Download, Globe } from "lucide-react";
-import { FeedStatus, TimeStats, GeoSummary, AnomalySummary, UserRiskSummary } from "@/lib/types";
+import { FeedStatus, TimeStats, GeoSummary, AnomalySummary, UserRiskSummary, DNSAnalysisSummary } from "@/lib/types";
 import { useWsThreatIntel } from "@/contexts/websocket-context";
 import { OverviewTab } from "./overview-tab";
 import { TorrentTab } from "./torrent-tab";
@@ -19,6 +19,7 @@ export function ThreatIntelPage() {
   const [geoStats, setGeoStats] = useState<GeoSummary | null>(null);
   const [anomalies, setAnomalies] = useState<AnomalySummary | null>(null);
   const [riskProfiles, setRiskProfiles] = useState<UserRiskSummary | null>(null);
+  const [dnsAnalysis, setDnsAnalysis] = useState<DNSAnalysisSummary | null>(null);
   const [apiLoading, setApiLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -74,6 +75,16 @@ export function ThreatIntelPage() {
     }
   }, []);
 
+  // Fetch DNS analysis
+  const fetchDnsAnalysis = useCallback(async () => {
+    try {
+      const res = await fetch("/api/threatintel/dns-analysis");
+      if (res.ok) setDnsAnalysis(await res.json());
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // Run anomaly detection
   const runAnomalyDetection = useCallback(async () => {
     try {
@@ -90,19 +101,22 @@ export function ThreatIntelPage() {
     fetchGeoStats();
     fetchAnomalies();
     fetchRiskProfiles();
+    fetchDnsAnalysis();
     const feedsInterval = setInterval(fetchFeeds, 60000);
     const timeInterval = setInterval(fetchTimeStats, 30000);
     const geoInterval = setInterval(fetchGeoStats, 60000);
     const anomalyInterval = setInterval(fetchAnomalies, 60000);
     const riskInterval = setInterval(fetchRiskProfiles, 120000);
+    const dnsInterval = setInterval(fetchDnsAnalysis, 60000);
     return () => {
       clearInterval(feedsInterval);
       clearInterval(timeInterval);
       clearInterval(geoInterval);
       clearInterval(anomalyInterval);
       clearInterval(riskInterval);
+      clearInterval(dnsInterval);
     };
-  }, [fetchAnomalies, fetchRiskProfiles]);
+  }, [fetchAnomalies, fetchRiskProfiles, fetchDnsAnalysis]);
 
   const stats = threatIntel.stats;
   const matches = threatIntel.matches || [];
@@ -186,7 +200,9 @@ export function ThreatIntelPage() {
             geoStats={geoStats}
             anomalies={anomalies}
             riskProfiles={riskProfiles}
+            dnsAnalysis={dnsAnalysis}
             onRiskRefresh={fetchRiskProfiles}
+            onDnsRefresh={fetchDnsAnalysis}
           />
         </TabsContent>
 

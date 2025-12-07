@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ThreatMatch, ThreatStats, FeedStatus, CategoryTopUsers, TimeStats, GeoSummary, AnomalySummary, UserRiskSummary } from "@/lib/types";
+import { ThreatMatch, ThreatStats, FeedStatus, CategoryTopUsers, TimeStats, GeoSummary, AnomalySummary, UserRiskSummary, DNSAnalysisSummary } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { threatTypeConfig, sourceLabels } from "./config";
 import { UserList } from "./user-list";
@@ -19,6 +19,7 @@ import { TimeChart } from "./time-chart";
 import { GeoChart } from "./geo-chart";
 import { AnomalyPanel } from "./anomaly-panel";
 import { RiskProfilePanel } from "./risk-profile-panel";
+import { DNSAnalysisPanel } from "./dns-analysis-panel";
 
 interface OverviewTabProps {
   stats: ThreatStats | null;
@@ -29,10 +30,12 @@ interface OverviewTabProps {
   geoStats: GeoSummary | null;
   anomalies: AnomalySummary | null;
   riskProfiles: UserRiskSummary | null;
+  dnsAnalysis: DNSAnalysisSummary | null;
   onRiskRefresh?: () => void;
+  onDnsRefresh?: () => void;
 }
 
-export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, geoStats, anomalies, riskProfiles, onRiskRefresh }: OverviewTabProps) {
+export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, geoStats, anomalies, riskProfiles, dnsAnalysis, onRiskRefresh, onDnsRefresh }: OverviewTabProps) {
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
@@ -176,6 +179,9 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
 
       {/* User Risk Profiles Panel */}
       <RiskProfilePanel data={riskProfiles} onRefresh={onRiskRefresh} />
+
+      {/* DNS Analysis Panel */}
+      <DNSAnalysisPanel data={dnsAnalysis} onRefresh={onDnsRefresh} />
 
       {/* Recent Matches (all types) */}
       <MatchesTable 
