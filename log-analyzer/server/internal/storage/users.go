@@ -178,6 +178,9 @@ func (s *Storage) GetUserBlacklistCount(ctx context.Context, nodeID, userEmail s
 func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, error) {
 	stats := &models.GlobalStats{}
 
+	// Get node stats and sum online users from nodes (same 1-minute window as GetNodeStats)
+	oneMinAgo := time.Now().UTC().Add(-1 * time.Minute).Format(time.RFC3339)
+
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(total_requests), 0), COALESCE(SUM(blacklist_hits), 0), COUNT(*)
 		FROM node_stats
@@ -193,10 +196,11 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 		return nil, err
 	}
 
+	// Use same time format as GetNodeStats for consistency
 	err = s.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT user_email) FROM user_stats
-		WHERE last_seen > datetime('now', '-1 minutes')
-	`).Scan(&stats.OnlineUsers)
+		WHERE last_seen > ?
+	`, oneMinAgo).Scan(&stats.OnlineUsers)
 	if err != nil {
 		return nil, err
 	}

@@ -174,7 +174,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
         title="Online Users"
         value={stats.online_users || 0}
         icon={UserCheck}
-        description="Active in last 5 min"
+        description="Active in last minute"
         valueClassName="text-green-500"
       />
 
