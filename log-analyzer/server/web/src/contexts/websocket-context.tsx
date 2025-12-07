@@ -97,6 +97,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       try {
         const update: DashboardUpdate = JSON.parse(event.data);
         
+        // Debug logging for threatintel
+        if (update.type === "threatintel") {
+          console.log("[WS] threatintel received:", update.data);
+        }
+        
         setState(prev => {
           switch (update.type) {
             case "stats":

@@ -156,11 +156,11 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches }: OverviewT
         </div>
       )}
 
-      {/* Recent Threat Matches (excluding torrent/tor) */}
+      {/* Recent Matches (all types) */}
       <MatchesTable 
         matches={threatMatches} 
-        title="Recent Threat Matches"
-        description={`Traffic that matched known threat indicators (${threatMatches.length} total)`}
+        title="Recent Matches"
+        description={`Last ${threatMatches.length} detected connections (max 20 stored)`}
       />
     </div>
   );

@@ -41,13 +41,11 @@ export function ThreatIntelPage() {
   const topUsers = threatIntel.topUsers;
   const loading = wsLoading && apiLoading;
 
-  // Filter matches by type
-  // Content/P2P categories that go to separate tabs or are non-threat
-  const contentCategories = ["torrent", "tor", "porn", "gambling", "social", "fakenews", "tiktok", "ads", "tracking", "redirect"];
+  // Filter matches by type for specific tabs
   const torrentMatches = matches.filter(m => m.threat_type === "torrent");
   const torMatches = matches.filter(m => m.threat_type === "tor");
-  // Threat matches = everything except content categories
-  const threatMatches = matches.filter(m => !contentCategories.includes(m.threat_type));
+  // Show ALL matches in the overview (no filtering)
+  const allMatches = matches;
 
   if (loading) {
     return (
@@ -115,7 +113,7 @@ export function ThreatIntelPage() {
             stats={stats}
             feeds={feeds}
             topUsers={topUsers}
-            threatMatches={threatMatches}
+            threatMatches={allMatches}
           />
         </TabsContent>
 
