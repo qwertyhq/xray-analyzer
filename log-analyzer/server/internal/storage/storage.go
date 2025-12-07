@@ -262,6 +262,26 @@ func (s *Storage) migrate() error {
 		first_seen DATETIME,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	-- User risk profiles table
+	CREATE TABLE IF NOT EXISTS user_risk_profiles (
+		user_email TEXT PRIMARY KEY,
+		risk_level TEXT NOT NULL DEFAULT 'low',
+		risk_score INTEGER NOT NULL DEFAULT 0,
+		total_matches INTEGER DEFAULT 0,
+		threats_by_type TEXT,  -- JSON encoded map
+		unique_countries INTEGER DEFAULT 0,
+		anomaly_count INTEGER DEFAULT 0,
+		first_seen DATETIME,
+		last_activity DATETIME,
+		days_active INTEGER DEFAULT 0,
+		top_domains TEXT,  -- JSON array
+		risk_factors TEXT,  -- JSON array of risk factors
+		trend_direction TEXT DEFAULT 'stable',
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_risk_level ON user_risk_profiles(risk_level);
+	CREATE INDEX IF NOT EXISTS idx_risk_score ON user_risk_profiles(risk_score DESC);
 	`
 
 	_, err := s.db.Exec(schema)

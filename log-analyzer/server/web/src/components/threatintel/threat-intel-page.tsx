@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldAlert, RefreshCw, Download, Globe } from "lucide-react";
-import { FeedStatus, TimeStats, GeoSummary, AnomalySummary } from "@/lib/types";
+import { FeedStatus, TimeStats, GeoSummary, AnomalySummary, UserRiskSummary } from "@/lib/types";
 import { useWsThreatIntel } from "@/contexts/websocket-context";
 import { OverviewTab } from "./overview-tab";
 import { TorrentTab } from "./torrent-tab";
@@ -18,6 +18,7 @@ export function ThreatIntelPage() {
   const [timeStats, setTimeStats] = useState<TimeStats | null>(null);
   const [geoStats, setGeoStats] = useState<GeoSummary | null>(null);
   const [anomalies, setAnomalies] = useState<AnomalySummary | null>(null);
+  const [riskProfiles, setRiskProfiles] = useState<UserRiskSummary | null>(null);
   const [apiLoading, setApiLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -63,6 +64,16 @@ export function ThreatIntelPage() {
     }
   }, []);
 
+  // Fetch risk profiles
+  const fetchRiskProfiles = useCallback(async () => {
+    try {
+      const res = await fetch("/api/threatintel/risk-profiles");
+      if (res.ok) setRiskProfiles(await res.json());
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // Run anomaly detection
   const runAnomalyDetection = useCallback(async () => {
     try {
@@ -78,17 +89,20 @@ export function ThreatIntelPage() {
     fetchTimeStats();
     fetchGeoStats();
     fetchAnomalies();
+    fetchRiskProfiles();
     const feedsInterval = setInterval(fetchFeeds, 60000);
     const timeInterval = setInterval(fetchTimeStats, 30000);
     const geoInterval = setInterval(fetchGeoStats, 60000);
     const anomalyInterval = setInterval(fetchAnomalies, 60000);
+    const riskInterval = setInterval(fetchRiskProfiles, 120000);
     return () => {
       clearInterval(feedsInterval);
       clearInterval(timeInterval);
       clearInterval(geoInterval);
       clearInterval(anomalyInterval);
+      clearInterval(riskInterval);
     };
-  }, [fetchAnomalies]);
+  }, [fetchAnomalies, fetchRiskProfiles]);
 
   const stats = threatIntel.stats;
   const matches = threatIntel.matches || [];
@@ -171,6 +185,8 @@ export function ThreatIntelPage() {
             timeStats={timeStats}
             geoStats={geoStats}
             anomalies={anomalies}
+            riskProfiles={riskProfiles}
+            onRiskRefresh={fetchRiskProfiles}
           />
         </TabsContent>
 

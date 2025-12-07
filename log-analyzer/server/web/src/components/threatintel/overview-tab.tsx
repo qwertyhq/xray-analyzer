@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ThreatMatch, ThreatStats, FeedStatus, CategoryTopUsers, TimeStats, GeoSummary, AnomalySummary } from "@/lib/types";
+import { ThreatMatch, ThreatStats, FeedStatus, CategoryTopUsers, TimeStats, GeoSummary, AnomalySummary, UserRiskSummary } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { threatTypeConfig, sourceLabels } from "./config";
 import { UserList } from "./user-list";
@@ -18,6 +18,7 @@ import { MatchesTable } from "./matches-table";
 import { TimeChart } from "./time-chart";
 import { GeoChart } from "./geo-chart";
 import { AnomalyPanel } from "./anomaly-panel";
+import { RiskProfilePanel } from "./risk-profile-panel";
 
 interface OverviewTabProps {
   stats: ThreatStats | null;
@@ -27,9 +28,11 @@ interface OverviewTabProps {
   timeStats: TimeStats | null;
   geoStats: GeoSummary | null;
   anomalies: AnomalySummary | null;
+  riskProfiles: UserRiskSummary | null;
+  onRiskRefresh?: () => void;
 }
 
-export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, geoStats, anomalies }: OverviewTabProps) {
+export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, geoStats, anomalies, riskProfiles, onRiskRefresh }: OverviewTabProps) {
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
@@ -170,6 +173,9 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
 
       {/* Anomaly Detection Panel */}
       <AnomalyPanel data={anomalies} />
+
+      {/* User Risk Profiles Panel */}
+      <RiskProfilePanel data={riskProfiles} onRefresh={onRiskRefresh} />
 
       {/* Recent Matches (all types) */}
       <MatchesTable 
