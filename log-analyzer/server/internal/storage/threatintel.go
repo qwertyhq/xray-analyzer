@@ -2,18 +2,20 @@ package storage
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
-// MaxThreatMatches is the maximum number of threat matches to keep in the database
+// MaxThreatMatches is the maximum number of recent threat matches to keep for display
 const MaxThreatMatches = 20
 
-// SaveThreatMatch saves a threat match to the database and cleans up old records
+// SaveThreatMatch saves a threat match to the database, updates statistics, and cleans up old records
 func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.ThreatMatch) error {
 	now := time.Now().Format(time.RFC3339)
 
+	// Insert into recent matches table
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO threat_matches (
 			user_email, node_id, source_ip, destination,
@@ -27,7 +29,42 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 		return err
 	}
 
-	// Delete old records keeping only MaxThreatMatches most recent
+	// Update aggregated total counter
+	s.db.ExecContext(ctx, `
+		UPDATE threat_stats_agg SET total_matches = total_matches + 1, last_updated = ? WHERE id = 1
+	`, now)
+
+	// Update threat type counter
+	s.db.ExecContext(ctx, `
+		INSERT INTO threat_type_stats (threat_type, match_count, last_match) 
+		VALUES (?, 1, ?)
+		ON CONFLICT(threat_type) DO UPDATE SET 
+			match_count = match_count + 1,
+			last_match = excluded.last_match
+	`, string(match.ThreatType), now)
+
+	// Update user threat stats
+	s.db.ExecContext(ctx, `
+		INSERT INTO user_threat_stats (user_email, threat_type, match_count, last_match)
+		VALUES (?, ?, 1, ?)
+		ON CONFLICT(user_email, threat_type) DO UPDATE SET
+			match_count = match_count + 1,
+			last_match = excluded.last_match
+	`, match.UserEmail, string(match.ThreatType), now)
+
+	// Update user domain stats (extract domain from destination)
+	domain := extractDomain(match.Destination)
+	if domain != "" {
+		s.db.ExecContext(ctx, `
+			INSERT INTO user_threat_domains (user_email, threat_type, domain, hit_count, last_seen)
+			VALUES (?, ?, ?, 1, ?)
+			ON CONFLICT(user_email, threat_type, domain) DO UPDATE SET
+				hit_count = hit_count + 1,
+				last_seen = excluded.last_seen
+		`, match.UserEmail, string(match.ThreatType), domain, now)
+	}
+
+	// Delete old recent records keeping only MaxThreatMatches most recent
 	_, err = s.db.ExecContext(ctx, `
 		DELETE FROM threat_matches 
 		WHERE id NOT IN (
@@ -38,6 +75,19 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 	`, MaxThreatMatches)
 
 	return err
+}
+
+// extractDomain extracts domain from destination (removes port)
+func extractDomain(destination string) string {
+	// Remove port if present
+	if idx := strings.LastIndex(destination, ":"); idx > 0 {
+		// Check if it's IPv6 (contains multiple colons)
+		if strings.Count(destination, ":") > 1 && !strings.HasPrefix(destination, "[") {
+			return destination // IPv6 without brackets, keep as is
+		}
+		return destination[:idx]
+	}
+	return destination
 }
 
 // GetThreatMatches returns all threat matches (limited by MaxThreatMatches)
@@ -121,27 +171,42 @@ func (s *Storage) GetThreatMatchesByUser(ctx context.Context, userEmail string, 
 	return matches, rows.Err()
 }
 
-// GetThreatStats returns threat intelligence statistics from the database
+// GetThreatStats returns threat intelligence statistics from aggregated tables
 func (s *Storage) GetThreatStats(ctx context.Context) (*threatintel.ThreatStats, error) {
 	stats := &threatintel.ThreatStats{
 		IndicatorsByType:   make(map[string]int64),
 		IndicatorsBySource: make(map[string]int64),
 	}
 
-	// Total matches
-	row := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM threat_matches`)
+	// Total matches from aggregated table
+	row := s.db.QueryRowContext(ctx, `SELECT total_matches FROM threat_stats_agg WHERE id = 1`)
 	row.Scan(&stats.TotalMatches)
 
-	// Matches in last 24h
+	// Matches in last 24h - count from recent matches + estimate from type stats
 	since := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
-	row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM threat_matches WHERE matched_at >= ?`, since)
+	row = s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM threat_matches WHERE matched_at >= ?
+	`, since)
 	row.Scan(&stats.MatchesLast24h)
 
-	// Matches by type
+	// If we have few recent matches but many total, estimate based on rate
+	// For now, also count from threat_type_stats where last_match is within 24h
+	var recentTypeMatches int64
+	row = s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(match_count), 0) FROM threat_type_stats WHERE last_match >= ?
+	`, since)
+	row.Scan(&recentTypeMatches)
+
+	// Use the larger value (recent table limited to 20, but type stats have full count for recent types)
+	if recentTypeMatches > stats.MatchesLast24h {
+		stats.MatchesLast24h = recentTypeMatches
+	}
+
+	// Matches by type from aggregated table
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT threat_type, COUNT(*) as cnt 
-		FROM threat_matches 
-		GROUP BY threat_type
+		SELECT threat_type, match_count 
+		FROM threat_type_stats 
+		ORDER BY match_count DESC
 	`)
 	if err == nil {
 		defer rows.Close()
@@ -154,7 +219,7 @@ func (s *Storage) GetThreatStats(ctx context.Context) (*threatintel.ThreatStats,
 		}
 	}
 
-	// Matches by source
+	// Matches by source - still from recent matches (less important for aggregation)
 	rows, err = s.db.QueryContext(ctx, `
 		SELECT source, COUNT(*) as cnt 
 		FROM threat_matches 
@@ -191,13 +256,12 @@ func (s *Storage) CleanupOldThreatMatches(ctx context.Context, retention time.Du
 
 // GetTopUsersByCategory returns top users by content category violations with their visited domains
 func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, limit int) ([]*threatintel.CategoryUserStats, error) {
-	// First get top users
+	// Get top users from aggregated table
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, threat_type, COUNT(*) as cnt
-		FROM threat_matches
+		SELECT user_email, threat_type, match_count
+		FROM user_threat_stats
 		WHERE threat_type = ?
-		GROUP BY user_email
-		ORDER BY cnt DESC
+		ORDER BY match_count DESC
 		LIMIT ?
 	`, category, limit)
 	if err != nil {
@@ -217,14 +281,13 @@ func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, li
 		return nil, err
 	}
 
-	// Now get top domains for each user
+	// Get top domains for each user from aggregated table
 	for _, st := range stats {
 		domainRows, err := s.db.QueryContext(ctx, `
-			SELECT destination, COUNT(*) as cnt
-			FROM threat_matches
+			SELECT domain, hit_count
+			FROM user_threat_domains
 			WHERE user_email = ? AND threat_type = ?
-			GROUP BY destination
-			ORDER BY cnt DESC
+			ORDER BY hit_count DESC
 			LIMIT 5
 		`, st.UserEmail, category)
 		if err != nil {
@@ -235,10 +298,6 @@ func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, li
 			var domain string
 			var cnt int
 			if domainRows.Scan(&domain, &cnt) == nil {
-				// Extract just the host part (remove port)
-				if idx := lastIndex(domain, ':'); idx > 0 {
-					domain = domain[:idx]
-				}
 				st.Domains = append(st.Domains, domain)
 			}
 		}

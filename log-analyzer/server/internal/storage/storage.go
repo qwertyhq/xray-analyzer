@@ -156,6 +156,42 @@ func (s *Storage) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_threat_user ON threat_matches(user_email);
 	CREATE INDEX IF NOT EXISTS idx_threat_time ON threat_matches(matched_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_threat_type ON threat_matches(threat_type);
+
+	-- Aggregated threat statistics (counters that persist)
+	CREATE TABLE IF NOT EXISTS threat_stats_agg (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		total_matches INTEGER DEFAULT 0,
+		last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	INSERT OR IGNORE INTO threat_stats_agg (id, total_matches) VALUES (1, 0);
+
+	-- Stats by threat type (persistent counters)
+	CREATE TABLE IF NOT EXISTS threat_type_stats (
+		threat_type TEXT PRIMARY KEY,
+		match_count INTEGER DEFAULT 0,
+		last_match DATETIME
+	);
+
+	-- Stats by user and category (persistent counters)
+	CREATE TABLE IF NOT EXISTS user_threat_stats (
+		user_email TEXT NOT NULL,
+		threat_type TEXT NOT NULL,
+		match_count INTEGER DEFAULT 0,
+		last_match DATETIME,
+		PRIMARY KEY (user_email, threat_type)
+	);
+	CREATE INDEX IF NOT EXISTS idx_user_threat_type ON user_threat_stats(threat_type);
+	CREATE INDEX IF NOT EXISTS idx_user_threat_count ON user_threat_stats(match_count DESC);
+
+	-- User domains per category
+	CREATE TABLE IF NOT EXISTS user_threat_domains (
+		user_email TEXT NOT NULL,
+		threat_type TEXT NOT NULL,
+		domain TEXT NOT NULL,
+		hit_count INTEGER DEFAULT 1,
+		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (user_email, threat_type, domain)
+	);
 	`
 
 	_, err := s.db.Exec(schema)
