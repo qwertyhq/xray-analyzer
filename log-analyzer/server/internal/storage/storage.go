@@ -282,6 +282,49 @@ func (s *Storage) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_risk_level ON user_risk_profiles(risk_level);
 	CREATE INDEX IF NOT EXISTS idx_risk_score ON user_risk_profiles(risk_score DESC);
+
+	-- DNS analysis tables
+	CREATE TABLE IF NOT EXISTS dns_domain_stats (
+		domain TEXT PRIMARY KEY,
+		total_hits INTEGER DEFAULT 0,
+		unique_users INTEGER DEFAULT 0,
+		threat_types TEXT,  -- JSON array
+		sources TEXT,  -- JSON array
+		first_seen DATETIME,
+		last_seen DATETIME,
+		risk_level TEXT DEFAULT 'low',
+		category_hits TEXT  -- JSON map of category -> count
+	);
+	CREATE INDEX IF NOT EXISTS idx_dns_domain_hits ON dns_domain_stats(total_hits DESC);
+	CREATE INDEX IF NOT EXISTS idx_dns_domain_risk ON dns_domain_stats(risk_level);
+
+	-- DNS hourly statistics
+	CREATE TABLE IF NOT EXISTS dns_hourly_stats (
+		hour TEXT PRIMARY KEY,  -- Format: 2006-01-02T15
+		total_queries INTEGER DEFAULT 0,
+		blocked_queries INTEGER DEFAULT 0,
+		unique_users INTEGER DEFAULT 0
+	);
+	CREATE INDEX IF NOT EXISTS idx_dns_hourly ON dns_hourly_stats(hour DESC);
+
+	-- DNS daily statistics
+	CREATE TABLE IF NOT EXISTS dns_daily_stats (
+		day TEXT PRIMARY KEY,  -- Format: 2006-01-02
+		total_queries INTEGER DEFAULT 0,
+		blocked_queries INTEGER DEFAULT 0,
+		unique_users INTEGER DEFAULT 0
+	);
+	CREATE INDEX IF NOT EXISTS idx_dns_daily ON dns_daily_stats(day DESC);
+
+	-- User DNS statistics
+	CREATE TABLE IF NOT EXISTS user_dns_stats (
+		user_email TEXT PRIMARY KEY,
+		total_queries INTEGER DEFAULT 0,
+		blocked_queries INTEGER DEFAULT 0,
+		top_domains TEXT,  -- JSON array
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_user_dns_blocked ON user_dns_stats(blocked_queries DESC);
 	`
 
 	_, err := s.db.Exec(schema)

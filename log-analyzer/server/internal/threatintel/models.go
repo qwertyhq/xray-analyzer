@@ -338,3 +338,74 @@ type UserRiskSummary struct {
 	RecentEscalations int                `json:"recent_escalations"` // Users whose risk increased in last 24h
 	AverageRiskScore  float64            `json:"average_risk_score"`
 }
+
+// DomainStats represents statistics for a single domain
+type DomainStats struct {
+	Domain       string         `json:"domain"`
+	TotalHits    int            `json:"total_hits"`
+	UniqueUsers  int            `json:"unique_users"`
+	ThreatTypes  []string       `json:"threat_types"`
+	Sources      []string       `json:"sources"`
+	FirstSeen    time.Time      `json:"first_seen"`
+	LastSeen     time.Time      `json:"last_seen"`
+	RiskLevel    RiskLevel      `json:"risk_level"`
+	CategoryHits map[string]int `json:"category_hits"`
+}
+
+// DNSQueryStats represents DNS query statistics
+type DNSQueryStats struct {
+	TotalQueries     int64          `json:"total_queries"`
+	BlockedQueries   int64          `json:"blocked_queries"`
+	BlockRate        float64        `json:"block_rate"`
+	UniqueDomainsAll int            `json:"unique_domains_all"`
+	UniqueDomainsBad int            `json:"unique_domains_bad"`
+	TopDomains       []*DomainStats `json:"top_domains"`
+	TopBlockedTypes  map[string]int `json:"top_blocked_types"`
+	HourlyStats      []*HourlyDNS   `json:"hourly_stats"`
+	DailyStats       []*DailyDNS    `json:"daily_stats"`
+}
+
+// HourlyDNS represents hourly DNS statistics
+type HourlyDNS struct {
+	Hour           string `json:"hour"`
+	TotalQueries   int64  `json:"total_queries"`
+	BlockedQueries int64  `json:"blocked_queries"`
+	UniqueUsers    int    `json:"unique_users"`
+}
+
+// DailyDNS represents daily DNS statistics
+type DailyDNS struct {
+	Day            string `json:"day"`
+	TotalQueries   int64  `json:"total_queries"`
+	BlockedQueries int64  `json:"blocked_queries"`
+	UniqueUsers    int    `json:"unique_users"`
+}
+
+// DomainCategory represents a domain categorization result
+type DomainCategory struct {
+	Domain     string     `json:"domain"`
+	Category   ThreatType `json:"category"`
+	Source     string     `json:"source"`
+	Confidence int        `json:"confidence"`
+	AddedAt    time.Time  `json:"added_at"`
+}
+
+// DNSAnalysisSummary provides a comprehensive DNS analysis overview
+type DNSAnalysisSummary struct {
+	QueryStats        *DNSQueryStats  `json:"query_stats"`
+	TopBadDomains     []*DomainStats  `json:"top_bad_domains"`
+	TopUsersByDNS     []*UserDNSStats `json:"top_users_by_dns"`
+	CategoryBreakdown map[string]int  `json:"category_breakdown"`
+	TrendDirection    string          `json:"trend_direction"` // "up", "down", "stable"
+	RiskScore         int             `json:"risk_score"`      // Overall DNS risk 0-100
+}
+
+// UserDNSStats represents DNS statistics for a user
+type UserDNSStats struct {
+	UserEmail      string    `json:"user_email"`
+	TotalQueries   int64     `json:"total_queries"`
+	BlockedQueries int64     `json:"blocked_queries"`
+	BlockRate      float64   `json:"block_rate"`
+	TopDomains     []string  `json:"top_domains"`
+	RiskLevel      RiskLevel `json:"risk_level"`
+}

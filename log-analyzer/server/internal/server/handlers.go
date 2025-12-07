@@ -916,3 +916,53 @@ func (s *Server) handleUserRiskProfiles(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
+
+// handleDNSAnalysis handles DNS analysis requests
+func (s *Server) handleDNSAnalysis(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Check what data to return
+	dataType := r.URL.Query().Get("type")
+
+	switch dataType {
+	case "stats":
+		stats, err := s.storage.GetDNSQueryStats(ctx)
+		if err != nil {
+			log.Printf("Error getting DNS stats: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+
+	case "users":
+		limit := 20
+		if l := r.URL.Query().Get("limit"); l != "" {
+			fmt.Sscanf(l, "%d", &limit)
+		}
+		users, err := s.storage.GetTopUsersByDNS(ctx, limit)
+		if err != nil {
+			log.Printf("Error getting top DNS users: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(users)
+
+	default:
+		// Return full summary
+		summary, err := s.storage.GetDNSAnalysisSummary(ctx)
+		if err != nil {
+			log.Printf("Error getting DNS summary: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(summary)
+	}
+}
