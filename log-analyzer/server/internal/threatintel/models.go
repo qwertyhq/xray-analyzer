@@ -250,3 +250,47 @@ type UserLocation struct {
 	LastSeen     time.Time `json:"last_seen"`
 	RequestCount int64     `json:"request_count"`
 }
+
+// AnomalyType represents the type of detected anomaly
+type AnomalyType string
+
+const (
+	AnomalyActivitySpike     AnomalyType = "activity_spike"     // Unusual spike in activity
+	AnomalyNightActivity     AnomalyType = "night_activity"     // Activity during unusual hours
+	AnomalyNewUserHighVolume AnomalyType = "new_user_high_vol"  // New user with high activity
+	AnomalyGeoAnomaly        AnomalyType = "geo_anomaly"        // Access from unusual location
+	AnomalyThreatBurst       AnomalyType = "threat_burst"       // Multiple threats in short time
+	AnomalyMultipleCountries AnomalyType = "multiple_countries" // User from multiple countries
+)
+
+// AnomalySeverity indicates the severity of the anomaly
+type AnomalySeverity string
+
+const (
+	SeverityLow      AnomalySeverity = "low"
+	SeverityMedium   AnomalySeverity = "medium"
+	SeverityHigh     AnomalySeverity = "high"
+	SeverityCritical AnomalySeverity = "critical"
+)
+
+// Anomaly represents a detected anomaly
+type Anomaly struct {
+	ID          string          `json:"id"`
+	Type        AnomalyType     `json:"type"`
+	Severity    AnomalySeverity `json:"severity"`
+	UserEmail   string          `json:"user_email,omitempty"`
+	Description string          `json:"description"`
+	Details     map[string]any  `json:"details,omitempty"`
+	DetectedAt  time.Time       `json:"detected_at"`
+	Resolved    bool            `json:"resolved"`
+}
+
+// AnomalySummary provides overview of detected anomalies
+type AnomalySummary struct {
+	TotalAnomalies   int            `json:"total_anomalies"`
+	BySeverity       map[string]int `json:"by_severity"`
+	ByType           map[string]int `json:"by_type"`
+	RecentAnomalies  []*Anomaly     `json:"recent_anomalies"`
+	AffectedUsers    int            `json:"affected_users"`
+	ThreatBurstCount int            `json:"threat_burst_count"`
+}

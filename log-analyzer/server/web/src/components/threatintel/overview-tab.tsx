@@ -10,13 +10,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ThreatMatch, ThreatStats, FeedStatus, CategoryTopUsers, TimeStats, GeoSummary } from "@/lib/types";
+import { ThreatMatch, ThreatStats, FeedStatus, CategoryTopUsers, TimeStats, GeoSummary, AnomalySummary } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { threatTypeConfig, sourceLabels } from "./config";
 import { UserList } from "./user-list";
 import { MatchesTable } from "./matches-table";
 import { TimeChart } from "./time-chart";
 import { GeoChart } from "./geo-chart";
+import { AnomalyPanel } from "./anomaly-panel";
 
 interface OverviewTabProps {
   stats: ThreatStats | null;
@@ -25,9 +26,10 @@ interface OverviewTabProps {
   threatMatches: ThreatMatch[];
   timeStats: TimeStats | null;
   geoStats: GeoSummary | null;
+  anomalies: AnomalySummary | null;
 }
 
-export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, geoStats }: OverviewTabProps) {
+export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, geoStats, anomalies }: OverviewTabProps) {
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
@@ -165,6 +167,9 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
           })}
         </div>
       )}
+
+      {/* Anomaly Detection Panel */}
+      <AnomalyPanel data={anomalies} />
 
       {/* Recent Matches (all types) */}
       <MatchesTable 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
-import { Anomaly } from "@/lib/types";
+import { StatsAnomaly } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, TrendingUp, User } from "lucide-react";
@@ -10,7 +10,7 @@ import Link from "next/link";
 import { isValidDate } from "@/lib/utils/date";
 
 interface AnomaliesCardProps {
-  anomalies: Anomaly[];
+  anomalies: StatsAnomaly[];
   loading?: boolean;
 }
 
@@ -27,7 +27,7 @@ const anomalyColors = {
 } as const;
 
 // Генерируем уникальный ключ для аномалии
-function getAnomalyKey(anomaly: Anomaly): string {
+function getAnomalyKey(anomaly: StatsAnomaly): string {
   return `${anomaly.type}-${anomaly.hour}-${anomaly.user_email || "global"}-${anomaly.deviation}`;
 }
 

@@ -236,6 +236,32 @@ func (s *Storage) migrate() error {
 		PRIMARY KEY (user_email, country_code)
 	);
 	CREATE INDEX IF NOT EXISTS idx_user_loc_email ON user_locations(user_email);
+
+	-- Anomaly detection table
+	CREATE TABLE IF NOT EXISTS anomalies (
+		id TEXT PRIMARY KEY,
+		type TEXT NOT NULL,
+		severity TEXT NOT NULL,
+		user_email TEXT,
+		description TEXT NOT NULL,
+		details TEXT,  -- JSON encoded details
+		detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		resolved INTEGER DEFAULT 0
+	);
+	CREATE INDEX IF NOT EXISTS idx_anomaly_time ON anomalies(detected_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_anomaly_user ON anomalies(user_email);
+	CREATE INDEX IF NOT EXISTS idx_anomaly_type ON anomalies(type);
+
+	-- User activity baseline for anomaly detection
+	CREATE TABLE IF NOT EXISTS user_activity_baseline (
+		user_email TEXT PRIMARY KEY,
+		avg_daily_requests REAL DEFAULT 0,
+		avg_daily_threats REAL DEFAULT 0,
+		typical_hours TEXT,  -- JSON array of typical active hours
+		typical_countries TEXT,  -- JSON array of typical countries
+		first_seen DATETIME,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 
 	_, err := s.db.Exec(schema)

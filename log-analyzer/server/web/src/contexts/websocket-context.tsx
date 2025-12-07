@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from "react";
-import { Stats, NodeStats, UserStats, HourlyStats, Anomaly, BlacklistAnalytics, ThreatStats, ThreatMatch, CategoryTopUsers } from "@/lib/types";
+import { Stats, NodeStats, UserStats, HourlyStats, StatsAnomaly, BlacklistAnalytics, ThreatStats, ThreatMatch, CategoryTopUsers } from "@/lib/types";
 
 interface ThreatIntelData {
   stats: ThreatStats | null;
@@ -14,7 +14,7 @@ interface WebSocketState {
   nodes: NodeStats[];
   users: UserStats[];
   hourly: HourlyStats[];
-  anomalies: Anomaly[];
+  anomalies: StatsAnomaly[];
   blacklist: BlacklistAnalytics | null;
   threatIntel: ThreatIntelData;
   connected: boolean;
@@ -113,7 +113,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             case "hourly":
               return { ...prev, hourly: update.data as HourlyStats[] };
             case "anomalies":
-              return { ...prev, anomalies: update.data as Anomaly[] };
+              return { ...prev, anomalies: update.data as StatsAnomaly[] };
             case "blacklist":
               return { ...prev, blacklist: update.data as BlacklistAnalytics };
             case "threatintel":
