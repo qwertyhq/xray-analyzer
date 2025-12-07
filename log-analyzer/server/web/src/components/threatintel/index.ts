@@ -7,4 +7,5 @@ export { TorrentTab } from "./torrent-tab";
 export { TorTab } from "./tor-tab";
 export { TimeChart } from "./time-chart";
 export { GeoChart } from "./geo-chart";
+export { AnomalyPanel } from "./anomaly-panel";
 export { threatTypeConfig, sourceLabels } from "./config";

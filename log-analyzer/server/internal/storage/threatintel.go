@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -717,4 +719,370 @@ func (s *Storage) GetUserLocations(ctx context.Context, userEmail string, limit 
 	}
 
 	return result, nil
+}
+
+// SaveAnomaly saves a detected anomaly to the database
+func (s *Storage) SaveAnomaly(ctx context.Context, anomaly *threatintel.Anomaly) error {
+	detailsJSON := "{}"
+	if anomaly.Details != nil {
+		if data, err := json.Marshal(anomaly.Details); err == nil {
+			detailsJSON = string(data)
+		}
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT OR REPLACE INTO anomalies (id, type, severity, user_email, description, details, detected_at, resolved)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, anomaly.ID, anomaly.Type, anomaly.Severity, anomaly.UserEmail, anomaly.Description, detailsJSON, anomaly.DetectedAt, anomaly.Resolved)
+
+	return err
+}
+
+// GetAnomalies returns recent anomalies
+func (s *Storage) GetAnomalies(ctx context.Context, limit int, includeResolved bool) ([]*threatintel.Anomaly, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := `
+		SELECT id, type, severity, user_email, description, details, detected_at, resolved
+		FROM anomalies
+	`
+	if !includeResolved {
+		query += " WHERE resolved = 0"
+	}
+	query += " ORDER BY detected_at DESC LIMIT ?"
+
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*threatintel.Anomaly
+	for rows.Next() {
+		a := &threatintel.Anomaly{}
+		var userEmail sql.NullString
+		var detailsJSON string
+		var resolved int
+
+		if err := rows.Scan(&a.ID, &a.Type, &a.Severity, &userEmail, &a.Description, &detailsJSON, &a.DetectedAt, &resolved); err != nil {
+			continue
+		}
+
+		if userEmail.Valid {
+			a.UserEmail = userEmail.String
+		}
+		a.Resolved = resolved == 1
+
+		if detailsJSON != "" && detailsJSON != "{}" {
+			json.Unmarshal([]byte(detailsJSON), &a.Details)
+		}
+
+		result = append(result, a)
+	}
+
+	return result, nil
+}
+
+// GetAnomalySummary returns anomaly statistics
+func (s *Storage) GetAnomalySummary(ctx context.Context) (*threatintel.AnomalySummary, error) {
+	summary := &threatintel.AnomalySummary{
+		BySeverity:      make(map[string]int),
+		ByType:          make(map[string]int),
+		RecentAnomalies: []*threatintel.Anomaly{},
+	}
+
+	// Count by severity
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT severity, COUNT(*) FROM anomalies WHERE resolved = 0 GROUP BY severity
+	`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var severity string
+			var count int
+			if rows.Scan(&severity, &count) == nil {
+				summary.BySeverity[severity] = count
+				summary.TotalAnomalies += count
+			}
+		}
+	}
+
+	// Count by type
+	rows2, err := s.db.QueryContext(ctx, `
+		SELECT type, COUNT(*) FROM anomalies WHERE resolved = 0 GROUP BY type
+	`)
+	if err == nil {
+		defer rows2.Close()
+		for rows2.Next() {
+			var anomalyType string
+			var count int
+			if rows2.Scan(&anomalyType, &count) == nil {
+				summary.ByType[anomalyType] = count
+			}
+		}
+	}
+
+	// Affected users
+	s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT user_email) FROM anomalies WHERE resolved = 0 AND user_email IS NOT NULL
+	`).Scan(&summary.AffectedUsers)
+
+	// Recent anomalies
+	summary.RecentAnomalies, _ = s.GetAnomalies(ctx, 10, false)
+
+	return summary, nil
+}
+
+// DetectAnomalies runs anomaly detection and returns new anomalies
+func (s *Storage) DetectAnomalies(ctx context.Context) ([]*threatintel.Anomaly, error) {
+	var anomalies []*threatintel.Anomaly
+	now := time.Now()
+
+	// 1. Detect activity spikes (users with 5x normal activity in last hour)
+	spikes, _ := s.detectActivitySpikes(ctx, now)
+	anomalies = append(anomalies, spikes...)
+
+	// 2. Detect night activity (activity between 1-5 AM local)
+	nightAnomalies, _ := s.detectNightActivity(ctx, now)
+	anomalies = append(anomalies, nightAnomalies...)
+
+	// 3. Detect new users with high volume
+	newUserAnomalies, _ := s.detectNewUserHighVolume(ctx, now)
+	anomalies = append(anomalies, newUserAnomalies...)
+
+	// 4. Detect threat bursts (multiple threats from same user in short time)
+	burstAnomalies, _ := s.detectThreatBursts(ctx, now)
+	anomalies = append(anomalies, burstAnomalies...)
+
+	// 5. Detect users from multiple countries
+	geoAnomalies, _ := s.detectMultipleCountries(ctx, now)
+	anomalies = append(anomalies, geoAnomalies...)
+
+	// Save all new anomalies
+	for _, a := range anomalies {
+		s.SaveAnomaly(ctx, a)
+	}
+
+	return anomalies, nil
+}
+
+func (s *Storage) detectActivitySpikes(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
+	var anomalies []*threatintel.Anomaly
+
+	// Find users with significantly higher activity in last hour vs their average
+	rows, err := s.db.QueryContext(ctx, `
+		WITH hourly AS (
+			SELECT user_email, COUNT(*) as count
+			FROM threat_matches
+			WHERE matched_at > datetime('now', '-1 hour')
+			GROUP BY user_email
+			HAVING count >= 10
+		),
+		daily_avg AS (
+			SELECT user_email, COUNT(*) * 1.0 / 24 as avg_hourly
+			FROM threat_matches
+			WHERE matched_at > datetime('now', '-7 days')
+			GROUP BY user_email
+		)
+		SELECT h.user_email, h.count, COALESCE(d.avg_hourly, 1) as avg
+		FROM hourly h
+		LEFT JOIN daily_avg d ON h.user_email = d.user_email
+		WHERE h.count > COALESCE(d.avg_hourly, 1) * 5
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var email string
+		var count int
+		var avg float64
+		if rows.Scan(&email, &count, &avg) == nil {
+			id := fmt.Sprintf("spike_%s_%d", email, now.Unix())
+			anomalies = append(anomalies, &threatintel.Anomaly{
+				ID:          id,
+				Type:        threatintel.AnomalyActivitySpike,
+				Severity:    threatintel.SeverityHigh,
+				UserEmail:   email,
+				Description: fmt.Sprintf("Activity spike: %d matches in last hour (avg: %.1f/hour)", count, avg),
+				Details: map[string]any{
+					"current_count": count,
+					"avg_hourly":    avg,
+					"multiplier":    float64(count) / avg,
+				},
+				DetectedAt: now,
+			})
+		}
+	}
+
+	return anomalies, nil
+}
+
+func (s *Storage) detectNightActivity(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
+	var anomalies []*threatintel.Anomaly
+
+	// Find users with activity between 1-5 AM (assuming server timezone)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_email, COUNT(*) as count
+		FROM threat_matches
+		WHERE matched_at > datetime('now', '-6 hours')
+		AND CAST(strftime('%H', matched_at) AS INTEGER) BETWEEN 1 AND 5
+		GROUP BY user_email
+		HAVING count >= 5
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var email string
+		var count int
+		if rows.Scan(&email, &count) == nil {
+			id := fmt.Sprintf("night_%s_%d", email, now.Unix())
+			anomalies = append(anomalies, &threatintel.Anomaly{
+				ID:          id,
+				Type:        threatintel.AnomalyNightActivity,
+				Severity:    threatintel.SeverityMedium,
+				UserEmail:   email,
+				Description: fmt.Sprintf("Unusual night activity: %d matches between 1-5 AM", count),
+				Details: map[string]any{
+					"match_count": count,
+					"time_range":  "01:00-05:00",
+				},
+				DetectedAt: now,
+			})
+		}
+	}
+
+	return anomalies, nil
+}
+
+func (s *Storage) detectNewUserHighVolume(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
+	var anomalies []*threatintel.Anomaly
+
+	// Find users first seen in last 24h with high activity
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_email, COUNT(*) as count, MIN(matched_at) as first_seen
+		FROM threat_matches
+		GROUP BY user_email
+		HAVING MIN(matched_at) > datetime('now', '-24 hours')
+		AND count >= 20
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var email string
+		var count int
+		var firstSeen time.Time
+		if rows.Scan(&email, &count, &firstSeen) == nil {
+			id := fmt.Sprintf("newuser_%s_%d", email, now.Unix())
+			anomalies = append(anomalies, &threatintel.Anomaly{
+				ID:          id,
+				Type:        threatintel.AnomalyNewUserHighVolume,
+				Severity:    threatintel.SeverityMedium,
+				UserEmail:   email,
+				Description: fmt.Sprintf("New user with high activity: %d matches in first 24h", count),
+				Details: map[string]any{
+					"match_count": count,
+					"first_seen":  firstSeen.Format(time.RFC3339),
+				},
+				DetectedAt: now,
+			})
+		}
+	}
+
+	return anomalies, nil
+}
+
+func (s *Storage) detectThreatBursts(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
+	var anomalies []*threatintel.Anomaly
+
+	// Find users with 5+ different threat types in last hour
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_email, COUNT(DISTINCT threat_type) as types, COUNT(*) as total
+		FROM threat_matches
+		WHERE matched_at > datetime('now', '-1 hour')
+		GROUP BY user_email
+		HAVING types >= 3 AND total >= 10
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var email string
+		var types, total int
+		if rows.Scan(&email, &types, &total) == nil {
+			id := fmt.Sprintf("burst_%s_%d", email, now.Unix())
+			anomalies = append(anomalies, &threatintel.Anomaly{
+				ID:          id,
+				Type:        threatintel.AnomalyThreatBurst,
+				Severity:    threatintel.SeverityHigh,
+				UserEmail:   email,
+				Description: fmt.Sprintf("Threat burst: %d threats of %d types in last hour", total, types),
+				Details: map[string]any{
+					"total_matches": total,
+					"unique_types":  types,
+				},
+				DetectedAt: now,
+			})
+		}
+	}
+
+	return anomalies, nil
+}
+
+func (s *Storage) detectMultipleCountries(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
+	var anomalies []*threatintel.Anomaly
+
+	// Find users accessing from 3+ countries in last 24h
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_email, COUNT(DISTINCT country_code) as countries, 
+			   GROUP_CONCAT(DISTINCT country_code) as country_list
+		FROM user_locations
+		WHERE last_seen > datetime('now', '-24 hours')
+		GROUP BY user_email
+		HAVING countries >= 3
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var email string
+		var countries int
+		var countryList string
+		if rows.Scan(&email, &countries, &countryList) == nil {
+			id := fmt.Sprintf("geo_%s_%d", email, now.Unix())
+			anomalies = append(anomalies, &threatintel.Anomaly{
+				ID:          id,
+				Type:        threatintel.AnomalyMultipleCountries,
+				Severity:    threatintel.SeverityCritical,
+				UserEmail:   email,
+				Description: fmt.Sprintf("Access from %d countries in 24h: %s", countries, countryList),
+				Details: map[string]any{
+					"country_count": countries,
+					"countries":     strings.Split(countryList, ","),
+				},
+				DetectedAt: now,
+			})
+		}
+	}
+
+	return anomalies, nil
+}
+
+// ResolveAnomaly marks an anomaly as resolved
+func (s *Storage) ResolveAnomaly(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE anomalies SET resolved = 1 WHERE id = ?`, id)
+	return err
 }

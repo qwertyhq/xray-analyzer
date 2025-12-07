@@ -97,7 +97,7 @@ export interface HourlyBlacklistStats {
   hit_count: number;
 }
 
-export interface Anomaly {
+export interface StatsAnomaly {
   type: "blacklist_spike" | "traffic_spike" | "user_spike";
   hour: string;
   user_email?: string;
@@ -267,4 +267,39 @@ export interface GeoSummary {
   total_countries: number;
   top_countries: CountryStats[];
   by_threat_type: Record<string, GeoStats[]>;
+}
+
+// Anomaly detection types
+export type AnomalyType = 
+  | "activity_spike"
+  | "night_activity"
+  | "new_user_high_vol"
+  | "geo_anomaly"
+  | "threat_burst"
+  | "multiple_countries"
+  | "blacklist_spike"
+  | "traffic_spike"
+  | "user_spike"
+  | "user_blacklist_spike";
+
+export type AnomalySeverity = "low" | "medium" | "high" | "critical";
+
+export interface Anomaly {
+  id: string;
+  type: AnomalyType;
+  severity: AnomalySeverity;
+  user_email?: string;
+  description: string;
+  details?: Record<string, unknown>;
+  detected_at: string;
+  resolved: boolean;
+}
+
+export interface AnomalySummary {
+  total_anomalies: number;
+  by_severity: Record<string, number>;
+  by_type: Record<string, number>;
+  recent_anomalies: Anomaly[];
+  affected_users: number;
+  threat_burst_count: number;
 }

@@ -740,6 +740,80 @@ func (s *Server) handleThreatIntelGeoStats(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(stats)
 }
 
+// handleThreatIntelAnomalies returns anomaly detection results
+func (s *Server) handleThreatIntelAnomalies(w http.ResponseWriter, r *http.Request) {
+	if s.storage == nil {
+		http.Error(w, "Storage not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	// POST to run detection
+	if r.Method == http.MethodPost {
+		anomalies, err := s.storage.DetectAnomalies(ctx)
+		if err != nil {
+			log.Printf("Error detecting anomalies: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"detected":  len(anomalies),
+			"anomalies": anomalies,
+		})
+		return
+	}
+
+	// DELETE to resolve an anomaly
+	if r.Method == http.MethodDelete {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing anomaly id", http.StatusBadRequest)
+			return
+		}
+		if err := s.storage.ResolveAnomaly(ctx, id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// GET - return summary or list
+	if r.URL.Query().Get("summary") == "true" {
+		summary, err := s.storage.GetAnomalySummary(ctx)
+		if err != nil {
+			log.Printf("Error getting anomaly summary: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(summary)
+		return
+	}
+
+	// Get limit
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 200 {
+			limit = parsed
+		}
+	}
+
+	includeResolved := r.URL.Query().Get("resolved") == "true"
+
+	anomalies, err := s.storage.GetAnomalies(ctx, limit, includeResolved)
+	if err != nil {
+		log.Printf("Error getting anomalies: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(anomalies)
+}
+
 // handleIPInfo returns geolocation info for IP addresses
 func (s *Server) handleIPInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
