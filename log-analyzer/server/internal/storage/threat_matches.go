@@ -1,0 +1,195 @@
+package storage
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	"github.com/xray-log-analyzer/server/internal/threatintel"
+)
+
+// MaxThreatMatches is the maximum number of recent threat matches to keep for display
+const MaxThreatMatches = 20
+
+// SaveThreatMatch saves a threat match to the database, updates statistics, and cleans up old records
+func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.ThreatMatch) error {
+	now := time.Now().Format(time.RFC3339)
+
+	// Insert into recent matches table
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO threat_matches (
+			user_email, node_id, source_ip, destination,
+			threat_type, source, confidence, description, matched_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, match.UserEmail, match.NodeID, match.SourceIP, match.Destination,
+		string(match.ThreatType), string(match.Source), match.Confidence,
+		match.Description, now)
+
+	if err != nil {
+		return err
+	}
+
+	// Update aggregated total counter
+	s.db.ExecContext(ctx, `
+		UPDATE threat_stats_agg SET total_matches = total_matches + 1, last_updated = ? WHERE id = 1
+	`, now)
+
+	// Update threat type counter
+	s.db.ExecContext(ctx, `
+		INSERT INTO threat_type_stats (threat_type, match_count, last_match) 
+		VALUES (?, 1, ?)
+		ON CONFLICT(threat_type) DO UPDATE SET 
+			match_count = match_count + 1,
+			last_match = excluded.last_match
+	`, string(match.ThreatType), now)
+
+	// Update user threat stats
+	s.db.ExecContext(ctx, `
+		INSERT INTO user_threat_stats (user_email, threat_type, match_count, last_match)
+		VALUES (?, ?, 1, ?)
+		ON CONFLICT(user_email, threat_type) DO UPDATE SET
+			match_count = match_count + 1,
+			last_match = excluded.last_match
+	`, match.UserEmail, string(match.ThreatType), now)
+
+	// Update user domain stats (extract domain from destination)
+	domain := extractDomain(match.Destination)
+	if domain != "" {
+		s.db.ExecContext(ctx, `
+			INSERT INTO user_threat_domains (user_email, threat_type, domain, hit_count, last_seen)
+			VALUES (?, ?, ?, 1, ?)
+			ON CONFLICT(user_email, threat_type, domain) DO UPDATE SET
+				hit_count = hit_count + 1,
+				last_seen = excluded.last_seen
+		`, match.UserEmail, string(match.ThreatType), domain, now)
+	}
+
+	// Update hourly stats
+	t := time.Now()
+	hourKey := t.Format("2006-01-02T15")
+	dayKey := t.Format("2006-01-02")
+
+	s.db.ExecContext(ctx, `
+		INSERT INTO threat_hourly_stats (hour, threat_type, match_count, unique_users)
+		VALUES (?, ?, 1, 1)
+		ON CONFLICT(hour, threat_type) DO UPDATE SET
+			match_count = match_count + 1
+	`, hourKey, string(match.ThreatType))
+
+	// Update daily stats
+	s.db.ExecContext(ctx, `
+		INSERT INTO threat_daily_stats (day, threat_type, match_count, unique_users)
+		VALUES (?, ?, 1, 1)
+		ON CONFLICT(day, threat_type) DO UPDATE SET
+			match_count = match_count + 1
+	`, dayKey, string(match.ThreatType))
+
+	// Delete old recent records keeping only MaxThreatMatches most recent
+	_, err = s.db.ExecContext(ctx, `
+		DELETE FROM threat_matches 
+		WHERE id NOT IN (
+			SELECT id FROM threat_matches 
+			ORDER BY matched_at DESC 
+			LIMIT ?
+		)
+	`, MaxThreatMatches)
+
+	return err
+}
+
+// extractDomain extracts domain from destination (removes port)
+func extractDomain(destination string) string {
+	if idx := strings.LastIndex(destination, ":"); idx > 0 {
+		if strings.Count(destination, ":") > 1 && !strings.HasPrefix(destination, "[") {
+			return destination // IPv6 without brackets
+		}
+		return destination[:idx]
+	}
+	return destination
+}
+
+// GetThreatMatches returns all threat matches (limited by MaxThreatMatches)
+func (s *Storage) GetThreatMatches(ctx context.Context, limit int) ([]*threatintel.ThreatMatch, error) {
+	if limit <= 0 || limit > MaxThreatMatches {
+		limit = MaxThreatMatches
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_email, node_id, source_ip, destination,
+			   threat_type, source, confidence, description, matched_at
+		FROM threat_matches
+		ORDER BY matched_at DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanThreatMatches(rows)
+}
+
+// GetThreatMatchesByUser returns threat matches for a specific user
+func (s *Storage) GetThreatMatchesByUser(ctx context.Context, userEmail string, limit int) ([]*threatintel.ThreatMatch, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_email, node_id, source_ip, destination,
+			   threat_type, source, confidence, description, matched_at
+		FROM threat_matches
+		WHERE user_email = ?
+		ORDER BY matched_at DESC
+		LIMIT ?
+	`, userEmail, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanThreatMatches(rows)
+}
+
+// CleanupOldThreatMatches removes threat matches older than the retention period
+func (s *Storage) CleanupOldThreatMatches(ctx context.Context, retention time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-retention).Format(time.RFC3339)
+
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM threat_matches WHERE matched_at < ?
+	`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.RowsAffected()
+}
+
+// scanThreatMatches is a helper to scan threat match rows
+func scanThreatMatches(rows sqlRows) ([]*threatintel.ThreatMatch, error) {
+	var matches []*threatintel.ThreatMatch
+	for rows.Next() {
+		var m threatintel.ThreatMatch
+		var threatType, source string
+		var matchedAt string
+
+		err := rows.Scan(&m.ID, &m.UserEmail, &m.NodeID, &m.SourceIP, &m.Destination,
+			&threatType, &source, &m.Confidence, &m.Description, &matchedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		m.ThreatType = threatintel.ThreatType(threatType)
+		m.Source = threatintel.ThreatSource(source)
+		if t, err := time.Parse(time.RFC3339, matchedAt); err == nil {
+			m.MatchedAt = t
+		}
+
+		matches = append(matches, &m)
+	}
+
+	return matches, rows.Err()
+}
+
+// sqlRows interface for testing
+type sqlRows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+}
