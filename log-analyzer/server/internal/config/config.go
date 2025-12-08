@@ -27,6 +27,12 @@ type Config struct {
 	// Thresholds
 	SuspiciousRequestCount int           // Requests to blacklisted sites to trigger alert
 	SuspiciousTimeWindow   time.Duration // Time window for counting
+
+	// Remnawave API settings
+	RemnawaveEnabled      bool
+	RemnawaveURL          string
+	RemnawaveAPIToken     string
+	RemnawaveSyncInterval time.Duration // Interval for syncing data from Remnawave
 }
 
 // Load loads configuration from environment variables
@@ -43,6 +49,10 @@ func Load() *Config {
 		TelegramChatID:         getEnv("TELEGRAM_CHAT_ID", ""),
 		SuspiciousRequestCount: getIntEnv("SUSPICIOUS_REQUEST_COUNT", 5),
 		SuspiciousTimeWindow:   getDurationEnv("SUSPICIOUS_TIME_WINDOW", 1*time.Hour),
+		RemnawaveEnabled:       getBoolEnv("REMNAWAVE_ENABLED", false),
+		RemnawaveURL:           getEnv("REMNAWAVE_URL", ""),
+		RemnawaveAPIToken:      getEnv("REMNAWAVE_API_TOKEN", ""),
+		RemnawaveSyncInterval:  getDurationEnv("REMNAWAVE_SYNC_INTERVAL", 5*time.Minute),
 	}
 }
 

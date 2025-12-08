@@ -210,3 +210,23 @@ type PaginatedBlacklistMatchesResponse struct {
 	PageSize   int                  `json:"page_size"`
 	TotalPages int                  `json:"total_pages"`
 }
+
+// SubscriptionAbuse represents a user suspected of sharing their subscription
+type SubscriptionAbuse struct {
+	UserEmail       string    `json:"user_email"`
+	UniqueIPs       int       `json:"unique_ips"`
+	UniqueCountries int       `json:"unique_countries"`
+	Countries       []string  `json:"countries"`
+	TotalRequests   int64     `json:"total_requests"`
+	LastSeen        time.Time `json:"last_seen"`
+	IPs             []IPInfo  `json:"ips"`
+}
+
+// IPInfo represents basic IP information for abuse detection
+type IPInfo struct {
+	IP           string    `json:"ip"`
+	CountryCode  string    `json:"country_code"`
+	City         string    `json:"city"`
+	RequestCount int64     `json:"request_count"`
+	LastSeen     time.Time `json:"last_seen"`
+}

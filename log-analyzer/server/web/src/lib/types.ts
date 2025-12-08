@@ -69,6 +69,24 @@ export interface UserIPHistory {
   request_count: number;
 }
 
+export interface SubscriptionAbuse {
+  user_email: string;
+  unique_ips: number;
+  unique_countries: number;
+  countries: string[];
+  total_requests: number;
+  last_seen: string;
+  ips: AbuseIPInfo[];
+}
+
+export interface AbuseIPInfo {
+  ip: string;
+  country_code: string;
+  city: string;
+  request_count: number;
+  last_seen: string;
+}
+
 export interface BlacklistMatchInfo {
   node_id: string;
   user_email?: string;
@@ -474,4 +492,131 @@ export interface ReportSummary {
   pending_reports: number;
   last_generated?: string;
   reports: Report[];
+}
+
+// Remnawave Types
+export interface RemnawaveStats {
+  enabled: boolean;
+  totalUsers: number;
+  activeUsers: number;
+  disabledUsers: number;
+  limitedUsers: number;
+  expiredUsers: number;
+  totalTrafficUsed: number;
+  onlineLastHour: number;
+  onlineLast24h: number;
+  neverOnline: number;
+  usersWithHwidLimit: number;
+  hwidStats?: {
+    totalDevices: number;
+    uniqueUsers: number;
+    platformBreakdown: Record<string, number>;
+  };
+  lastSync: string;
+}
+
+export interface RemnawaveAbuseUser {
+  uuid: string;
+  username: string;
+  email?: string;
+  status: string;
+  deviceCount: number;
+  deviceLimit: number;
+  excessDevices: number;
+  platforms: string[];
+  lastActivity?: string;
+  devices: RemnawaveHwidDevice[];
+  parsedNote?: ParsedNote;
+}
+
+export interface RemnawaveHwidDevice {
+  hwid: string;
+  platform?: string;
+  osVersion?: string;
+  deviceModel?: string;
+  userAgent?: string;
+  createdAt: string;
+}
+
+export interface RemnawaveUser {
+  uuid: string;
+  username: string;
+  email?: string;
+  status: "ACTIVE" | "DISABLED" | "LIMITED" | "EXPIRED";
+  used_traffic_bytes: number;
+  traffic_limit_bytes: number;
+  traffic_percent: number;
+  hwid_device_count: number;
+  hwid_device_limit?: number;
+  hwid_exceeds_limit: boolean;
+  online_at?: string;
+  expire_at: string;
+  last_connected_node?: string;
+  tag?: string;
+  telegram_id?: number;
+  description?: string;
+  parsed_real_name?: string;
+  parsed_phone?: string;
+  parsed_telegram_user?: string;
+  parsed_plan?: string;
+}
+
+export interface RemnawaveUserDetails {
+  uuid: string;
+  short_uuid: string;
+  username: string;
+  email?: string;
+  status: string;
+  used_traffic_bytes: number;
+  traffic_limit_bytes: number;
+  expire_at: string;
+  online_at?: string;
+  tag?: string;
+  telegram_id?: number;
+  description?: string;
+  parsed_note?: ParsedNote;
+  hwid_devices: HwidDevice[];
+  hwid_device_limit?: number;
+  subscription_url: string;
+  created_at: string;
+}
+
+export interface ParsedNote {
+  real_name?: string;
+  phone?: string;
+  telegram_user?: string;
+  payment_info?: string;
+  plan?: string;
+  expiry_date?: string;
+  notes?: string;
+  custom?: Record<string, string>;
+  raw_text?: string;
+}
+
+export interface HwidDevice {
+  hwid: string;
+  platform?: string;
+  os_version?: string;
+  device_model?: string;
+  user_agent?: string;
+  created_at: string;
+}
+
+export interface RemnawaveAbuser {
+  uuid: string;
+  username: string;
+  email?: string;
+  status: string;
+  hwid_device_count: number;
+  hwid_device_limit?: number;
+  excess_devices: number;
+  device_platforms: string[];
+  parsed_real_name?: string;
+  parsed_phone?: string;
+  description?: string;
+}
+
+export interface RemnawaveAbuseResponse {
+  total_abusers: number;
+  abusers: RemnawaveAbuser[];
 }

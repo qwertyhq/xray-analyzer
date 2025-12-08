@@ -11,6 +11,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/analyzer"
 	"github.com/xray-log-analyzer/server/internal/blacklist"
 	"github.com/xray-log-analyzer/server/internal/ipinfo"
+	"github.com/xray-log-analyzer/server/internal/remnawave"
 	"github.com/xray-log-analyzer/server/internal/storage"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
@@ -23,6 +24,7 @@ type Server struct {
 	storage        *storage.Storage
 	blacklist      *blacklist.Blacklist
 	threatIntel    *threatintel.Service
+	remnawave      *remnawave.SyncService
 	ipInfo         *ipinfo.Service
 	clients        map[string]*Client
 	clientsMu      sync.RWMutex
@@ -82,6 +84,11 @@ func (s *Server) SetThreatIntel(ti *threatintel.Service) {
 	s.threatIntel = ti
 }
 
+// SetRemnawave sets the Remnawave sync service
+func (s *Server) SetRemnawave(rw *remnawave.SyncService) {
+	s.remnawave = rw
+}
+
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
@@ -101,6 +108,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/alerts", s.handleAlerts)
 	mux.HandleFunc("/api/blacklist/stats", s.handleBlacklistStats)
 	mux.HandleFunc("/api/blacklist/analytics", s.handleBlacklistAnalytics)
+	mux.HandleFunc("/api/blacklist/abuse", s.handleSubscriptionAbuse)
 	mux.HandleFunc("/api/threatintel/stats", s.handleThreatIntelStats)
 	mux.HandleFunc("/api/threatintel/matches", s.handleThreatIntelMatches)
 	mux.HandleFunc("/api/threatintel/feeds", s.handleThreatIntelFeeds)
@@ -113,6 +121,13 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/threatintel/reports", s.handleReports)
 	mux.HandleFunc("/api/ipinfo", s.handleIPInfo)
 	mux.HandleFunc("/health", s.handleHealth)
+
+	// Remnawave API endpoints
+	mux.HandleFunc("/api/remnawave/stats", s.handleRemnawaveStats)
+	mux.HandleFunc("/api/remnawave/users", s.handleRemnawaveUsers)
+	mux.HandleFunc("/api/remnawave/user/", s.handleRemnawaveUser)
+	mux.HandleFunc("/api/remnawave/hwid/", s.handleRemnawaveHwid)
+	mux.HandleFunc("/api/remnawave/abuse", s.handleRemnawaveAbuse)
 
 	// User-specific endpoints (must be registered before /api/users/)
 	mux.HandleFunc("/api/users/", s.handleUserRouter)

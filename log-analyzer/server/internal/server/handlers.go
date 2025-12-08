@@ -408,6 +408,51 @@ func (s *Server) handleBlacklistAnalytics(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(analytics)
 }
 
+// handleSubscriptionAbuse returns users suspected of sharing subscriptions
+func (s *Server) handleSubscriptionAbuse(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Parse period parameter
+	period := 24 * time.Hour
+	if p := r.URL.Query().Get("period"); p != "" {
+		switch p {
+		case "1h":
+			period = time.Hour
+		case "6h":
+			period = 6 * time.Hour
+		case "24h":
+			period = 24 * time.Hour
+		case "7d":
+			period = 7 * 24 * time.Hour
+		case "30d":
+			period = 30 * 24 * time.Hour
+		}
+	}
+
+	// Parse minimum IPs threshold (default 3)
+	minIPs := 3
+	if m := r.URL.Query().Get("min_ips"); m != "" {
+		if parsed, err := strconv.Atoi(m); err == nil && parsed > 0 {
+			minIPs = parsed
+		}
+	}
+
+	since := time.Now().Add(-period)
+	abusers, err := s.storage.GetSubscriptionAbusers(ctx, since, minIPs)
+	if err != nil {
+		log.Printf("Error getting subscription abusers: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if abusers == nil {
+		abusers = []*models.SubscriptionAbuse{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(abusers)
+}
+
 // handleUserDestinations returns paginated destinations for a user
 func (s *Server) handleUserDestinations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

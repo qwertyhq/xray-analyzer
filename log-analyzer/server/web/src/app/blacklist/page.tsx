@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TimeRangeSelector } from "@/components/dashboard/time-range-selector";
 import { IPInfoBadge } from "@/components/ui/ip-info-badge";
+import { SubscriptionAbuseTable } from "@/components/users/subscription-abuse-table";
 import {
   Table,
   TableBody,
@@ -17,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink, Wifi, WifiOff } from "lucide-react";
+import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink, Wifi, WifiOff, UserX } from "lucide-react";
 import { format } from "date-fns";
 import { TimeRange, BlacklistAnalytics } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
@@ -240,6 +241,10 @@ export default function BlacklistPage() {
                 </Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="abuse" className="text-xs sm:text-sm whitespace-nowrap">
+              <UserX className="h-3 w-3 mr-1" />
+              Subscription Abuse
+            </TabsTrigger>
             <TabsTrigger value="recent" className="text-xs sm:text-sm whitespace-nowrap">
               Recent Matches
               {analytics.recent_matches?.length > 0 && (
@@ -370,6 +375,24 @@ export default function BlacklistPage() {
                   )}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Subscription Abuse Tab */}
+        <TabsContent value="abuse">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserX className="h-5 w-5 text-destructive" />
+                Subscription Abuse Detection
+              </CardTitle>
+              <CardDescription>
+                Users with multiple unique IP addresses - potential account sharing
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SubscriptionAbuseTable defaultPeriod={timeRange} />
             </CardContent>
           </Card>
         </TabsContent>

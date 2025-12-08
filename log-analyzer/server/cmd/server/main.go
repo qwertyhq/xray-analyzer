@@ -13,6 +13,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/config"
 	"github.com/xray-log-analyzer/server/internal/ipinfo"
 	"github.com/xray-log-analyzer/server/internal/models"
+	"github.com/xray-log-analyzer/server/internal/remnawave"
 	"github.com/xray-log-analyzer/server/internal/server"
 	"github.com/xray-log-analyzer/server/internal/storage"
 	"github.com/xray-log-analyzer/server/internal/telegram"
@@ -129,6 +130,19 @@ func main() {
 	// Initialize and start server
 	srv := server.New(cfg.ListenAddr, cfg.AllowedOrigins, anal, store, bl)
 	srv.SetThreatIntel(threatIntelSvc)
+
+	// Initialize Remnawave client and sync service
+	var remnaSvc *remnawave.SyncService
+	if cfg.RemnawaveEnabled && cfg.RemnawaveURL != "" && cfg.RemnawaveAPIToken != "" {
+		remnaClient := remnawave.NewClient(cfg.RemnawaveURL, cfg.RemnawaveAPIToken)
+		remnaSvc = remnawave.NewSyncService(remnaClient, cfg.RemnawaveSyncInterval)
+		srv.SetRemnawave(remnaSvc)
+		go remnaSvc.Start(ctx)
+		log.Printf("remnawave: enabled, sync interval: %v", cfg.RemnawaveSyncInterval)
+	} else {
+		log.Println("remnawave: disabled (no URL/token configured)")
+	}
+
 	go func() {
 		if err := srv.Start(ctx); err != nil {
 			log.Printf("server error: %v", err)

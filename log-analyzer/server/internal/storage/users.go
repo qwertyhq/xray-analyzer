@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/models"
@@ -368,4 +369,99 @@ func (s *Storage) GetUserIPHistory(ctx context.Context, userEmail string) ([]*Us
 		history = append(history, h)
 	}
 	return history, nil
+}
+
+// GetSubscriptionAbusers finds users with suspiciously many unique IPs (potential account sharing)
+func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, minIPs int) ([]*models.SubscriptionAbuse, error) {
+	sinceStr := since.UTC().Format(time.RFC3339)
+
+	// Find users with many unique IPs in the time period
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT 
+			h.user_email,
+			COUNT(DISTINCT h.ip_address) as unique_ips,
+			COUNT(DISTINCT h.country_code) as unique_countries,
+			GROUP_CONCAT(DISTINCT h.country_code) as countries,
+			SUM(h.request_count) as total_requests,
+			MAX(h.last_seen) as last_seen
+		FROM user_ip_history h
+		WHERE h.last_seen >= ?
+		GROUP BY h.user_email
+		HAVING unique_ips >= ?
+		ORDER BY unique_ips DESC, total_requests DESC
+		LIMIT 50
+	`, sinceStr, minIPs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var abusers []*models.SubscriptionAbuse
+	for rows.Next() {
+		a := &models.SubscriptionAbuse{}
+		var countriesStr, lastSeenStr string
+		if err := rows.Scan(&a.UserEmail, &a.UniqueIPs, &a.UniqueCountries, &countriesStr, &a.TotalRequests, &lastSeenStr); err != nil {
+			return nil, err
+		}
+		a.LastSeen = parseDateTime(lastSeenStr)
+		if countriesStr != "" {
+			a.Countries = splitAndTrim(countriesStr, ",")
+		}
+		abusers = append(abusers, a)
+	}
+
+	// Load IP details for each abuser
+	for _, abuser := range abusers {
+		ips, err := s.getAbuserIPs(ctx, abuser.UserEmail, sinceStr)
+		if err != nil {
+			continue
+		}
+		abuser.IPs = ips
+	}
+
+	return abusers, nil
+}
+
+// getAbuserIPs gets IP details for a suspected abuser
+func (s *Storage) getAbuserIPs(ctx context.Context, userEmail, sinceStr string) ([]models.IPInfo, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT 
+			ip_address,
+			COALESCE(country_code, '') as country_code,
+			COALESCE(city, '') as city,
+			request_count,
+			last_seen
+		FROM user_ip_history
+		WHERE user_email = ? AND last_seen >= ?
+		ORDER BY request_count DESC
+		LIMIT 10
+	`, userEmail, sinceStr)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ips []models.IPInfo
+	for rows.Next() {
+		ip := models.IPInfo{}
+		var lastSeenStr string
+		if err := rows.Scan(&ip.IP, &ip.CountryCode, &ip.City, &ip.RequestCount, &lastSeenStr); err != nil {
+			continue
+		}
+		ip.LastSeen = parseDateTime(lastSeenStr)
+		ips = append(ips, ip)
+	}
+	return ips, nil
+}
+
+// splitAndTrim splits a string and trims whitespace
+func splitAndTrim(s, sep string) []string {
+	parts := make([]string, 0)
+	for _, p := range strings.Split(s, sep) {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return parts
 }

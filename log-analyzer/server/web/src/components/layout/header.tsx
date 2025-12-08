@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Activity, ShieldAlert, LogOut, Menu, X } from "lucide-react";
+import { Activity, ShieldAlert, LogOut, Menu, X, Smartphone } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -15,6 +15,7 @@ const navItems = [
   { href: "/users", label: "Users" },
   { href: "/blacklist", label: "Blacklist" },
   { href: "/threatintel", label: "Threat Intel", icon: ShieldAlert },
+  { href: "/remnawave", label: "Remnawave", icon: Smartphone },
 ];
 
 export function Header() {

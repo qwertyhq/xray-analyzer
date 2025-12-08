@@ -1,0 +1,450 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// RemnawaveStatsResponse represents the response for /api/remnawave/stats
+type RemnawaveStatsResponse struct {
+	Enabled            bool               `json:"enabled"`
+	TotalUsers         int                `json:"totalUsers"`
+	ActiveUsers        int                `json:"activeUsers"`
+	DisabledUsers      int                `json:"disabledUsers"`
+	LimitedUsers       int                `json:"limitedUsers"`
+	ExpiredUsers       int                `json:"expiredUsers"`
+	TotalTrafficUsed   int64              `json:"totalTrafficUsed"`
+	OnlineLastHour     int                `json:"onlineLastHour"`
+	OnlineLast24h      int                `json:"onlineLast24h"`
+	NeverOnline        int                `json:"neverOnline"`
+	UsersWithHwidLimit int                `json:"usersWithHwidLimit"`
+	HwidStats          *HwidStatsResponse `json:"hwidStats,omitempty"`
+	LastSync           string             `json:"lastSync"`
+}
+
+type HwidStatsResponse struct {
+	TotalDevices      int            `json:"totalDevices"`
+	UniqueUsers       int            `json:"uniqueUsers"`
+	PlatformBreakdown map[string]int `json:"platformBreakdown"`
+}
+
+// handleRemnawaveStats returns Remnawave sync statistics
+func (s *Server) handleRemnawaveStats(w http.ResponseWriter, r *http.Request) {
+	if s.remnawave == nil {
+		json.NewEncoder(w).Encode(RemnawaveStatsResponse{Enabled: false})
+		return
+	}
+
+	stats := s.remnawave.GetStats()
+	lastSync := ""
+	if !stats.LastSync.IsZero() {
+		lastSync = stats.LastSync.Format("2006-01-02T15:04:05Z")
+	}
+
+	// Get all users to calculate detailed stats
+	users := s.remnawave.GetAllUsers()
+
+	response := RemnawaveStatsResponse{
+		Enabled:    stats.IsConfigured,
+		TotalUsers: len(users),
+		LastSync:   lastSync,
+	}
+
+	now := time.Now()
+	oneHourAgo := now.Add(-1 * time.Hour)
+	oneDayAgo := now.Add(-24 * time.Hour)
+
+	platformCounts := make(map[string]int)
+	uniqueHwidUsers := make(map[string]bool)
+	totalDevices := 0
+
+	for _, u := range users {
+		// Status counts
+		switch u.Status {
+		case "ACTIVE":
+			response.ActiveUsers++
+		case "DISABLED":
+			response.DisabledUsers++
+		case "LIMITED":
+			response.LimitedUsers++
+		case "EXPIRED":
+			response.ExpiredUsers++
+		}
+
+		// Traffic
+		response.TotalTrafficUsed += u.UsedTrafficBytes
+
+		// Online activity
+		if u.OnlineAt == nil {
+			response.NeverOnline++
+		} else {
+			if u.OnlineAt.After(oneHourAgo) {
+				response.OnlineLastHour++
+			}
+			if u.OnlineAt.After(oneDayAgo) {
+				response.OnlineLast24h++
+			}
+		}
+
+		// HWID limit
+		if u.HwidDeviceLimit != nil {
+			response.UsersWithHwidLimit++
+		}
+
+		// HWID devices
+		devices := s.remnawave.GetUserHwidDevices(u.UUID)
+		if len(devices) > 0 {
+			uniqueHwidUsers[u.UUID] = true
+			totalDevices += len(devices)
+			for _, d := range devices {
+				if d.Platform != nil {
+					platformCounts[*d.Platform]++
+				} else {
+					platformCounts["Unknown"]++
+				}
+			}
+		}
+	}
+
+	response.HwidStats = &HwidStatsResponse{
+		TotalDevices:      totalDevices,
+		UniqueUsers:       len(uniqueHwidUsers),
+		PlatformBreakdown: platformCounts,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleRemnawaveUsers returns all Remnawave users with enriched data
+func (s *Server) handleRemnawaveUsers(w http.ResponseWriter, r *http.Request) {
+	if s.remnawave == nil {
+		http.Error(w, "Remnawave not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	users := s.remnawave.GetAllUsers()
+
+	// Build response with enriched data
+	type EnrichedUser struct {
+		UUID               string  `json:"uuid"`
+		Username           string  `json:"username"`
+		Email              *string `json:"email"`
+		Status             string  `json:"status"`
+		UsedTrafficBytes   int64   `json:"used_traffic_bytes"`
+		TrafficLimitBytes  int64   `json:"traffic_limit_bytes"`
+		TrafficPercent     float64 `json:"traffic_percent"`
+		HwidDeviceCount    int     `json:"hwid_device_count"`
+		HwidDeviceLimit    *int    `json:"hwid_device_limit"`
+		HwidExceedsLimit   bool    `json:"hwid_exceeds_limit"`
+		OnlineAt           *string `json:"online_at"`
+		ExpireAt           string  `json:"expire_at"`
+		LastConnectedNode  *string `json:"last_connected_node"`
+		Tag                *string `json:"tag"`
+		TelegramID         *int64  `json:"telegram_id"`
+		Description        *string `json:"description"`
+		ParsedRealName     *string `json:"parsed_real_name,omitempty"`
+		ParsedPhone        *string `json:"parsed_phone,omitempty"`
+		ParsedTelegramUser *string `json:"parsed_telegram_user,omitempty"`
+		ParsedPlan         *string `json:"parsed_plan,omitempty"`
+	}
+
+	result := make([]EnrichedUser, 0, len(users))
+	for _, u := range users {
+		eu := EnrichedUser{
+			UUID:              u.UUID,
+			Username:          u.Username,
+			Email:             u.Email,
+			Status:            u.Status,
+			UsedTrafficBytes:  u.UsedTrafficBytes,
+			TrafficLimitBytes: u.TrafficLimitBytes,
+			HwidDeviceLimit:   u.HwidDeviceLimit,
+			ExpireAt:          u.ExpireAt.Format("2006-01-02T15:04:05Z"),
+			Tag:               u.Tag,
+			TelegramID:        u.TelegramID,
+			Description:       u.Description,
+		}
+
+		// Calculate traffic percentage
+		if u.TrafficLimitBytes > 0 {
+			eu.TrafficPercent = float64(u.UsedTrafficBytes) / float64(u.TrafficLimitBytes) * 100
+		}
+
+		// Get HWID devices count
+		devices := s.remnawave.GetUserHwidDevices(u.UUID)
+		eu.HwidDeviceCount = len(devices)
+
+		// Check if exceeds limit
+		if u.HwidDeviceLimit != nil && len(devices) > *u.HwidDeviceLimit {
+			eu.HwidExceedsLimit = true
+		}
+
+		// Format optional timestamps
+		if u.OnlineAt != nil {
+			ts := u.OnlineAt.Format("2006-01-02T15:04:05Z")
+			eu.OnlineAt = &ts
+		}
+		if u.LastConnectedNode != nil {
+			eu.LastConnectedNode = &u.LastConnectedNode.NodeName
+		}
+
+		// Add parsed note fields
+		if u.ParsedNote != nil {
+			if u.ParsedNote.RealName != "" {
+				eu.ParsedRealName = &u.ParsedNote.RealName
+			}
+			if u.ParsedNote.Phone != "" {
+				eu.ParsedPhone = &u.ParsedNote.Phone
+			}
+			if u.ParsedNote.TelegramUser != "" {
+				eu.ParsedTelegramUser = &u.ParsedNote.TelegramUser
+			}
+			if u.ParsedNote.Plan != "" {
+				eu.ParsedPlan = &u.ParsedNote.Plan
+			}
+		}
+
+		result = append(result, eu)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// handleRemnawaveUser returns a single Remnawave user by UUID or username
+func (s *Server) handleRemnawaveUser(w http.ResponseWriter, r *http.Request) {
+	if s.remnawave == nil {
+		http.Error(w, "Remnawave not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Extract identifier from path: /api/remnawave/user/{identifier}
+	path := r.URL.Path
+	prefix := "/api/remnawave/user/"
+	if !strings.HasPrefix(path, prefix) || len(path) <= len(prefix) {
+		http.Error(w, "user identifier required", http.StatusBadRequest)
+		return
+	}
+	identifier := strings.TrimPrefix(path, prefix)
+
+	// Try to find user
+	var user interface{}
+
+	// Try by UUID first
+	u := s.remnawave.GetUserByUUID(identifier)
+	if u == nil {
+		// Try by username
+		u = s.remnawave.GetUserByUsername(identifier)
+	}
+	if u == nil {
+		// Try by email
+		u = s.remnawave.GetUserByEmail(identifier)
+	}
+
+	if u == nil {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+
+	// Build detailed response
+	devices := s.remnawave.GetUserHwidDevices(u.UUID)
+
+	type DeviceInfo struct {
+		Hwid        string  `json:"hwid"`
+		Platform    *string `json:"platform"`
+		OSVersion   *string `json:"os_version"`
+		DeviceModel *string `json:"device_model"`
+		UserAgent   *string `json:"user_agent"`
+		CreatedAt   string  `json:"created_at"`
+	}
+
+	deviceList := make([]DeviceInfo, 0, len(devices))
+	for _, d := range devices {
+		deviceList = append(deviceList, DeviceInfo{
+			Hwid:        d.Hwid,
+			Platform:    d.Platform,
+			OSVersion:   d.OSVersion,
+			DeviceModel: d.DeviceModel,
+			UserAgent:   d.UserAgent,
+			CreatedAt:   d.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+
+	response := struct {
+		UUID              string       `json:"uuid"`
+		ShortUUID         string       `json:"short_uuid"`
+		Username          string       `json:"username"`
+		Email             *string      `json:"email"`
+		Status            string       `json:"status"`
+		UsedTrafficBytes  int64        `json:"used_traffic_bytes"`
+		TrafficLimitBytes int64        `json:"traffic_limit_bytes"`
+		ExpireAt          string       `json:"expire_at"`
+		OnlineAt          *string      `json:"online_at"`
+		Tag               *string      `json:"tag"`
+		TelegramID        *int64       `json:"telegram_id"`
+		Description       *string      `json:"description"`
+		ParsedNote        interface{}  `json:"parsed_note"`
+		HwidDevices       []DeviceInfo `json:"hwid_devices"`
+		HwidDeviceLimit   *int         `json:"hwid_device_limit"`
+		SubscriptionURL   string       `json:"subscription_url"`
+		CreatedAt         string       `json:"created_at"`
+	}{
+		UUID:              u.UUID,
+		ShortUUID:         u.ShortUUID,
+		Username:          u.Username,
+		Email:             u.Email,
+		Status:            u.Status,
+		UsedTrafficBytes:  u.UsedTrafficBytes,
+		TrafficLimitBytes: u.TrafficLimitBytes,
+		ExpireAt:          u.ExpireAt.Format("2006-01-02T15:04:05Z"),
+		Tag:               u.Tag,
+		TelegramID:        u.TelegramID,
+		Description:       u.Description,
+		ParsedNote:        u.ParsedNote,
+		HwidDevices:       deviceList,
+		HwidDeviceLimit:   u.HwidDeviceLimit,
+		SubscriptionURL:   u.SubscriptionURL,
+		CreatedAt:         u.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+
+	if u.OnlineAt != nil {
+		ts := u.OnlineAt.Format("2006-01-02T15:04:05Z")
+		response.OnlineAt = &ts
+	}
+
+	user = response
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
+}
+
+// handleRemnawaveHwid returns HWID devices for a user
+func (s *Server) handleRemnawaveHwid(w http.ResponseWriter, r *http.Request) {
+	if s.remnawave == nil {
+		http.Error(w, "Remnawave not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Extract user UUID from path: /api/remnawave/hwid/{userUUID}
+	path := r.URL.Path
+	prefix := "/api/remnawave/hwid/"
+	if !strings.HasPrefix(path, prefix) || len(path) <= len(prefix) {
+		http.Error(w, "user UUID required", http.StatusBadRequest)
+		return
+	}
+	userUUID := strings.TrimPrefix(path, prefix)
+
+	devices := s.remnawave.GetUserHwidDevices(userUUID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"user_uuid": userUUID,
+		"devices":   devices,
+		"count":     len(devices),
+	})
+}
+
+// handleRemnawaveAbuse detects subscription abuse based on HWID device limits
+func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
+	if s.remnawave == nil {
+		http.Error(w, "Remnawave not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	users := s.remnawave.GetAllUsers()
+
+	type DeviceInfo struct {
+		Hwid        string  `json:"hwid"`
+		Platform    *string `json:"platform,omitempty"`
+		OSVersion   *string `json:"osVersion,omitempty"`
+		DeviceModel *string `json:"deviceModel,omitempty"`
+		UserAgent   *string `json:"userAgent,omitempty"`
+		CreatedAt   string  `json:"createdAt"`
+	}
+
+	type ParsedNoteInfo struct {
+		RealName     string `json:"real_name,omitempty"`
+		Phone        string `json:"phone,omitempty"`
+		TelegramUser string `json:"telegram_user,omitempty"`
+		Plan         string `json:"plan,omitempty"`
+	}
+
+	type AbuseUser struct {
+		UUID          string          `json:"uuid"`
+		Username      string          `json:"username"`
+		Email         *string         `json:"email,omitempty"`
+		Status        string          `json:"status"`
+		DeviceCount   int             `json:"deviceCount"`
+		DeviceLimit   int             `json:"deviceLimit"`
+		ExcessDevices int             `json:"excessDevices"`
+		Platforms     []string        `json:"platforms"`
+		LastActivity  *string         `json:"lastActivity,omitempty"`
+		Devices       []DeviceInfo    `json:"devices"`
+		ParsedNote    *ParsedNoteInfo `json:"parsedNote,omitempty"`
+	}
+
+	var abuseUsers []AbuseUser
+
+	for _, u := range users {
+		devices := s.remnawave.GetUserHwidDevices(u.UUID)
+
+		// Check if user exceeds HWID limit
+		if u.HwidDeviceLimit != nil && len(devices) > *u.HwidDeviceLimit {
+			record := AbuseUser{
+				UUID:          u.UUID,
+				Username:      u.Username,
+				Email:         u.Email,
+				Status:        u.Status,
+				DeviceCount:   len(devices),
+				DeviceLimit:   *u.HwidDeviceLimit,
+				ExcessDevices: len(devices) - *u.HwidDeviceLimit,
+			}
+
+			// Add last activity
+			if u.OnlineAt != nil {
+				ts := u.OnlineAt.Format("2006-01-02T15:04:05Z")
+				record.LastActivity = &ts
+			}
+
+			// Collect unique platforms and device info
+			platforms := make(map[string]bool)
+			for _, d := range devices {
+				di := DeviceInfo{
+					Hwid:        d.Hwid,
+					Platform:    d.Platform,
+					OSVersion:   d.OSVersion,
+					DeviceModel: d.DeviceModel,
+					UserAgent:   d.UserAgent,
+					CreatedAt:   d.CreatedAt.Format("2006-01-02T15:04:05Z"),
+				}
+				record.Devices = append(record.Devices, di)
+				if d.Platform != nil {
+					platforms[*d.Platform] = true
+				}
+			}
+			for p := range platforms {
+				record.Platforms = append(record.Platforms, p)
+			}
+
+			// Add parsed note data
+			if u.ParsedNote != nil {
+				record.ParsedNote = &ParsedNoteInfo{
+					RealName:     u.ParsedNote.RealName,
+					Phone:        u.ParsedNote.Phone,
+					TelegramUser: u.ParsedNote.TelegramUser,
+					Plan:         u.ParsedNote.Plan,
+				}
+			}
+
+			abuseUsers = append(abuseUsers, record)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"totalAbusers": len(abuseUsers),
+		"users":        abuseUsers,
+	})
+}
