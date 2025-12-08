@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Wifi, WifiOff, Users, Activity, ShieldAlert, AlertTriangle } from "lucide-react";
+import { StatCard, StatCardGrid } from "@/components/threatintel/stat-card";
+import { Wifi, WifiOff, Users, Activity, ShieldAlert, AlertTriangle, ShieldX } from "lucide-react";
 
 // Calculate risk score (same logic as in users-table)
 function calculateRiskScore(user: { total_requests: number; blacklist_hits: number; last_blacklist_hit?: string }) {
@@ -92,63 +93,39 @@ export default function UsersPage() {
         </Badge>
       </div>
 
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              Total Users
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{(stats.total_unique_users || users.length).toLocaleString()}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Activity className="h-4 w-4 text-muted-foreground" />
-              Total Requests
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalRequests.toLocaleString()}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2 text-destructive">
-              <ShieldAlert className="h-4 w-4" />
-              High Risk
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">{highRisk}</div>
-            <p className="text-xs text-muted-foreground">Score ≥ 70</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2 text-yellow-600">
-              <AlertTriangle className="h-4 w-4" />
-              Medium Risk
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{mediumRisk}</div>
-            <p className="text-xs text-muted-foreground">Score 40-69</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-destructive">Blacklist Hits</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">{totalBlacklistHits.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">{blacklistUsers.length} users affected</p>
-          </CardContent>
-        </Card>
-      </div>
+      <StatCardGrid columns={5}>
+        <StatCard
+          label="Total Users"
+          value={(stats.total_unique_users || users.length).toLocaleString()}
+          icon={<Users className="h-4 w-4" />}
+        />
+        <StatCard
+          label="Total Requests"
+          value={totalRequests.toLocaleString()}
+          icon={<Activity className="h-4 w-4" />}
+        />
+        <StatCard
+          label="High Risk"
+          value={highRisk}
+          subValue="Score ≥ 70"
+          icon={<ShieldAlert className="h-4 w-4" />}
+          variant="danger"
+        />
+        <StatCard
+          label="Medium Risk"
+          value={mediumRisk}
+          subValue="Score 40-69"
+          icon={<AlertTriangle className="h-4 w-4" />}
+          variant="warning"
+        />
+        <StatCard
+          label="Blacklist Hits"
+          value={totalBlacklistHits.toLocaleString()}
+          subValue={`${blacklistUsers.length} users affected`}
+          icon={<ShieldX className="h-4 w-4" />}
+          variant="danger"
+        />
+      </StatCardGrid>
 
       <Card>
         <CardHeader>
