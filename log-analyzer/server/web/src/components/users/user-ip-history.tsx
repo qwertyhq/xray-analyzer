@@ -11,11 +11,19 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MapPin, Globe, Clock, Wifi } from "lucide-react";
+import { Globe, Wifi } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { UserIPHistory } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
 import { IPInfoBadge } from "@/components/ui/ip-info-badge";
+
+// Country flag emoji from country code
+function getFlagEmoji(countryCode: string): string {
+  if (!countryCode || countryCode.length !== 2) return "";
+  return String.fromCodePoint(
+    ...[...countryCode.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0))
+  );
+}
 
 interface UserIPHistoryTableProps {
   email: string;
@@ -87,13 +95,21 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
           {history.map((ip, index) => (
             <TableRow key={`${ip.ip_address}-${index}`}>
               <TableCell>
-                <IPInfoBadge ip={ip.ip_address} />
+                {ip.country_code ? (
+                  // Use pre-fetched geo data from backend
+                  <span className="inline-flex items-center gap-1.5 font-mono text-sm">
+                    <span>{getFlagEmoji(ip.country_code)}</span>
+                    <span>{ip.ip_address}</span>
+                  </span>
+                ) : (
+                  // Fallback to IPInfoBadge for IPs without geo data
+                  <IPInfoBadge ip={ip.ip_address} />
+                )}
               </TableCell>
               <TableCell className="hidden sm:table-cell">
                 {ip.country_code ? (
                   <div className="flex items-center gap-1 text-sm">
-                    <Globe className="h-3 w-3 text-muted-foreground" />
-                    <span>{ip.country_code}</span>
+                    <span>{ip.country_name || ip.country_code}</span>
                     {ip.city && (
                       <span className="text-muted-foreground">• {ip.city}</span>
                     )}

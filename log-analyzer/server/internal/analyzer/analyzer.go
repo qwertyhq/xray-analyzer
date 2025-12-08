@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/blacklist"
+	"github.com/xray-log-analyzer/server/internal/ipinfo"
 	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/storage"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
@@ -18,6 +19,7 @@ type Analyzer struct {
 	blacklist         *blacklist.Blacklist
 	storage           *storage.Storage
 	threatIntel       *threatintel.Service
+	ipInfo            *ipinfo.Service
 	alertCh           chan *models.Alert
 	suspiciousCount   int
 	suspiciousWindow  time.Duration
@@ -42,6 +44,11 @@ func New(bl *blacklist.Blacklist, st *storage.Storage, alertCh chan *models.Aler
 // SetThreatIntel sets the threat intelligence service
 func (a *Analyzer) SetThreatIntel(ti *threatintel.Service) {
 	a.threatIntel = ti
+}
+
+// SetIPInfo sets the IP info service for geo lookups
+func (a *Analyzer) SetIPInfo(ip *ipinfo.Service) {
+	a.ipInfo = ip
 }
 
 // ProcessBatch processes a batch of log entries
@@ -121,9 +128,20 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 			log.Printf("analyzer: failed to update user stats: %v", err)
 		}
 
-		// Record user IP history (geo info will be empty here, enriched later via API)
+		// Record user IP history with geo enrichment
 		if lastIP != "" {
-			if err := a.storage.RecordUserIP(ctx, user, lastIP, batch.NodeID, "", "", ""); err != nil {
+			var countryCode, countryName, city string
+			if a.ipInfo != nil {
+				// Try to get geo info (with short timeout to not block processing)
+				geoCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				if ipData, err := a.ipInfo.Lookup(geoCtx, lastIP); err == nil && ipData != nil {
+					countryCode = ipData.CountryCode
+					countryName = ipData.Country
+					city = ipData.City
+				}
+				cancel()
+			}
+			if err := a.storage.RecordUserIP(ctx, user, lastIP, batch.NodeID, countryCode, countryName, city); err != nil {
 				log.Printf("analyzer: failed to record user IP history: %v", err)
 			}
 		}

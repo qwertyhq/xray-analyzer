@@ -65,6 +65,7 @@ func main() {
 
 	// Initialize IP info service for geo lookups
 	ipInfoSvc := ipinfo.NewService()
+	anal.SetIPInfo(ipInfoSvc)
 
 	// Initialize threat intelligence service
 	threatIntelSvc := threatintel.NewService(store, ipInfoSvc)
