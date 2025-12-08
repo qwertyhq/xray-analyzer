@@ -89,6 +89,8 @@ jobs:
             for i in {1..12}; do
               if docker compose exec -T analyzer-server wget -q --spider http://localhost:8237/health 2>/dev/null; then
                 echo "✅ Health check passed!"
+                # Cleanup old images
+                docker image prune -f
                 exit 0
               fi
               echo "Attempt $i/12 - waiting..."
@@ -100,6 +102,7 @@ jobs:
             docker tag ghcr.io/${{ github.repository }}/log-analyzer:backup \
                        ghcr.io/${{ github.repository }}/log-analyzer:latest
             docker compose up -d --force-recreate analyzer-server
+            docker image prune -f
             exit 1
 
       - name: Notify success
