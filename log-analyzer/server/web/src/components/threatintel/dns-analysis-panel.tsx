@@ -36,8 +36,6 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  PieChart,
-  Pie,
   Cell,
   Legend
 } from "recharts";
@@ -332,33 +330,32 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                   <div className="h-[250px] w-full">
                     {categoryData.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={categoryData}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            outerRadius={80}
-                            innerRadius={40}
-                            fill="hsl(262, 83%, 58%)"
-                            dataKey="value"
-                            paddingAngle={2}
-                          >
-                            {categoryData.map((_, index) => (
-                              <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                            ))}
-                          </Pie>
+                        <BarChart data={categoryData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" vertical={false} />
+                          <XAxis 
+                            dataKey="name" 
+                            tick={{ fontSize: 10 }}
+                            interval={0}
+                            angle={-25}
+                            textAnchor="end"
+                            height={50}
+                          />
+                          <YAxis 
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(value) => value.toLocaleString()}
+                          />
                           <Tooltip
                             contentStyle={tooltipStyle.contentStyle}
                             labelStyle={tooltipStyle.labelStyle}
                             itemStyle={tooltipStyle.itemStyle}
                             formatter={(value: number, name: string) => [`${value.toLocaleString()} queries`, name]}
                           />
-                          <Legend 
-                            wrapperStyle={{ fontSize: "11px" }} 
-                            formatter={(value) => <span className="text-foreground">{value}</span>}
-                          />
-                        </PieChart>
+                          <Bar dataKey="value" radius={[4, 4, 0, 0]} name="Queries">
+                            {categoryData.map((_, index) => (
+                              <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
                       </ResponsiveContainer>
                     ) : (
                       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">

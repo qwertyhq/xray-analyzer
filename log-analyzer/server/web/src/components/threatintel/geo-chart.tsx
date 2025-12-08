@@ -13,8 +13,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
-  PieChart,
-  Pie,
   Legend,
 } from "recharts";
 import { GeoSummary, ThreatType } from "@/lib/types";
@@ -262,7 +260,7 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
           </CardContent>
         </Card>
 
-        {/* Pie Chart */}
+        {/* Distribution Bar Chart */}
         <Card className="border-0 shadow-md">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -274,36 +272,33 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
           <CardContent className="pt-0">
             <div className="h-[280px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={90}
-                    paddingAngle={3}
-                    dataKey="value"
-                    strokeWidth={2}
-                    stroke="hsl(var(--background))"
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
+                <BarChart data={pieData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" vertical={false} />
+                  <XAxis 
+                    dataKey="name" 
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(value) => value}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={(value) => value.toLocaleString()}
+                  />
                   <Tooltip
                     contentStyle={tooltipStyle.contentStyle}
                     labelStyle={tooltipStyle.labelStyle}
                     itemStyle={tooltipStyle.itemStyle}
                     formatter={(value: number) => [value.toLocaleString(), "Matches"]}
-                  />
-                  <Legend 
-                    formatter={(value) => {
-                      const item = pieData.find(d => d.name === value);
-                      return `${value} ${item?.fullName || ''}`;
+                    labelFormatter={(label) => {
+                      const item = pieData.find(d => d.name === label);
+                      return item?.fullName || label;
                     }}
-                    wrapperStyle={{ fontSize: "11px" }}
                   />
-                </PieChart>
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
