@@ -72,7 +72,7 @@ export function DataTable<T>({
     <div className="space-y-4">
       {/* Table with scroll */}
       <div 
-        className="overflow-auto border rounded-md"
+        className="overflow-auto border rounded-md scrollbar-thin"
         style={{ maxHeight }}
       >
         <Table>

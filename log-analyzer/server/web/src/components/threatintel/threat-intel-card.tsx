@@ -64,7 +64,7 @@ export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
                 {matches.length} latest
               </Badge>
             </div>
-            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-thin pr-1">
               {matches.map((match) => {
                 const config = threatTypeConfig[match.threat_type] || threatTypeConfig.malware;
                 return (

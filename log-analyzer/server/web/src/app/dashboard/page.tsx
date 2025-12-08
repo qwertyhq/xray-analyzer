@@ -79,25 +79,25 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card className="overflow-hidden">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle>Active Nodes</CardTitle>
             <CardDescription>
               {onlineNodes.length} of {nodes.length} nodes online
             </CardDescription>
           </CardHeader>
-          <CardContent className="overflow-x-auto">
+          <CardContent className="max-h-[400px] overflow-y-auto scrollbar-thin">
             <NodesTable nodes={onlineNodes} />
           </CardContent>
         </Card>
 
         <Card className="overflow-hidden">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle>Blacklist Alerts</CardTitle>
             <CardDescription>
               Recent blocked requests
             </CardDescription>
           </CardHeader>
-          <CardContent className="max-h-[400px] overflow-y-auto">
+          <CardContent className="max-h-[400px] overflow-y-auto scrollbar-thin">
             <RecentBlocks 
               matches={blacklist?.recent_matches || []} 
               loading={false}

@@ -105,7 +105,7 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
             No anomalies detected
           </p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[350px] overflow-y-auto scrollbar-thin pr-1">
             {anomalies.map((anomaly) => {
               const Icon = anomalyIcons[anomaly.type] || AlertTriangle;
               const color = anomalyColors[anomaly.type] || "default";
