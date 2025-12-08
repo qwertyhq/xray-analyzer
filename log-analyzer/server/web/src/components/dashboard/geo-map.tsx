@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import Map, { Source, Layer, Popup } from "react-map-gl/mapbox";
 import type { MapRef } from "react-map-gl/mapbox";
 import type { FeatureCollection, Point } from "geojson";
@@ -8,7 +8,8 @@ import type { LayerProps } from "react-map-gl/mapbox";
 import type mapboxgl from "mapbox-gl";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Globe } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Globe, Maximize2, Minimize2, X } from "lucide-react";
 import "mapbox-gl/dist/mapbox-gl.css";
 
 // Country centroids for geo positioning
@@ -115,6 +116,7 @@ const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 export function GeoMap({ data, cityData = [], title = "Geographic Distribution", mode = "cities" }: GeoMapProps) {
   const mapRef = useRef<MapRef>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [popupInfo, setPopupInfo] = useState<{
     longitude: number;
     latitude: number;
@@ -124,6 +126,26 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
     count: number;
     users: number;
   } | null>(null);
+
+  // Handle escape key to exit fullscreen
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [isFullscreen]);
+
+  // Resize map when fullscreen changes
+  useEffect(() => {
+    if (mapRef.current) {
+      setTimeout(() => {
+        mapRef.current?.resize();
+      }, 100);
+    }
+  }, [isFullscreen]);
 
   // Convert city data to GeoJSON (uses actual coordinates)
   const cityGeojson = useMemo((): FeatureCollection<Point> => {
@@ -275,28 +297,37 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
   }
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <Globe className="h-4 w-4 text-blue-500" />
-          {title}
-        </CardTitle>
-        <CardDescription className="text-xs">
-          {mode === "cities" && cityData.length > 0 
-            ? `${cityData.length} cities • ${totalCount.toLocaleString()} connections`
-            : `${data.length} countries • ${totalCount.toLocaleString()} connections`
-          }
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="h-[300px] relative">
+    <>
+      {/* Fullscreen overlay */}
+      {isFullscreen && (
+        <div className="fixed inset-0 z-50 bg-background">
+          <div className="absolute top-4 left-4 z-10 flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2">
+              <Globe className="h-5 w-5 text-blue-500" />
+              <span className="font-medium">{title}</span>
+              <span className="text-muted-foreground text-sm">
+                {mode === "cities" && cityData.length > 0 
+                  ? `${cityData.length} cities • ${totalCount.toLocaleString()} connections`
+                  : `${data.length} countries • ${totalCount.toLocaleString()} connections`
+                }
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="icon"
+            className="absolute top-4 right-4 z-10"
+            onClick={() => setIsFullscreen(false)}
+          >
+            <X className="h-4 w-4" />
+          </Button>
           <Map
             ref={mapRef}
             mapboxAccessToken={MAPBOX_TOKEN}
             initialViewState={{
               longitude: 40,
               latitude: 40,
-              zoom: 1.5,
+              zoom: 2.5,
             }}
             style={{ width: "100%", height: "100%" }}
             mapStyle="mapbox://styles/mapbox/dark-v11"
@@ -353,8 +384,8 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
             )}
           </Map>
 
-          {/* Legend */}
-          <div className="absolute bottom-2 left-2 bg-background/90 backdrop-blur-sm rounded-md p-2 text-xs">
+          {/* Legend in fullscreen */}
+          <div className="absolute bottom-4 left-4 bg-background/90 backdrop-blur-sm rounded-md p-2 text-xs">
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 rounded-full bg-blue-500/60" />
@@ -366,34 +397,168 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Top locations list */}
-        <div className="p-3 border-t max-h-[150px] overflow-y-auto scrollbar-thin">
-          <div className="grid grid-cols-2 gap-2">
-            {mode === "cities" && cityData.length > 0
-              ? cityData.slice(0, 6).map((item, idx) => (
-                  <div key={`${item.city}-${item.country_code}-${idx}`} className="flex items-center gap-2 text-sm">
-                    <span>{getFlag(item.country_code)}</span>
-                    <span className="truncate flex-1">{item.city}</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {item.count.toLocaleString()}
-                    </Badge>
-                  </div>
-                ))
-              : data.slice(0, 6).map((item) => (
-                  <div key={item.country_code} className="flex items-center gap-2 text-sm">
-                    <span>{getFlag(item.country_code)}</span>
-                    <span className="truncate flex-1">{item.country}</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {item.count.toLocaleString()}
-                    </Badge>
-                  </div>
-                ))
-            }
+          {/* Top locations in fullscreen - sidebar */}
+          <div className="absolute bottom-4 right-4 bg-background/90 backdrop-blur-sm rounded-lg p-3 max-w-[250px] max-h-[300px] overflow-y-auto scrollbar-thin">
+            <h4 className="text-sm font-medium mb-2">Top Locations</h4>
+            <div className="space-y-2">
+              {mode === "cities" && cityData.length > 0
+                ? cityData.slice(0, 10).map((item, idx) => (
+                    <div key={`${item.city}-${item.country_code}-${idx}`} className="flex items-center gap-2 text-sm">
+                      <span>{getFlag(item.country_code)}</span>
+                      <span className="truncate flex-1">{item.city}</span>
+                      <Badge variant="secondary" className="text-xs">
+                        {item.count.toLocaleString()}
+                      </Badge>
+                    </div>
+                  ))
+                : data.slice(0, 10).map((item) => (
+                    <div key={item.country_code} className="flex items-center gap-2 text-sm">
+                      <span>{getFlag(item.country_code)}</span>
+                      <span className="truncate flex-1">{item.country}</span>
+                      <Badge variant="secondary" className="text-xs">
+                        {item.count.toLocaleString()}
+                      </Badge>
+                    </div>
+                  ))
+              }
+            </div>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      )}
+
+      {/* Normal card view */}
+      <Card className="overflow-hidden">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Globe className="h-4 w-4 text-blue-500" />
+              {title}
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => setIsFullscreen(true)}
+              title="Fullscreen"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <CardDescription className="text-xs">
+            {mode === "cities" && cityData.length > 0 
+              ? `${cityData.length} cities • ${totalCount.toLocaleString()} connections`
+              : `${data.length} countries • ${totalCount.toLocaleString()} connections`
+            }
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="h-[300px] relative">
+            <Map
+              ref={isFullscreen ? undefined : mapRef}
+              mapboxAccessToken={MAPBOX_TOKEN}
+              initialViewState={{
+                longitude: 40,
+                latitude: 40,
+                zoom: 1.5,
+              }}
+              style={{ width: "100%", height: "100%" }}
+              mapStyle="mapbox://styles/mapbox/dark-v11"
+              interactiveLayerIds={["geo-points"]}
+              onClick={onClick}
+              onMouseEnter={onMouseEnter}
+              onMouseLeave={onMouseLeave}
+              attributionControl={false}
+            >
+              <Source id="geo-data" type="geojson" data={geojson}>
+                <Layer {...layerStyle} />
+              </Source>
+
+              {popupInfo && !isFullscreen && (
+                <Popup
+                  longitude={popupInfo.longitude}
+                  latitude={popupInfo.latitude}
+                  anchor="bottom"
+                  onClose={() => setPopupInfo(null)}
+                  closeButton={true}
+                  closeOnClick={false}
+                  className="geo-popup"
+                >
+                  <div className="p-2 min-w-[140px] bg-zinc-900 text-white rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-lg">{getFlag(popupInfo.country_code)}</span>
+                      <div className="flex flex-col">
+                        {popupInfo.city && (
+                          <span className="font-medium text-white">{popupInfo.city}</span>
+                        )}
+                        <span className={popupInfo.city ? "text-sm text-zinc-400" : "font-medium text-white"}>
+                          {popupInfo.country}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-sm space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Connections:</span>
+                        <span className="font-mono text-white">{popupInfo.count.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Users:</span>
+                        <span className="font-mono text-white">{popupInfo.users.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Share:</span>
+                        <span className="font-mono text-white">
+                          {((popupInfo.count / totalCount) * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </Popup>
+              )}
+            </Map>
+
+            {/* Legend */}
+            <div className="absolute bottom-2 left-2 bg-background/90 backdrop-blur-sm rounded-md p-2 text-xs">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded-full bg-blue-500/60" />
+                  <span>Low</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                  <span>High</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Top locations list */}
+          <div className="p-3 border-t max-h-[150px] overflow-y-auto scrollbar-thin">
+            <div className="grid grid-cols-2 gap-2">
+              {mode === "cities" && cityData.length > 0
+                ? cityData.slice(0, 6).map((item, idx) => (
+                    <div key={`${item.city}-${item.country_code}-${idx}`} className="flex items-center gap-2 text-sm">
+                      <span>{getFlag(item.country_code)}</span>
+                      <span className="truncate flex-1">{item.city}</span>
+                      <Badge variant="secondary" className="text-xs">
+                        {item.count.toLocaleString()}
+                      </Badge>
+                    </div>
+                  ))
+                : data.slice(0, 6).map((item) => (
+                    <div key={item.country_code} className="flex items-center gap-2 text-sm">
+                      <span>{getFlag(item.country_code)}</span>
+                      <span className="truncate flex-1">{item.country}</span>
+                      <Badge variant="secondary" className="text-xs">
+                        {item.count.toLocaleString()}
+                      </Badge>
+                    </div>
+                  ))
+              }
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </>
   );
 }

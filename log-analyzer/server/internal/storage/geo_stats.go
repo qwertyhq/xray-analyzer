@@ -35,16 +35,17 @@ func (s *Storage) SaveUserLocation(ctx context.Context, userEmail, countryCode, 
 		return nil
 	}
 
+	// Use CASE to only update coordinates if new ones are valid (non-zero)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO user_locations (user_email, country_code, country_name, city, latitude, longitude, last_seen, request_count)
 		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1)
 		ON CONFLICT(user_email, country_code) DO UPDATE SET
-			city = COALESCE(?, city),
-			latitude = COALESCE(?, latitude),
-			longitude = COALESCE(?, longitude),
+			city = CASE WHEN ? != '' THEN ? ELSE city END,
+			latitude = CASE WHEN ? != 0 THEN ? ELSE latitude END,
+			longitude = CASE WHEN ? != 0 THEN ? ELSE longitude END,
 			last_seen = CURRENT_TIMESTAMP,
 			request_count = request_count + 1
-	`, userEmail, countryCode, countryName, city, lat, lon, city, lat, lon)
+	`, userEmail, countryCode, countryName, city, lat, lon, city, city, lat, lat, lon, lon)
 
 	return err
 }
@@ -283,4 +284,46 @@ func (s *Storage) GetCityGeoStats(ctx context.Context, limit int) ([]*CityGeoSta
 	}
 
 	return result, nil
+}
+
+// GetLocationsWithoutCoords returns user locations that need coordinate enrichment
+func (s *Storage) GetLocationsWithoutCoords(ctx context.Context, limit int) ([]*threatintel.LocationWithoutCoords, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_email, country_code, COALESCE(city, '') as city
+		FROM user_locations
+		WHERE (latitude IS NULL OR latitude = 0) AND (longitude IS NULL OR longitude = 0)
+		ORDER BY request_count DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*threatintel.LocationWithoutCoords
+	for rows.Next() {
+		loc := &threatintel.LocationWithoutCoords{}
+		if err := rows.Scan(&loc.UserEmail, &loc.CountryCode, &loc.City); err != nil {
+			continue
+		}
+		result = append(result, loc)
+	}
+
+	return result, nil
+}
+
+// UpdateLocationCoords updates coordinates for a specific user location
+func (s *Storage) UpdateLocationCoords(ctx context.Context, userEmail, countryCode, city string, lat, lon float64) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE user_locations 
+		SET city = CASE WHEN ? != '' THEN ? ELSE city END,
+			latitude = ?,
+			longitude = ?
+		WHERE user_email = ? AND country_code = ?
+	`, city, city, lat, lon, userEmail, countryCode)
+	return err
 }

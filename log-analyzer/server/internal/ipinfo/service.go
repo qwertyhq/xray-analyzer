@@ -298,6 +298,32 @@ func (s *Service) GetCached(ip string) *IPInfo {
 	return s.cache[ip]
 }
 
+// GetCachedByLocation returns cached IP info for a country/city combination
+// This is used to enrich existing records with coordinates
+func (s *Service) GetCachedByLocation(countryCode, city string) *IPInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Find any cached entry matching country code and city
+	for _, info := range s.cache {
+		if info.CountryCode == countryCode && info.Lat != 0 && info.Lon != 0 {
+			// If city matches or we just need country coords
+			if city == "" || info.City == city {
+				return info
+			}
+		}
+	}
+
+	// If no exact city match, return any entry with matching country
+	for _, info := range s.cache {
+		if info.CountryCode == countryCode && info.Lat != 0 && info.Lon != 0 {
+			return info
+		}
+	}
+
+	return nil
+}
+
 // GetCacheStats returns cache statistics
 func (s *Service) GetCacheStats() (total int, expired int) {
 	s.mu.RLock()
