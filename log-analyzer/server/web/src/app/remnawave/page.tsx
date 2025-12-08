@@ -90,6 +90,7 @@ export default function RemnavewavePage() {
   const highRiskCount = abuseUsers.filter(u => u.excessDevices >= 3).length;
   const mediumRiskCount = abuseUsers.filter(u => u.excessDevices === 2).length;
   const lowRiskCount = abuseUsers.filter(u => u.excessDevices === 1).length;
+  const atLimitCount = abuseUsers.filter(u => u.excessDevices === 0).length;
 
   // Pagination for online users - must be called before any early returns
   const onlineUsersPagination = usePagination(onlineStats?.onlineUsers ?? []);
@@ -244,17 +245,22 @@ export default function RemnavewavePage() {
             <div className="flex gap-1 mt-2 flex-wrap">
               {highRiskCount > 0 && (
                 <Badge variant="destructive" className="text-xs">
-                  High: {highRiskCount}
+                  Высокий: {highRiskCount}
                 </Badge>
               )}
               {mediumRiskCount > 0 && (
                 <Badge variant="default" className="bg-orange-500 text-xs">
-                  Medium: {mediumRiskCount}
+                  Средний: {mediumRiskCount}
                 </Badge>
               )}
               {lowRiskCount > 0 && (
-                <Badge variant="secondary" className="text-xs">
-                  Low: {lowRiskCount}
+                <Badge variant="outline" className="border-yellow-500 text-yellow-500 text-xs">
+                  Низкий: {lowRiskCount}
+                </Badge>
+              )}
+              {atLimitCount > 0 && (
+                <Badge variant="outline" className="border-blue-500 text-blue-500 text-xs">
+                  На пределе: {atLimitCount}
                 </Badge>
               )}
             </div>
