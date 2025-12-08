@@ -64,12 +64,13 @@ func (s *Service) Start(ctx context.Context) error {
 
 	log.Println("threatintel: starting service")
 
-	// Initial load
-	if err := s.loader.LoadAllFeeds(ctx); err != nil {
-		log.Printf("threatintel: initial load error: %v", err)
-	}
-
-	log.Printf("threatintel: loaded %d indicators", s.loader.GetIndicatorCount())
+	// Load feeds in background to not block server startup
+	go func() {
+		if err := s.loader.LoadAllFeeds(ctx); err != nil {
+			log.Printf("threatintel: initial load error: %v", err)
+		}
+		log.Printf("threatintel: loaded %d indicators", s.loader.GetIndicatorCount())
+	}()
 
 	// Start background update loop
 	go s.updateLoop(ctx)

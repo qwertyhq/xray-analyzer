@@ -80,7 +80,7 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
     });
   };
 
-  const handleClearHwid = async (userUuid: string, username: string) => {
+  const handleClearHwid = async (userUuid: string) => {
     setClearingHwid(userUuid);
     try {
       const response = await fetch("/api/remnawave/hwid-clear", {
@@ -235,7 +235,7 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                               <AlertDialogCancel>Отмена</AlertDialogCancel>
                               <AlertDialogAction
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={() => handleClearHwid(user.uuid, user.username)}
+                                onClick={() => handleClearHwid(user.uuid)}
                               >
                                 Очистить HWID
                               </AlertDialogAction>

@@ -440,19 +440,28 @@ func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
 
 	var abuseUsers []AbuseUser
 
+	// Default HWID limit if not set in Remnawave
+	const defaultHwidLimit = 5
+
 	for _, u := range users {
 		devices := s.remnawave.GetUserHwidDevices(u.UUID)
 
+		// Determine effective limit: use user's limit or default
+		effectiveLimit := defaultHwidLimit
+		if u.HwidDeviceLimit != nil {
+			effectiveLimit = *u.HwidDeviceLimit
+		}
+
 		// Check if user exceeds HWID limit
-		if u.HwidDeviceLimit != nil && len(devices) > *u.HwidDeviceLimit {
+		if len(devices) > effectiveLimit {
 			record := AbuseUser{
 				UUID:          u.UUID,
 				Username:      u.Username,
 				Email:         u.Email,
 				Status:        u.Status,
 				DeviceCount:   len(devices),
-				DeviceLimit:   *u.HwidDeviceLimit,
-				ExcessDevices: len(devices) - *u.HwidDeviceLimit,
+				DeviceLimit:   effectiveLimit,
+				ExcessDevices: len(devices) - effectiveLimit,
 			}
 
 			// Add last activity

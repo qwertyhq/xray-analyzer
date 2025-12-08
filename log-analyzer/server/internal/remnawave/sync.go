@@ -58,8 +58,8 @@ func (s *SyncService) Start(ctx context.Context) {
 		return
 	}
 
-	// Initial sync
-	s.sync(ctx)
+	// Initial sync in background to not block server startup
+	go s.sync(ctx)
 
 	// Periodic sync
 	ticker := time.NewTicker(s.syncInterval)

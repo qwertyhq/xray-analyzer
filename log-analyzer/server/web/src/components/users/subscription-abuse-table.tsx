@@ -31,7 +31,18 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Users, Globe, ExternalLink, ChevronDown, AlertTriangle, RefreshCw, Server, Smartphone, Monitor } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Users, Globe, ExternalLink, ChevronDown, AlertTriangle, RefreshCw, Server, Smartphone, Monitor, Trash2, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { SubscriptionAbuse, TimeRange } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
@@ -63,6 +74,7 @@ export function SubscriptionAbuseTable({
   const [abusers, setAbusers] = useState<SubscriptionAbuse[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [clearingHwid, setClearingHwid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<TimeRange>(defaultPeriod);
   const [minIPs, setMinIPs] = useState(defaultMinIPs);
@@ -99,6 +111,31 @@ export function SubscriptionAbuseTable({
       console.error("Sync failed:", err);
     } finally {
       setSyncing(false);
+    }
+  }, [fetchData]);
+
+  // Clear HWID devices for a user
+  const handleClearHwid = useCallback(async (userUuid: string) => {
+    setClearingHwid(userUuid);
+    try {
+      const response = await fetch("/api/remnawave/hwid-clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userUuid }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || "Failed to clear HWID");
+      }
+
+      // Refresh data after clearing
+      await fetchData();
+    } catch (error) {
+      console.error("Failed to clear HWID:", error);
+      alert(`Ошибка: ${error instanceof Error ? error.message : "Не удалось очистить HWID"}`);
+    } finally {
+      setClearingHwid(null);
     }
   }, [fetchData]);
 
@@ -237,7 +274,7 @@ export function SubscriptionAbuseTable({
                           className="font-medium hover:underline text-primary flex items-center gap-1"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <span className="truncate">{abuser.user_email}</span>
+                          <span className="truncate">{abuser.username || abuser.user_email}</span>
                           <ExternalLink className="h-3 w-3 flex-shrink-0" />
                         </Link>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
@@ -349,6 +386,46 @@ export function SubscriptionAbuseTable({
                             </Tooltip>
                           </TooltipProvider>
                         ))}
+                        {/* Clear HWID button */}
+                        {abuser.user_uuid && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10 ml-2"
+                                onClick={(e) => e.stopPropagation()}
+                                disabled={clearingHwid === abuser.user_uuid}
+                              >
+                                {clearingHwid === abuser.user_uuid ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3 w-3" />
+                                )}
+                                <span className="ml-1">Clear</span>
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Очистить HWID устройства?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Будут удалены все {abuser.unique_hwids} устройств пользователя{" "}
+                                  <span className="font-medium text-foreground">{abuser.username || abuser.user_email}</span>.
+                                  Пользователю придётся заново подключить устройства.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={() => handleClearHwid(abuser.user_uuid!)}
+                              >
+                                Очистить HWID
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
                       </div>
                     )}
 
