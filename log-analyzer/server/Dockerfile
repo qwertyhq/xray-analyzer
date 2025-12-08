@@ -32,6 +32,10 @@ RUN npm ci
 # Copy source
 COPY web/ ./
 
+# Build args for NEXT_PUBLIC variables
+ARG NEXT_PUBLIC_MAPBOX_TOKEN
+ENV NEXT_PUBLIC_MAPBOX_TOKEN=${NEXT_PUBLIC_MAPBOX_TOKEN}
+
 # Set API URL for build
 ENV NEXT_PUBLIC_API_URL=""
 
