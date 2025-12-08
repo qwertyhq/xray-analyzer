@@ -59,6 +59,11 @@ func (s *Storage) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying database connection for advanced queries
+func (s *Storage) DB() *sql.DB {
+	return s.db
+}
+
 // migrate creates the database schema
 func (s *Storage) migrate() error {
 	schema := `
@@ -380,6 +385,125 @@ func (s *Storage) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_reports_generated ON reports(generated_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_reports_type ON reports(type);
+
+	-- =============================================
+	-- User Correlation Tables for AI Analysis
+	-- =============================================
+
+	-- IP to Users mapping (which users share the same IP)
+	CREATE TABLE IF NOT EXISTS ip_user_map (
+		ip_address TEXT NOT NULL,
+		user_email TEXT NOT NULL,
+		node_id TEXT,
+		first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		request_count INTEGER DEFAULT 1,
+		PRIMARY KEY (ip_address, user_email)
+	);
+	CREATE INDEX IF NOT EXISTS idx_ip_user_map_ip ON ip_user_map(ip_address);
+	CREATE INDEX IF NOT EXISTS idx_ip_user_map_user ON ip_user_map(user_email);
+	CREATE INDEX IF NOT EXISTS idx_ip_user_map_lastseen ON ip_user_map(last_seen DESC);
+
+	-- HWID to Users mapping (which users share the same HWID)
+	CREATE TABLE IF NOT EXISTS hwid_user_map (
+		hwid TEXT NOT NULL,
+		user_email TEXT NOT NULL,
+		platform TEXT,
+		first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		request_count INTEGER DEFAULT 1,
+		PRIMARY KEY (hwid, user_email)
+	);
+	CREATE INDEX IF NOT EXISTS idx_hwid_user_map_hwid ON hwid_user_map(hwid);
+	CREATE INDEX IF NOT EXISTS idx_hwid_user_map_user ON hwid_user_map(user_email);
+
+	-- User identity fingerprint (combo of IP+HWID for unique identification)
+	CREATE TABLE IF NOT EXISTS user_fingerprints (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_email TEXT NOT NULL,
+		ip_address TEXT NOT NULL,
+		hwid TEXT,
+		user_agent TEXT,
+		node_id TEXT,
+		first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		session_count INTEGER DEFAULT 1,
+		UNIQUE(user_email, ip_address, hwid)
+	);
+	CREATE INDEX IF NOT EXISTS idx_fingerprint_user ON user_fingerprints(user_email);
+	CREATE INDEX IF NOT EXISTS idx_fingerprint_ip ON user_fingerprints(ip_address);
+	CREATE INDEX IF NOT EXISTS idx_fingerprint_hwid ON user_fingerprints(hwid);
+
+	-- User clusters (groups of users that share IPs or HWIDs)
+	CREATE TABLE IF NOT EXISTS user_clusters (
+		cluster_id TEXT NOT NULL,
+		user_email TEXT NOT NULL,
+		reason TEXT NOT NULL,  -- 'shared_ip', 'shared_hwid', 'both'
+		shared_value TEXT NOT NULL,  -- the IP or HWID that links them
+		confidence REAL DEFAULT 0.5,
+		first_linked DATETIME DEFAULT CURRENT_TIMESTAMP,
+		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (cluster_id, user_email)
+	);
+	CREATE INDEX IF NOT EXISTS idx_cluster_id ON user_clusters(cluster_id);
+	CREATE INDEX IF NOT EXISTS idx_cluster_user ON user_clusters(user_email);
+
+	-- Enhanced user profile for AI (aggregated view)
+	CREATE TABLE IF NOT EXISTS user_ai_profile (
+		user_email TEXT PRIMARY KEY,
+		-- Identity metrics
+		unique_ips INTEGER DEFAULT 0,
+		unique_hwids INTEGER DEFAULT 0,
+		unique_fingerprints INTEGER DEFAULT 0,
+		unique_countries INTEGER DEFAULT 0,
+		unique_nodes INTEGER DEFAULT 0,
+		-- Activity metrics
+		total_requests INTEGER DEFAULT 0,
+		total_sessions INTEGER DEFAULT 0,
+		avg_session_duration_sec REAL DEFAULT 0,
+		-- Threat metrics
+		total_threat_matches INTEGER DEFAULT 0,
+		threat_categories TEXT,  -- JSON: {"malware": 5, "phishing": 2}
+		-- Correlation metrics
+		shared_ip_users INTEGER DEFAULT 0,  -- count of other users sharing IPs
+		shared_hwid_users INTEGER DEFAULT 0,  -- count of other users sharing HWIDs
+		cluster_ids TEXT,  -- JSON array of cluster IDs
+		-- Time metrics
+		first_seen DATETIME,
+		last_seen DATETIME,
+		active_days INTEGER DEFAULT 0,
+		typical_hours TEXT,  -- JSON array [9,10,11,14,15,16]
+		-- Risk assessment
+		risk_score INTEGER DEFAULT 0,
+		risk_factors TEXT,  -- JSON array
+		-- Remnawave data (synced)
+		remna_uuid TEXT,
+		remna_status TEXT,
+		remna_traffic_used INTEGER DEFAULT 0,
+		remna_traffic_limit INTEGER DEFAULT 0,
+		remna_expire_at DATETIME,
+		remna_hwid_devices INTEGER DEFAULT 0,
+		remna_hwid_limit INTEGER DEFAULT 0,
+		-- Metadata
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_ai_profile_risk ON user_ai_profile(risk_score DESC);
+	CREATE INDEX IF NOT EXISTS idx_ai_profile_shared ON user_ai_profile(shared_ip_users DESC, shared_hwid_users DESC);
+
+	-- Connection sessions (for session analysis)
+	CREATE TABLE IF NOT EXISTS user_sessions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_email TEXT NOT NULL,
+		ip_address TEXT NOT NULL,
+		hwid TEXT,
+		node_id TEXT,
+		started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		ended_at DATETIME,
+		request_count INTEGER DEFAULT 0,
+		bytes_transferred INTEGER DEFAULT 0
+	);
+	CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_email);
+	CREATE INDEX IF NOT EXISTS idx_sessions_time ON user_sessions(started_at DESC);
 	`
 
 	_, err := s.db.Exec(schema)

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/blacklist"
+	"github.com/xray-log-analyzer/server/internal/correlation"
 	"github.com/xray-log-analyzer/server/internal/ipinfo"
 	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/storage"
@@ -20,6 +21,7 @@ type Analyzer struct {
 	storage           *storage.Storage
 	threatIntel       *threatintel.Service
 	ipInfo            *ipinfo.Service
+	correlation       *correlation.Service
 	alertCh           chan *models.Alert
 	suspiciousCount   int
 	suspiciousWindow  time.Duration
@@ -49,6 +51,11 @@ func (a *Analyzer) SetThreatIntel(ti *threatintel.Service) {
 // SetIPInfo sets the IP info service for geo lookups
 func (a *Analyzer) SetIPInfo(ip *ipinfo.Service) {
 	a.ipInfo = ip
+}
+
+// SetCorrelation sets the correlation service for user analysis
+func (a *Analyzer) SetCorrelation(c *correlation.Service) {
+	a.correlation = c
 }
 
 // ProcessBatch processes a batch of log entries
@@ -144,6 +151,13 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 			if err := a.storage.RecordUserIP(ctx, user, lastIP, batch.NodeID, countryCode, countryName, city); err != nil {
 				log.Printf("analyzer: failed to record user IP history: %v", err)
 			}
+		}
+
+		// Process correlation data (IP + HWID mapping)
+		if a.correlation != nil && lastIP != "" {
+			// HWID will come from Remnawave sync, here we just record IP correlation
+			// UserAgent is not in LogEntry, so we pass empty string
+			a.correlation.ProcessConnection(ctx, user, lastIP, "", "", batch.NodeID)
 		}
 
 		// Record user destinations for detailed tracking

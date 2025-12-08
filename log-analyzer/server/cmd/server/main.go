@@ -11,6 +11,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/analyzer"
 	"github.com/xray-log-analyzer/server/internal/blacklist"
 	"github.com/xray-log-analyzer/server/internal/config"
+	"github.com/xray-log-analyzer/server/internal/correlation"
 	"github.com/xray-log-analyzer/server/internal/ipinfo"
 	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/remnawave"
@@ -142,6 +143,26 @@ func main() {
 	} else {
 		log.Println("remnawave: disabled (no URL/token configured)")
 	}
+
+	// Initialize correlation service for user analysis
+	correlationSvc := correlation.NewService(store, remnaSvc)
+	anal.SetCorrelation(correlationSvc)
+	srv.SetCorrelation(correlationSvc)
+	log.Println("correlation: service initialized")
+
+	// Start periodic profile refresh (every 6 hours)
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				correlationSvc.RefreshAllProfiles(ctx)
+			}
+		}
+	}()
 
 	go func() {
 		if err := srv.Start(ctx); err != nil {

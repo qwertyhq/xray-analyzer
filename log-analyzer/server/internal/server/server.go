@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/xray-log-analyzer/server/internal/analyzer"
 	"github.com/xray-log-analyzer/server/internal/blacklist"
+	"github.com/xray-log-analyzer/server/internal/correlation"
 	"github.com/xray-log-analyzer/server/internal/ipinfo"
 	"github.com/xray-log-analyzer/server/internal/remnawave"
 	"github.com/xray-log-analyzer/server/internal/storage"
@@ -25,6 +26,7 @@ type Server struct {
 	blacklist      *blacklist.Blacklist
 	threatIntel    *threatintel.Service
 	remnawave      *remnawave.SyncService
+	correlation    *correlation.Service
 	ipInfo         *ipinfo.Service
 	clients        map[string]*Client
 	clientsMu      sync.RWMutex
@@ -89,6 +91,11 @@ func (s *Server) SetRemnawave(rw *remnawave.SyncService) {
 	s.remnawave = rw
 }
 
+// SetCorrelation sets the correlation service
+func (s *Server) SetCorrelation(c *correlation.Service) {
+	s.correlation = c
+}
+
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
@@ -129,6 +136,13 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/remnawave/hwid/", s.handleRemnawaveHwid)
 	mux.HandleFunc("/api/remnawave/abuse", s.handleRemnawaveAbuse)
 	mux.HandleFunc("/api/remnawave/online", s.handleRemnawaveOnline)
+
+	// Correlation API endpoints
+	mux.HandleFunc("/api/correlation/stats", s.handleCorrelationStats)
+	mux.HandleFunc("/api/correlation/profiles", s.handleCorrelationProfiles)
+	mux.HandleFunc("/api/correlation/user/", s.handleCorrelationUser)
+	mux.HandleFunc("/api/correlation/shared-ips", s.handleCorrelationSharedIPs)
+	mux.HandleFunc("/api/correlation/shared-hwids", s.handleCorrelationSharedHWIDs)
 
 	// User-specific endpoints (must be registered before /api/users/)
 	mux.HandleFunc("/api/users/", s.handleUserRouter)
