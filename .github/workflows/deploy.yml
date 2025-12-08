@@ -70,6 +70,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 10m
           script: |
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
@@ -84,25 +85,48 @@ jobs:
             # Restart with new image
             docker compose up -d --force-recreate analyzer-server
             
-            # Health check (wait up to 60 seconds)
-            echo "Waiting for health check..."
-            for i in {1..12}; do
-              if docker compose exec -T analyzer-server wget -q --spider http://localhost:8237/health 2>/dev/null; then
-                echo "✅ Health check passed!"
-                # Cleanup old images
-                docker image prune -f
+            # Wait for container to be running first
+            echo "Waiting for container to start..."
+            sleep 10
+            
+            # Health check (wait up to 3 minutes with smarter checks)
+            echo "Starting health check..."
+            MAX_ATTEMPTS=36
+            ATTEMPT=0
+            
+            while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+              ATTEMPT=$((ATTEMPT + 1))
+              
+              # Check if container is running
+              if ! docker compose ps analyzer-server | grep -q "Up"; then
+                echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - Container not running yet..."
+                sleep 5
+                continue
+              fi
+              
+              # Check if app responds
+              if docker compose exec -T analyzer-server wget -q --spider --timeout=5 http://localhost:8237/health 2>/dev/null; then
+                echo "✅ Health check passed on attempt $ATTEMPT!"
+                docker system prune -f
                 exit 0
               fi
-              echo "Attempt $i/12 - waiting..."
+              
+              # Check container logs for startup progress
+              echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - App starting..."
               sleep 5
             done
             
-            # Health check failed - rollback
-            echo "❌ Health check failed! Rolling back..."
+            # Health check failed - show logs for debugging
+            echo "❌ Health check failed after $MAX_ATTEMPTS attempts!"
+            echo "=== Container logs ==="
+            docker compose logs --tail=50 analyzer-server
+            
+            # Rollback
+            echo "Rolling back..."
             docker tag ghcr.io/${{ github.repository }}/log-analyzer:backup \
                        ghcr.io/${{ github.repository }}/log-analyzer:latest
             docker compose up -d --force-recreate analyzer-server
-            docker image prune -f
+            docker system prune -f
             exit 1
 
       - name: Notify success

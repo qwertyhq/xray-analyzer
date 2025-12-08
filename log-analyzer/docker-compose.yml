@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Main analyzer server with Web UI
   analyzer-server:
