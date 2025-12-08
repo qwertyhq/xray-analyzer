@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PaginationControls, usePagination } from "@/components/ui/data-table";
 import { 
   Users, 
   Network, 
@@ -151,9 +152,15 @@ export default function CorrelationPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const filteredProfiles = profiles.filter(p =>
-    p.user_email.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredProfiles = useMemo(() => 
+    profiles.filter(p => p.user_email.toLowerCase().includes(searchTerm.toLowerCase())),
+    [profiles, searchTerm]
   );
+
+  // Pagination hooks for each table
+  const profilesPagination = usePagination(filteredProfiles, 20);
+  const sharedIPsPagination = usePagination(sharedIPs, 20);
+  const sharedHWIDsPagination = usePagination(sharedHWIDs, 20);
 
   if (loading) {
     return (
@@ -287,8 +294,9 @@ export default function CorrelationPage() {
               </div>
             </CardHeader>
             <CardContent>
+              <div className="overflow-auto max-h-[600px] border rounded-md">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead>User</TableHead>
                     <TableHead>Risk</TableHead>
@@ -301,14 +309,14 @@ export default function CorrelationPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredProfiles.length === 0 ? (
+                  {profilesPagination.paginatedData.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center text-muted-foreground">
                         No profiles found. Data will appear after log processing.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredProfiles.map((profile) => (
+                    profilesPagination.paginatedData.map((profile) => (
                       <TableRow key={profile.user_email}>
                         <TableCell className="font-medium">
                           {profile.user_email}
@@ -368,6 +376,8 @@ export default function CorrelationPage() {
                   )}
                 </TableBody>
               </Table>
+              </div>
+              <PaginationControls {...profilesPagination} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -381,8 +391,9 @@ export default function CorrelationPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="overflow-auto max-h-[600px] border rounded-md">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead>IP Address</TableHead>
                     <TableHead>Users</TableHead>
@@ -392,14 +403,14 @@ export default function CorrelationPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sharedIPs.length === 0 ? (
+                  {sharedIPsPagination.paginatedData.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground">
                         No shared IPs found
                       </TableCell>
                     </TableRow>
                   ) : (
-                    sharedIPs.map((ip) => (
+                    sharedIPsPagination.paginatedData.map((ip) => (
                       <TableRow key={ip.ip_address}>
                         <TableCell className="font-mono">{ip.ip_address}</TableCell>
                         <TableCell>
@@ -428,6 +439,8 @@ export default function CorrelationPage() {
                   )}
                 </TableBody>
               </Table>
+              </div>
+              <PaginationControls {...sharedIPsPagination} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -444,8 +457,9 @@ export default function CorrelationPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="overflow-auto max-h-[600px] border rounded-md">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead>HWID</TableHead>
                     <TableHead>Platform</TableHead>
@@ -456,14 +470,14 @@ export default function CorrelationPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sharedHWIDs.length === 0 ? (
+                  {sharedHWIDsPagination.paginatedData.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-muted-foreground">
                         No shared HWIDs found - this is good!
                       </TableCell>
                     </TableRow>
                   ) : (
-                    sharedHWIDs.map((hwid) => (
+                    sharedHWIDsPagination.paginatedData.map((hwid) => (
                       <TableRow key={hwid.hwid} className="bg-orange-50 dark:bg-orange-950/20">
                         <TableCell className="font-mono text-xs">
                           {hwid.hwid.substring(0, 16)}...
@@ -492,6 +506,8 @@ export default function CorrelationPage() {
                   )}
                 </TableBody>
               </Table>
+              </div>
+              <PaginationControls {...sharedHWIDsPagination} />
             </CardContent>
           </Card>
         </TabsContent>

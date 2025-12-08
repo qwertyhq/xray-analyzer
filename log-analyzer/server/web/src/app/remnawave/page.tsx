@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PaginationControls, usePagination } from "@/components/ui/data-table";
 import { RemnawaveUsersTable } from "@/components/remnawave/remnawave-users-table";
 import { RemnawaveAbuseTable } from "@/components/remnawave/remnawave-abuse-table";
 import { 
@@ -85,6 +86,14 @@ export default function RemnavewavePage() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  // Risk counts - computed regardless of loading state
+  const highRiskCount = abuseUsers.filter(u => u.excessDevices >= 3).length;
+  const mediumRiskCount = abuseUsers.filter(u => u.excessDevices === 2).length;
+  const lowRiskCount = abuseUsers.filter(u => u.excessDevices === 1).length;
+
+  // Pagination for online users - must be called before any early returns
+  const onlineUsersPagination = usePagination(onlineStats?.onlineUsers ?? []);
+
   if (loading) {
     return (
       <div className="container mx-auto py-6 px-4 space-y-6">
@@ -137,10 +146,6 @@ export default function RemnavewavePage() {
       </div>
     );
   }
-
-  const highRiskCount = abuseUsers.filter(u => u.excessDevices >= 3).length;
-  const mediumRiskCount = abuseUsers.filter(u => u.excessDevices === 2).length;
-  const lowRiskCount = abuseUsers.filter(u => u.excessDevices === 1).length;
 
   return (
     <div className="container mx-auto py-6 px-4 space-y-6">
@@ -353,6 +358,8 @@ export default function RemnavewavePage() {
 
               {/* Online Users Table */}
               {onlineStats?.onlineUsers && onlineStats.onlineUsers.length > 0 ? (
+                <>
+                <div className="max-h-[600px] overflow-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -363,7 +370,7 @@ export default function RemnavewavePage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {onlineStats.onlineUsers.map((user) => (
+                    {onlineUsersPagination.paginatedData.map((user) => (
                       <TableRow key={user.uuid}>
                         <TableCell>
                           <div className="space-y-1">
@@ -412,6 +419,9 @@ export default function RemnavewavePage() {
                     ))}
                   </TableBody>
                 </Table>
+                </div>
+                <PaginationControls {...onlineUsersPagination} />
+                </>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <Wifi className="h-12 w-12 mx-auto mb-4 opacity-50" />

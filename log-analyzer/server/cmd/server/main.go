@@ -89,14 +89,14 @@ func main() {
 		}
 	} else {
 		log.Println("telegram: disabled (no token/chat_id)")
-		// Drain alert channel if telegram is disabled
+		// Silently drain alert channel if telegram is disabled
 		go func() {
 			for {
 				select {
 				case <-ctx.Done():
 					return
-				case alert := <-alertCh:
-					log.Printf("alert (not sent): %s", alert.Message)
+				case <-alertCh:
+					// Discard alerts silently
 				}
 			}
 		}()

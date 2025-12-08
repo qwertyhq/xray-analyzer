@@ -243,8 +243,6 @@ func (a *Analyzer) checkAndAlert(ctx context.Context, nodeID string, entry model
 		a.recentAlertsMu.Lock()
 		a.recentAlerts[alertKey] = time.Now()
 		a.recentAlertsMu.Unlock()
-
-		log.Printf("analyzer: generated alert for user %s (count: %d)", entry.UserEmail, count)
 	}
 }
 

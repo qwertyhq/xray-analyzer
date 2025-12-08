@@ -11,6 +11,7 @@ import { TimeRangeSelector } from "@/components/dashboard/time-range-selector";
 import { IPInfoBadge } from "@/components/ui/ip-info-badge";
 import { SubscriptionAbuseTable } from "@/components/users/subscription-abuse-table";
 import { StatCard, StatCardGrid } from "@/components/threatintel/stat-card";
+import { PaginationControls, usePagination } from "@/components/ui/data-table";
 import {
   Table,
   TableBody,
@@ -78,6 +79,49 @@ export default function BlacklistPage() {
     return () => clearInterval(interval);
   }, [timeRange, use24hWebSocket]);
 
+  // Get unique nodes from recent matches for filter
+  const uniqueNodes = useMemo(() => {
+    const nodes = new Set<string>();
+    analytics?.recent_matches?.forEach(m => {
+      if (m.node_id) nodes.add(m.node_id);
+    });
+    return Array.from(nodes).sort();
+  }, [analytics?.recent_matches]);
+
+  // Filter domains by search
+  const filteredDomains = useMemo(() => {
+    if (!domainSearch.trim()) return analytics?.top_domains || [];
+    const search = domainSearch.toLowerCase();
+    return (analytics?.top_domains || []).filter(d => 
+      d.domain.toLowerCase().includes(search)
+    );
+  }, [analytics?.top_domains, domainSearch]);
+
+  // Filter recent matches
+  const filteredMatches = useMemo(() => {
+    let matches = analytics?.recent_matches || [];
+    
+    if (matchSearch.trim()) {
+      const search = matchSearch.toLowerCase();
+      matches = matches.filter(m => 
+        m.destination.toLowerCase().includes(search) ||
+        m.source_ip?.toLowerCase().includes(search) ||
+        m.matched_rule?.toLowerCase().includes(search)
+      );
+    }
+    
+    if (nodeFilter !== "all") {
+      matches = matches.filter(m => m.node_id === nodeFilter);
+    }
+    
+    return matches;
+  }, [analytics?.recent_matches, matchSearch, nodeFilter]);
+
+  // Pagination for tables - must be called before any early returns
+  const domainsPagination = usePagination(filteredDomains, 15);
+  const topUsersPagination = usePagination(analytics?.top_users || [], 15);
+  const matchesPagination = usePagination(filteredMatches, 20);
+
   if (loading || !analytics) {
     return (
       <div className="p-4 md:p-8 space-y-6">
@@ -106,44 +150,6 @@ export default function BlacklistPage() {
     hour: format(new Date(h.hour), "HH:mm"),
     hits: h.hit_count,
   })) || [];
-
-  // Get unique nodes from recent matches for filter
-  const uniqueNodes = useMemo(() => {
-    const nodes = new Set<string>();
-    analytics.recent_matches?.forEach(m => {
-      if (m.node_id) nodes.add(m.node_id);
-    });
-    return Array.from(nodes).sort();
-  }, [analytics.recent_matches]);
-
-  // Filter domains by search
-  const filteredDomains = useMemo(() => {
-    if (!domainSearch.trim()) return analytics.top_domains || [];
-    const search = domainSearch.toLowerCase();
-    return (analytics.top_domains || []).filter(d => 
-      d.domain.toLowerCase().includes(search)
-    );
-  }, [analytics.top_domains, domainSearch]);
-
-  // Filter recent matches
-  const filteredMatches = useMemo(() => {
-    let matches = analytics.recent_matches || [];
-    
-    if (matchSearch.trim()) {
-      const search = matchSearch.toLowerCase();
-      matches = matches.filter(m => 
-        m.destination.toLowerCase().includes(search) ||
-        m.source_ip?.toLowerCase().includes(search) ||
-        m.matched_rule?.toLowerCase().includes(search)
-      );
-    }
-    
-    if (nodeFilter !== "all") {
-      matches = matches.filter(m => m.node_id === nodeFilter);
-    }
-    
-    return matches;
-  }, [analytics.recent_matches, matchSearch, nodeFilter]);
 
   return (
     <div className="p-4 md:p-8 space-y-6">
@@ -309,9 +315,10 @@ export default function BlacklistPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
+            <CardContent>
+              <div className="overflow-auto max-h-[500px] border rounded-md">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead className="w-[40px]">#</TableHead>
                     <TableHead className="whitespace-nowrap">Domain</TableHead>
@@ -321,9 +328,9 @@ export default function BlacklistPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredDomains.map((domain, idx) => (
+                  {domainsPagination.paginatedData.map((domain, idx) => (
                     <TableRow key={domain.domain}>
-                      <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                      <TableCell className="text-muted-foreground">{domainsPagination.startIndex + idx + 1}</TableCell>
                       <TableCell className="font-mono text-xs sm:text-sm max-w-[150px] sm:max-w-[300px] truncate">
                         {domain.domain}
                       </TableCell>
@@ -336,7 +343,7 @@ export default function BlacklistPage() {
                       <TableCell className="text-right hidden sm:table-cell">{domain.unique_users}</TableCell>
                     </TableRow>
                   ))}
-                  {filteredDomains.length === 0 && (
+                  {domainsPagination.paginatedData.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground">
                         {domainSearch ? "No domains match your search" : "No blocked domains in this period"}
@@ -345,6 +352,8 @@ export default function BlacklistPage() {
                   )}
                 </TableBody>
               </Table>
+              </div>
+              <PaginationControls {...domainsPagination} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -358,9 +367,10 @@ export default function BlacklistPage() {
                 Users sorted by number of blacklist hits
               </CardDescription>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
+            <CardContent>
+              <div className="overflow-auto max-h-[500px] border rounded-md">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead className="w-[40px]">#</TableHead>
                     <TableHead className="whitespace-nowrap">User</TableHead>
@@ -371,9 +381,9 @@ export default function BlacklistPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {analytics.top_users?.map((user, idx) => (
+                  {topUsersPagination.paginatedData.map((user, idx) => (
                     <TableRow key={user.user_email}>
-                      <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                      <TableCell className="text-muted-foreground">{topUsersPagination.startIndex + idx + 1}</TableCell>
                       <TableCell className="font-medium max-w-[120px] sm:max-w-none">
                         <Link 
                           href={`/users/${encodeURIComponent(user.user_email)}`}
@@ -410,7 +420,7 @@ export default function BlacklistPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {(!analytics.top_users || analytics.top_users.length === 0) && (
+                  {topUsersPagination.paginatedData.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-muted-foreground">
                         No users with blacklist hits in this period
@@ -419,6 +429,8 @@ export default function BlacklistPage() {
                   )}
                 </TableBody>
               </Table>
+              </div>
+              <PaginationControls {...topUsersPagination} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -478,9 +490,10 @@ export default function BlacklistPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
+            <CardContent>
+              <div className="overflow-auto max-h-[500px] border rounded-md">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead className="whitespace-nowrap">Time</TableHead>
                     <TableHead className="whitespace-nowrap hidden sm:table-cell">Node</TableHead>
@@ -490,7 +503,7 @@ export default function BlacklistPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredMatches.map((match, idx) => (
+                  {matchesPagination.paginatedData.map((match, idx) => (
                     <TableRow key={idx}>
                       <TableCell className="text-muted-foreground text-xs sm:text-sm whitespace-nowrap">
                         {isValidDate(match.timestamp)
@@ -512,7 +525,7 @@ export default function BlacklistPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {filteredMatches.length === 0 && (
+                  {matchesPagination.paginatedData.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground">
                         {matchSearch || nodeFilter !== "all" 
@@ -523,6 +536,8 @@ export default function BlacklistPage() {
                   )}
                 </TableBody>
               </Table>
+              </div>
+              <PaginationControls {...matchesPagination} />
             </CardContent>
           </Card>
         </TabsContent>
