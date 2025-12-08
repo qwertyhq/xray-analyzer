@@ -50,6 +50,20 @@ const countryColors = [
   "hsla(80, 40%, 50%, 0.75)",  // lime muted
 ];
 
+// Common tooltip style for dark theme
+const tooltipStyle = {
+  contentStyle: {
+    backgroundColor: "rgb(24, 24, 27)",
+    border: "1px solid rgb(63, 63, 70)",
+    borderRadius: "8px",
+    fontSize: "12px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+    color: "rgb(250, 250, 250)",
+  },
+  labelStyle: { color: "rgb(250, 250, 250)", fontWeight: "bold" as const },
+  itemStyle: { color: "rgb(212, 212, 216)" },
+};
+
 // Get label for threat type
 const getTypeLabel = (type: string): string => {
   const config = threatTypeConfig[type as ThreatType];
@@ -228,13 +242,9 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                     tickFormatter={(value) => value}
                   />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "12px",
-                      fontSize: "12px",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                    }}
+                    contentStyle={tooltipStyle.contentStyle}
+                    labelStyle={tooltipStyle.labelStyle}
+                    itemStyle={tooltipStyle.itemStyle}
                     formatter={(value: number) => [value.toLocaleString(), "Matches"]}
                     labelFormatter={(label) => {
                       const item = barData.find(d => d.name === label);
@@ -281,13 +291,9 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "12px",
-                      fontSize: "12px",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                    }}
+                    contentStyle={tooltipStyle.contentStyle}
+                    labelStyle={tooltipStyle.labelStyle}
+                    itemStyle={tooltipStyle.itemStyle}
                     formatter={(value: number) => [value.toLocaleString(), "Matches"]}
                   />
                   <Legend 
