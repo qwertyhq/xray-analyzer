@@ -1,0 +1,136 @@
+"use client";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { TrendingUp, TrendingDown, Minus, Activity, ShieldAlert, Users, Server } from "lucide-react";
+
+interface PeriodStat {
+  label: string;
+  current: number;
+  previous: number;
+  icon: React.ReactNode;
+  format?: "number" | "percentage";
+}
+
+interface PeriodComparisonProps {
+  stats: {
+    requests: { current: number; previous: number };
+    blacklistHits: { current: number; previous: number };
+    uniqueUsers: { current: number; previous: number };
+    onlineUsers: { current: number; previous: number };
+  };
+  periodLabel?: string;
+}
+
+function formatChange(current: number, previous: number): { value: string; trend: "up" | "down" | "same" } {
+  if (previous === 0) {
+    if (current > 0) return { value: "+100%", trend: "up" };
+    return { value: "0%", trend: "same" };
+  }
+  
+  const change = ((current - previous) / previous) * 100;
+  const trend = change > 0 ? "up" : change < 0 ? "down" : "same";
+  const absChange = Math.abs(change);
+  
+  if (absChange >= 1000) {
+    return { value: `${change > 0 ? "+" : ""}${(change / 100).toFixed(0)}x`, trend };
+  }
+  
+  return { value: `${change > 0 ? "+" : ""}${change.toFixed(1)}%`, trend };
+}
+
+function TrendIcon({ trend }: { trend: "up" | "down" | "same" }) {
+  if (trend === "up") return <TrendingUp className="h-3.5 w-3.5" />;
+  if (trend === "down") return <TrendingDown className="h-3.5 w-3.5" />;
+  return <Minus className="h-3.5 w-3.5" />;
+}
+
+function TrendBadge({ trend, value, inverted = false }: { trend: "up" | "down" | "same"; value: string; inverted?: boolean }) {
+  // For metrics like blacklist hits, "up" is bad (red), "down" is good (green)
+  // For metrics like users/requests, "up" is good (green), "down" is bad (red)
+  const isPositive = inverted ? trend === "down" : trend === "up";
+  const isNegative = inverted ? trend === "up" : trend === "down";
+  
+  return (
+    <Badge 
+      variant="outline" 
+      className={`flex items-center gap-1 text-xs ${
+        isPositive ? "text-green-600 border-green-500/30 bg-green-500/10" :
+        isNegative ? "text-red-600 border-red-500/30 bg-red-500/10" :
+        "text-muted-foreground"
+      }`}
+    >
+      <TrendIcon trend={trend} />
+      {value}
+    </Badge>
+  );
+}
+
+export function PeriodComparison({ stats, periodLabel = "vs yesterday" }: PeriodComparisonProps) {
+  const comparisons: Array<{
+    label: string;
+    icon: React.ReactNode;
+    current: number;
+    previous: number;
+    inverted?: boolean;
+  }> = [
+    {
+      label: "Requests",
+      icon: <Activity className="h-4 w-4 text-blue-500" />,
+      current: stats.requests.current,
+      previous: stats.requests.previous,
+    },
+    {
+      label: "Blacklist Hits",
+      icon: <ShieldAlert className="h-4 w-4 text-red-500" />,
+      current: stats.blacklistHits.current,
+      previous: stats.blacklistHits.previous,
+      inverted: true, // Lower is better
+    },
+    {
+      label: "Unique Users",
+      icon: <Users className="h-4 w-4 text-green-500" />,
+      current: stats.uniqueUsers.current,
+      previous: stats.uniqueUsers.previous,
+    },
+    {
+      label: "Online Now",
+      icon: <Server className="h-4 w-4 text-purple-500" />,
+      current: stats.onlineUsers.current,
+      previous: stats.onlineUsers.previous,
+    },
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center justify-between">
+          <span>Period Comparison</span>
+          <Badge variant="secondary" className="text-xs font-normal">
+            {periodLabel}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-3">
+          {comparisons.map((item) => {
+            const { value, trend } = formatChange(item.current, item.previous);
+            return (
+              <div 
+                key={item.label}
+                className="flex items-center gap-2 p-2 rounded-lg bg-muted/50"
+              >
+                {item.icon}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-muted-foreground truncate">{item.label}</p>
+                  <p className="text-sm font-semibold">{item.current.toLocaleString()}</p>
+                </div>
+                <TrendBadge trend={trend} value={value} inverted={item.inverted} />
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
