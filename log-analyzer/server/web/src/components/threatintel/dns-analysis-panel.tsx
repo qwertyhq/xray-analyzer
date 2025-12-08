@@ -51,57 +51,104 @@ interface DNSAnalysisPanelProps {
 }
 
 const riskColors: Record<RiskLevel, string> = {
-  low: "#22c55e",
-  medium: "#eab308",
-  high: "#f97316",
-  critical: "#ef4444",
+  low: "hsl(142, 71%, 45%)",      // green
+  medium: "hsl(48, 96%, 53%)",    // yellow
+  high: "hsl(25, 95%, 53%)",      // orange
+  critical: "hsl(0, 84%, 60%)",   // red
 };
 
-const CHART_COLORS = ["#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#00C49F", "#FFBB28", "#FF8042"];
+// Theme-aware chart colors using HSL
+const CHART_COLORS = [
+  "hsl(262, 83%, 58%)",   // purple (primary)
+  "hsl(142, 71%, 45%)",   // green
+  "hsl(48, 96%, 53%)",    // yellow
+  "hsl(25, 95%, 53%)",    // orange
+  "hsl(197, 71%, 53%)",   // cyan
+  "hsl(340, 82%, 52%)",   // pink
+  "hsl(212, 96%, 54%)",   // blue
+];
 
-const trendIcons = {
-  up: <TrendingUp className="h-4 w-4 text-red-500" />,
-  down: <TrendingDown className="h-4 w-4 text-green-500" />,
-  stable: <Minus className="h-4 w-4 text-gray-500" />,
-};
+// Return the appropriate icon component based on trend direction
+function getTrendIcon(direction: string) {
+  switch (direction) {
+    case "up":
+      return <TrendingUp className="h-4 w-4 text-red-500" />;
+    case "down":
+      return <TrendingDown className="h-4 w-4 text-green-500" />;
+    default:
+      return <Minus className="h-4 w-4 text-muted-foreground" />;
+  }
+}
+
+// Gradient stat card component
+interface GradientStatCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  subValue?: string;
+  gradient: string;
+}
+
+function GradientStatCard({ icon, label, value, subValue, gradient }: GradientStatCardProps) {
+  return (
+    <div className={`relative overflow-hidden rounded-xl p-4 ${gradient}`}>
+      <div className="absolute top-0 right-0 w-20 h-20 opacity-10">
+        <div className="w-full h-full rounded-full bg-white transform translate-x-4 -translate-y-4" />
+      </div>
+      <div className="relative z-10">
+        <div className="flex items-center gap-2 text-white/90 mb-2">
+          {icon}
+          <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
+        </div>
+        <div className="text-2xl font-bold text-white">{value}</div>
+        {subValue && (
+          <div className="text-xs text-white/70 mt-1">{subValue}</div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalysisPanelProps) {
   const [activeView, setActiveView] = useState<"overview" | "domains" | "users">("overview");
 
   if (loading) {
     return (
-      <Card>
+      <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-4">
+          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <Skeleton className="h-64 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <Card className="border-dashed">
         <CardHeader>
-          <Skeleton className="h-6 w-48" />
+          <CardTitle className="flex items-center gap-2 text-muted-foreground">
+            <Globe className="h-5 w-5" />
+            DNS Analysis
+          </CardTitle>
+          <CardDescription>No DNS analysis data available</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-4">
-              {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24 w-full" />)}
-            </div>
-            <Skeleton className="h-64 w-full" />
+          <div className="flex flex-col items-center justify-center h-[150px] text-muted-foreground gap-2">
+            <Server className="h-12 w-12 opacity-20" />
+            <p className="text-center">DNS analysis data will appear<br/>after queries are processed</p>
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  if (!data) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            DNS Analysis
-          </CardTitle>
-          <CardDescription>No DNS analysis data available</CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
-
   const stats = data.query_stats;
-  const trend = trendIcons[data.trend_direction] || trendIcons.stable;
+  const trendIcon = getTrendIcon(data.trend_direction);
 
   // Prepare chart data
   const hourlyData = stats?.hourly_stats?.map(h => ({
@@ -121,139 +168,136 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
     .map(([name, value]) => ({ name, value }));
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Globe className="h-5 w-5" />
-              DNS Analysis
-              <Badge variant="outline" className="ml-2">
-                {trend}
-                {data.trend_direction === "up" ? "Increasing" : 
-                 data.trend_direction === "down" ? "Decreasing" : "Stable"}
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              DNS query analysis and threat detection
-            </CardDescription>
-          </div>
-          <div className="flex gap-2">
-            <div className="flex rounded-md border">
-              {(["overview", "domains", "users"] as const).map(view => (
-                <Button
-                  key={view}
-                  variant={activeView === view ? "secondary" : "ghost"}
-                  size="sm"
-                  className="rounded-none first:rounded-l-md last:rounded-r-md"
-                  onClick={() => setActiveView(view)}
-                >
-                  {view === "overview" ? "Overview" : view === "domains" ? "Domains" : "Users"}
+    <div className="space-y-4">
+      {/* Gradient Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <GradientStatCard
+          icon={<Server className="h-4 w-4" />}
+          label="Total Queries"
+          value={(stats?.total_queries || 0).toLocaleString()}
+          subValue="Last 30 days"
+          gradient="bg-gradient-to-br from-blue-500 to-blue-600"
+        />
+        <GradientStatCard
+          icon={<Ban className="h-4 w-4" />}
+          label="Blocked Queries"
+          value={(stats?.blocked_queries || 0).toLocaleString()}
+          subValue="Threats blocked"
+          gradient="bg-gradient-to-br from-red-500 to-red-600"
+        />
+        <GradientStatCard
+          icon={<Shield className="h-4 w-4" />}
+          label="Block Rate"
+          value={`${(stats?.block_rate || 0).toFixed(1)}%`}
+          subValue="Blocked / Total"
+          gradient="bg-gradient-to-br from-amber-500 to-amber-600"
+        />
+        <GradientStatCard
+          icon={<AlertTriangle className="h-4 w-4" />}
+          label="Bad Domains"
+          value={stats?.unique_domains_bad || 0}
+          subValue="Unique threats"
+          gradient="bg-gradient-to-br from-violet-500 to-violet-600"
+        />
+      </div>
+
+      {/* Main Card */}
+      <Card className="border-0 shadow-md">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-blue-500" />
+                DNS Analysis
+                <Badge variant="outline" className="ml-2 flex items-center gap-1">
+                  {trendIcon}
+                  <span>
+                    {data.trend_direction === "up" ? "Increasing" :
+                     data.trend_direction === "down" ? "Decreasing" : "Stable"}
+                  </span>
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                DNS query analysis and threat detection
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex rounded-lg border overflow-hidden">
+                {(["overview", "domains", "users"] as const).map(view => (
+                  <Button
+                    key={view}
+                    variant={activeView === view ? "secondary" : "ghost"}
+                    size="sm"
+                    className="rounded-none"
+                    onClick={() => setActiveView(view)}
+                  >
+                    {view === "overview" ? "Overview" : view === "domains" ? "Domains" : "Users"}
+                  </Button>
+                ))}
+              </div>
+              {onRefresh && (
+                <Button variant="outline" size="sm" onClick={onRefresh}>
+                  <RefreshCw className="h-4 w-4" />
                 </Button>
-              ))}
+              )}
             </div>
-            {onRefresh && (
-              <Button variant="outline" size="sm" onClick={onRefresh}>
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            )}
           </div>
-        </div>
-      </CardHeader>
+        </CardHeader>
 
-      <CardContent>
-        {activeView === "overview" && (
-          <div className="space-y-6">
-            {/* Stats Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-2xl font-bold">
-                        {(stats?.total_queries || 0).toLocaleString()}
-                      </div>
-                      <div className="text-xs text-muted-foreground">Total Queries (30d)</div>
-                    </div>
-                    <Server className="h-8 w-8 text-blue-500 opacity-50" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-2xl font-bold text-red-600">
-                        {(stats?.blocked_queries || 0).toLocaleString()}
-                      </div>
-                      <div className="text-xs text-muted-foreground">Blocked Queries</div>
-                    </div>
-                    <Ban className="h-8 w-8 text-red-500 opacity-50" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-2xl font-bold text-orange-600">
-                        {(stats?.block_rate || 0).toFixed(1)}%
-                      </div>
-                      <div className="text-xs text-muted-foreground">Block Rate</div>
-                    </div>
-                    <Shield className="h-8 w-8 text-orange-500 opacity-50" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-2xl font-bold">
-                        {stats?.unique_domains_bad || 0}
-                      </div>
-                      <div className="text-xs text-muted-foreground">Bad Domains</div>
-                    </div>
-                    <AlertTriangle className="h-8 w-8 text-yellow-500 opacity-50" />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Charts */}
-            <div className="grid gap-4 md:grid-cols-2">
+        <CardContent>
+          {activeView === "overview" && (
+            <div className="space-y-6">
+              {/* Charts */}
+              <div className="grid gap-4 md:grid-cols-2">
               {/* Daily Trend */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">Daily Trend (30 days)</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="h-64">
+                <CardContent className="pt-0">
+                  <div className="h-[250px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={dailyData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="day" tick={{ fontSize: 10 }} />
-                        <YAxis tick={{ fontSize: 10 }} />
-                        <Tooltip />
-                        <Area 
-                          type="monotone" 
-                          dataKey="total" 
-                          stackId="1"
-                          stroke="#8884d8" 
-                          fill="#8884d8" 
-                          fillOpacity={0.3}
+                      <AreaChart data={dailyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="hsl(262, 83%, 58%)" stopOpacity={0.8} />
+                            <stop offset="95%" stopColor="hsl(262, 83%, 58%)" stopOpacity={0.1} />
+                          </linearGradient>
+                          <linearGradient id="colorBlocked" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.8} />
+                            <stop offset="95%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.1} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis
+                          dataKey="day"
+                          tick={{ fontSize: 10 }}
+                          interval="preserveStartEnd"
+                          className="text-muted-foreground"
+                        />
+                        <YAxis tick={{ fontSize: 10 }} width={40} className="text-muted-foreground" />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--card))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                            fontSize: "12px",
+                          }}
+                          labelStyle={{ color: "hsl(var(--foreground))" }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: "10px" }} />
+                        <Area
+                          type="monotone"
+                          dataKey="total"
+                          stroke="hsl(262, 83%, 58%)"
+                          fill="url(#colorTotal)"
                           name="Total"
                         />
-                        <Area 
-                          type="monotone" 
-                          dataKey="blocked" 
-                          stackId="2"
-                          stroke="#ef4444" 
-                          fill="#ef4444"
-                          fillOpacity={0.5}
+                        <Area
+                          type="monotone"
+                          dataKey="blocked"
+                          stroke="hsl(0, 84%, 60%)"
+                          fill="url(#colorBlocked)"
                           name="Blocked"
                         />
                       </AreaChart>
@@ -267,8 +311,8 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">Category Breakdown</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="h-64">
+                <CardContent className="pt-0">
+                  <div className="h-[250px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -277,15 +321,26 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                           cy="50%"
                           labelLine={false}
                           outerRadius={80}
-                          fill="#8884d8"
+                          innerRadius={40}
+                          fill="hsl(262, 83%, 58%)"
                           dataKey="value"
                           label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          paddingAngle={2}
                         >
-                          {categoryData.map((entry, index) => (
+                          {categoryData.map((_, index) => (
                             <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--card))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                            fontSize: "12px",
+                          }}
+                          labelStyle={{ color: "hsl(var(--foreground))" }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: "10px" }} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -299,16 +354,30 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">Hourly Activity (24h)</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="h-48">
+                <CardContent className="pt-0">
+                  <div className="h-[200px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={hourlyData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="hour" tick={{ fontSize: 10 }} />
-                        <YAxis tick={{ fontSize: 10 }} />
-                        <Tooltip />
-                        <Bar dataKey="total" fill="#8884d8" name="Total" />
-                        <Bar dataKey="blocked" fill="#ef4444" name="Blocked" />
+                      <BarChart data={hourlyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis
+                          dataKey="hour"
+                          tick={{ fontSize: 10 }}
+                          interval="preserveStartEnd"
+                          className="text-muted-foreground"
+                        />
+                        <YAxis tick={{ fontSize: 10 }} width={40} className="text-muted-foreground" />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--card))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                            fontSize: "12px",
+                          }}
+                          labelStyle={{ color: "hsl(var(--foreground))" }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: "10px" }} />
+                        <Bar dataKey="total" fill="hsl(262, 83%, 58%)" name="Total" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="blocked" fill="hsl(0, 84%, 60%)" name="Blocked" radius={[2, 2, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -419,5 +488,6 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
         )}
       </CardContent>
     </Card>
+    </div>
   );
 }

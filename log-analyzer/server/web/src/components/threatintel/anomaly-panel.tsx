@@ -89,6 +89,36 @@ const severityConfig: Record<AnomalySeverity, { color: string; bgColor: string }
   critical: { color: "text-red-600", bgColor: "bg-red-100 dark:bg-red-900/30" },
 };
 
+// Gradient stat card component
+interface StatCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  subValue?: string;
+  gradient: string;
+  highlight?: boolean;
+}
+
+function StatCard({ icon, label, value, subValue, gradient, highlight }: StatCardProps) {
+  return (
+    <div className={`relative overflow-hidden rounded-xl p-4 ${gradient} ${highlight ? 'ring-2 ring-offset-2 ring-offset-background ring-orange-500' : ''}`}>
+      <div className="absolute top-0 right-0 w-20 h-20 opacity-10">
+        <div className="w-full h-full rounded-full bg-white transform translate-x-4 -translate-y-4" />
+      </div>
+      <div className="relative z-10">
+        <div className="flex items-center gap-2 text-white/90 mb-2">
+          {icon}
+          <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
+        </div>
+        <div className="text-2xl font-bold text-white">{value}</div>
+        {subValue && (
+          <div className="text-xs text-white/70 mt-1">{subValue}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: AnomalyPanelProps) {
   const [resolving, setResolving] = useState<string | null>(null);
 
@@ -104,14 +134,18 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Anomaly Detection</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-[300px] w-full" />
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-xl" />
+          ))}
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <Skeleton className="h-[300px] w-full" />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -119,82 +153,55 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
 
   return (
     <div className="space-y-4">
-      {/* Summary Cards */}
+      {/* Gradient Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className={hasAnomalies ? "border-orange-500/50" : ""}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <AlertTriangle className={`h-4 w-4 ${hasAnomalies ? "text-orange-500" : "text-muted-foreground"}`} />
-              Active Anomalies
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${hasAnomalies ? "text-orange-500" : ""}`}>
-              {data?.total_anomalies || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Requiring attention</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Zap className="h-4 w-4 text-red-500" />
-              Critical
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-500">
-              {data?.by_severity?.critical || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">High priority</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-orange-500" />
-              High
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-500">
-              {data?.by_severity?.high || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Needs review</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Shield className="h-4 w-4 text-blue-500" />
-              Affected Users
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {data?.affected_users || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Unique users</p>
-          </CardContent>
-        </Card>
+        <StatCard
+          icon={<AlertTriangle className="h-4 w-4" />}
+          label="Active Anomalies"
+          value={data?.total_anomalies || 0}
+          subValue="Requiring attention"
+          gradient={hasAnomalies ? "bg-gradient-to-br from-orange-500 to-orange-600" : "bg-gradient-to-br from-slate-500 to-slate-600"}
+          highlight={hasAnomalies || false}
+        />
+        <StatCard
+          icon={<Zap className="h-4 w-4" />}
+          label="Critical"
+          value={data?.by_severity?.critical || 0}
+          subValue="High priority"
+          gradient="bg-gradient-to-br from-red-500 to-red-600"
+        />
+        <StatCard
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="High Severity"
+          value={data?.by_severity?.high || 0}
+          subValue="Needs review"
+          gradient="bg-gradient-to-br from-amber-500 to-amber-600"
+        />
+        <StatCard
+          icon={<Shield className="h-4 w-4" />}
+          label="Affected Users"
+          value={data?.affected_users || 0}
+          subValue="Unique users"
+          gradient="bg-gradient-to-br from-violet-500 to-violet-600"
+        />
       </div>
 
       {/* Anomaly List */}
-      <Card>
+      <Card className="border-0 shadow-md">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-sm font-medium">Recent Anomalies</CardTitle>
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-orange-500" />
+                Recent Anomalies
+              </CardTitle>
               <CardDescription className="text-xs">
                 Detected behavioral anomalies
               </CardDescription>
             </div>
             {onRefresh && (
-              <Button variant="outline" size="sm" onClick={onRefresh}>
-                <RefreshCw className="h-4 w-4 mr-1" />
+              <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1">
+                <RefreshCw className="h-4 w-4" />
                 Run Detection
               </Button>
             )}
@@ -203,7 +210,9 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
         <CardContent>
           {!hasAnomalies ? (
             <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">
-              <Shield className="h-12 w-12 mb-2 text-green-500" />
+              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-3">
+                <Shield className="h-8 w-8 text-emerald-500" />
+              </div>
               <p className="text-sm font-medium">No anomalies detected</p>
               <p className="text-xs">System is operating normally</p>
             </div>
@@ -216,11 +225,11 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
                 return (
                   <div
                     key={anomaly.id}
-                    className={`p-3 rounded-lg border ${sevConfig.bgColor}`}
+                    className={`p-4 rounded-xl border ${sevConfig.bgColor} hover:shadow-md transition-all`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 ${typeConfig.color}`}>
+                        <div className={`mt-0.5 p-2 rounded-lg bg-background/80 ${typeConfig.color}`}>
                           {typeConfig.icon}
                         </div>
                         <div className="space-y-1">
@@ -238,7 +247,7 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
                           </p>
                           {anomaly.user_email && (
                             <p className="text-xs text-muted-foreground">
-                              User: <span className="font-mono">{anomaly.user_email}</span>
+                              User: <span className="font-mono bg-muted px-1 rounded">{anomaly.user_email}</span>
                             </p>
                           )}
                           <p className="text-xs text-muted-foreground">
@@ -251,6 +260,7 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
                         size="sm"
                         onClick={() => handleResolve(anomaly.id)}
                         disabled={resolving === anomaly.id}
+                        className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100"
                       >
                         {resolving === anomaly.id ? (
                           <RefreshCw className="h-4 w-4 animate-spin" />
@@ -269,9 +279,12 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
 
       {/* Type Distribution */}
       {hasAnomalies && data?.by_type && Object.keys(data.by_type).length > 0 && (
-        <Card>
+        <Card className="border-0 shadow-md">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Anomaly Types</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-violet-500" />
+              Anomaly Types
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -280,11 +293,13 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
                 return (
                   <div
                     key={type}
-                    className="flex items-center gap-2 p-2 rounded-lg bg-muted/50"
+                    className="flex items-center gap-2 p-3 rounded-xl bg-gradient-to-r from-muted/50 to-transparent hover:from-muted transition-all"
                   >
-                    <span className={config.color}>{config.icon}</span>
-                    <span className="text-sm">{config.label}</span>
-                    <Badge variant="secondary" className="ml-auto">
+                    <div className={`p-1.5 rounded-lg bg-background ${config.color}`}>
+                      {config.icon}
+                    </div>
+                    <span className="text-sm flex-1">{config.label}</span>
+                    <Badge variant="secondary" className="font-bold">
                       {count}
                     </Badge>
                   </div>

@@ -78,6 +78,35 @@ const trendIcons = {
   stable: <Minus className="h-4 w-4 text-gray-500" />,
 };
 
+// Gradient stat card component
+interface GradientStatCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  subValue?: string;
+  gradient: string;
+}
+
+function GradientStatCard({ icon, label, value, subValue, gradient }: GradientStatCardProps) {
+  return (
+    <div className={`relative overflow-hidden rounded-xl p-4 ${gradient}`}>
+      <div className="absolute top-0 right-0 w-20 h-20 opacity-10">
+        <div className="w-full h-full rounded-full bg-white transform translate-x-4 -translate-y-4" />
+      </div>
+      <div className="relative z-10">
+        <div className="flex items-center gap-2 text-white/90 mb-2">
+          {icon}
+          <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
+        </div>
+        <div className="text-2xl font-bold text-white">{value}</div>
+        {subValue && (
+          <div className="text-xs text-white/70 mt-1">{subValue}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RiskScoreBar({ score }: { score: number }) {
   const getColor = () => {
     if (score >= 70) return "bg-red-500";
@@ -242,145 +271,135 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
 
   if (loading) {
     return (
-      <Card>
+      <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-xl" />
+          ))}
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <Skeleton className="h-[200px] w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <Card className="border-dashed">
         <CardHeader>
-          <Skeleton className="h-6 w-48" />
+          <CardTitle className="flex items-center gap-2 text-muted-foreground">
+            <ShieldAlert className="h-5 w-5" />
+            User Risk Profiles
+          </CardTitle>
+          <CardDescription>No risk profile data available</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
+          <div className="flex flex-col items-center justify-center h-[150px] text-muted-foreground gap-2">
+            <Shield className="h-12 w-12 opacity-20" />
+            <p className="text-center">Risk profiles will be calculated<br/>once enough user data is collected</p>
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  if (!data) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ShieldAlert className="h-5 w-5" />
-            User Risk Profiles
-          </CardTitle>
-          <CardDescription>No risk profile data available</CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
+  const highRiskCount = (data.by_risk_level?.critical || 0) + (data.by_risk_level?.high || 0);
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <ShieldAlert className="h-5 w-5" />
-              User Risk Profiles
-            </CardTitle>
-            <CardDescription>
-              {data.total_users} users analyzed • Average score: {data.average_risk_score?.toFixed(1) || 0}
-            </CardDescription>
-          </div>
-          <div className="flex gap-2">
-            {onRefresh && (
-              <Button variant="outline" size="sm" onClick={onRefresh}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh
+    <div className="space-y-4">
+      {/* Gradient Stats */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <GradientStatCard
+          icon={<ShieldAlert className="h-4 w-4" />}
+          label="High Risk Users"
+          value={highRiskCount}
+          subValue="Critical + High risk"
+          gradient="bg-gradient-to-br from-red-500 to-red-600"
+        />
+        <GradientStatCard
+          icon={<Shield className="h-4 w-4" />}
+          label="Medium Risk"
+          value={data.by_risk_level?.medium || 0}
+          subValue="Needs monitoring"
+          gradient="bg-gradient-to-br from-amber-500 to-amber-600"
+        />
+        <GradientStatCard
+          icon={<ShieldCheck className="h-4 w-4" />}
+          label="Low Risk"
+          value={data.by_risk_level?.low || 0}
+          subValue="Normal behavior"
+          gradient="bg-gradient-to-br from-emerald-500 to-emerald-600"
+        />
+        <GradientStatCard
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="Escalations (24h)"
+          value={data.recent_escalations || 0}
+          subValue="Increased risk"
+          gradient="bg-gradient-to-br from-violet-500 to-violet-600"
+        />
+      </div>
+
+      {/* Main Card */}
+      <Card className="border-0 shadow-md">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5 text-orange-500" />
+                User Risk Profiles
+              </CardTitle>
+              <CardDescription>
+                {data.total_users} users analyzed • Average score: {data.average_risk_score?.toFixed(1) || 0}
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              {onRefresh && (
+                <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1">
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh
+                </Button>
+              )}
+              <Button size="sm" onClick={handleRecalculate} disabled={recalculating} className="gap-1">
+                <RefreshCw className={`h-4 w-4 ${recalculating ? "animate-spin" : ""}`} />
+                Recalculate All
               </Button>
-            )}
-            <Button variant="default" size="sm" onClick={handleRecalculate} disabled={recalculating}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${recalculating ? "animate-spin" : ""}`} />
-              Recalculate All
-            </Button>
+            </div>
           </div>
-        </div>
-      </CardHeader>
+        </CardHeader>
 
-      <CardContent>
-        {/* Summary Stats */}
-        <div className="grid gap-4 md:grid-cols-4 mb-6">
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-bold text-red-600">
-                    {(data.by_risk_level?.critical || 0) + (data.by_risk_level?.high || 0)}
-                  </div>
-                  <div className="text-xs text-muted-foreground">High Risk Users</div>
-                </div>
-                <ShieldAlert className="h-8 w-8 text-red-500 opacity-50" />
+        <CardContent>
+          {/* High Risk Users List */}
+          {data.high_risk_users && data.high_risk_users.length > 0 ? (
+            <div>
+              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+                High Risk Users
+              </h3>
+              {data.high_risk_users.map((profile) => (
+                <UserRiskCard
+                  key={profile.user_email}
+                  profile={profile}
+                  expanded={expandedUser === profile.user_email}
+                  onToggle={() => setExpandedUser(
+                    expandedUser === profile.user_email ? null : profile.user_email
+                  )}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-3">
+                <ShieldCheck className="h-8 w-8 text-emerald-500" />
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-bold text-yellow-600">
-                    {data.by_risk_level?.medium || 0}
-                  </div>
-                  <div className="text-xs text-muted-foreground">Medium Risk</div>
-                </div>
-                <Shield className="h-8 w-8 text-yellow-500 opacity-50" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-bold text-green-600">
-                    {data.by_risk_level?.low || 0}
-                  </div>
-                  <div className="text-xs text-muted-foreground">Low Risk</div>
-                </div>
-                <ShieldCheck className="h-8 w-8 text-green-500 opacity-50" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-bold text-orange-600">
-                    {data.recent_escalations || 0}
-                  </div>
-                  <div className="text-xs text-muted-foreground">Escalations (24h)</div>
-                </div>
-                <TrendingUp className="h-8 w-8 text-orange-500 opacity-50" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* High Risk Users List */}
-        {data.high_risk_users && data.high_risk_users.length > 0 ? (
-          <div>
-            <h3 className="text-lg font-semibold mb-4">High Risk Users</h3>
-            {data.high_risk_users.map((profile) => (
-              <UserRiskCard
-                key={profile.user_email}
-                profile={profile}
-                expanded={expandedUser === profile.user_email}
-                onToggle={() => setExpandedUser(
-                  expandedUser === profile.user_email ? null : profile.user_email
-                )}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            <ShieldCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>No high-risk users detected</p>
-            <p className="text-sm">All users have risk scores below 50</p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              <p className="font-medium">No high-risk users detected</p>
+              <p className="text-sm">All users have risk scores below 50</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

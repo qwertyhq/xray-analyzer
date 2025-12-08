@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { format, parseISO } from "date-fns";
 import {
   AreaChart,
@@ -12,12 +13,12 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
   BarChart,
   Bar,
 } from "recharts";
-import { HourlyThreatStats, DailyThreatStats, TimeStats, ThreatType } from "@/lib/types";
+import { TimeStats, ThreatType } from "@/lib/types";
 import { threatTypeConfig } from "./config";
+import { Clock, Calendar, TrendingUp, Activity } from "lucide-react";
 
 interface TimeChartProps {
   data: TimeStats | null;
@@ -27,32 +28,50 @@ interface TimeChartProps {
 // Helper to safely get label from threatTypeConfig
 const getTypeLabel = (type: string): string => {
   const config = threatTypeConfig[type as ThreatType];
-  return config?.label || type;
+  return config?.label || type.charAt(0).toUpperCase() + type.slice(1);
 };
+
+// Modern color palette
+const colors: Record<string, string> = {
+  social: "hsl(212, 96%, 54%)",
+  tiktok: "hsl(340, 82%, 52%)",
+  porn: "hsl(262, 83%, 58%)",
+  gambling: "hsl(32, 98%, 50%)",
+  ads: "hsl(48, 96%, 53%)",
+  malware: "hsl(0, 72%, 51%)",
+  phishing: "hsl(25, 95%, 53%)",
+  torrent: "hsl(165, 82%, 51%)",
+  tor: "hsl(0, 84%, 60%)",
+  tracking: "hsl(197, 71%, 53%)",
+  crypto: "hsl(142, 71%, 45%)",
+  fakenews: "hsl(280, 67%, 60%)",
+  drugs: "hsl(45, 93%, 47%)",
+  abuse: "hsl(15, 90%, 50%)",
+  fraud: "hsl(350, 90%, 50%)",
+  default: "hsl(215, 20%, 65%)",
+};
+
+const getColor = (type: string) => colors[type] || colors.default;
 
 export function TimeChart({ data, loading = false }: TimeChartProps) {
   // Transform hourly data for chart
   const hourlyChartData = useMemo(() => {
-    if (!data?.hourly || data.hourly.length === 0) {
-      return [];
-    }
+    if (!data?.hourly || data.hourly.length === 0) return [];
 
-    // Backend sends aggregated data: { hour, total_count, by_type: {type: count}, unique_users }
     return data.hourly
       .map((stat) => {
         let label = stat.hour;
         try {
-          // Parse various ISO formats
           const date = stat.hour.includes("T") ? parseISO(stat.hour) : new Date(stat.hour);
           label = format(date, "HH:mm");
         } catch {
-          // Use original if parsing fails
+          // fallback
         }
         return {
           hour: stat.hour,
           label,
-          total: stat.total_count,
-          unique_users: stat.unique_users,
+          total: stat.total_count || 0,
+          unique_users: stat.unique_users || 0,
           ...stat.by_type,
         };
       })
@@ -61,11 +80,8 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
 
   // Transform daily data for chart
   const dailyChartData = useMemo(() => {
-    if (!data?.daily || data.daily.length === 0) {
-      return [];
-    }
+    if (!data?.daily || data.daily.length === 0) return [];
 
-    // Backend sends aggregated data: { day, total_count, by_type: {type: count}, unique_users }
     return data.daily
       .map((stat) => {
         let label = stat.day;
@@ -73,195 +89,279 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
           const date = stat.day.includes("T") ? parseISO(stat.day) : new Date(stat.day);
           label = format(date, "MMM d");
         } catch {
-          // Use original if parsing fails
+          // fallback
         }
         return {
           day: stat.day,
           label,
-          total: stat.total_count,
-          unique_users: stat.unique_users,
+          total: stat.total_count || 0,
+          unique_users: stat.unique_users || 0,
           ...stat.by_type,
         };
       })
       .sort((a, b) => a.day.localeCompare(b.day));
   }, [data?.daily]);
 
-  // Get unique threat types for colors
+  // Get threat types sorted by total count
   const threatTypes = useMemo(() => {
-    const types = new Set<string>();
+    const typeTotals: Record<string, number> = {};
+    
     data?.hourly?.forEach((h) => {
       if (h.by_type) {
-        Object.keys(h.by_type).forEach((type) => types.add(type));
+        Object.entries(h.by_type).forEach(([type, count]) => {
+          typeTotals[type] = (typeTotals[type] || 0) + count;
+        });
       }
     });
-    data?.daily?.forEach((d) => {
-      if (d.by_type) {
-        Object.keys(d.by_type).forEach((type) => types.add(type));
-      }
-    });
-    return Array.from(types);
-  }, [data]);
 
-  // Color map for threat types
-  const colors: Record<string, string> = {
-    porn: "hsl(340, 82%, 52%)",       // pink
-    gambling: "hsl(32, 98%, 50%)",    // orange
-    social: "hsl(212, 96%, 54%)",     // blue
-    fakenews: "hsl(262, 83%, 58%)",   // purple
-    torrent: "hsl(165, 82%, 51%)",    // teal
-    tor: "hsl(0, 84%, 60%)",          // red
-    ads: "hsl(48, 96%, 53%)",         // yellow
-    malware: "hsl(0, 72%, 51%)",      // dark red
-    phishing: "hsl(25, 95%, 53%)",    // dark orange
-    c2: "hsl(262, 83%, 38%)",         // dark purple
-    botnet: "hsl(142, 71%, 45%)",     // green
-    spam: "hsl(197, 71%, 73%)",       // light blue
-    default: "hsl(215, 20%, 65%)",    // gray
-  };
+    return Object.entries(typeTotals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([type]) => type);
+  }, [data?.hourly]);
 
-  const getColor = (type: string) => colors[type] || colors.default;
+  // Calculate totals for stats
+  const totals = useMemo(() => {
+    const hourlyTotal = hourlyChartData.reduce((sum, d) => sum + d.total, 0);
+    const dailyAvg = dailyChartData.length > 0 
+      ? Math.round(dailyChartData.reduce((sum, d) => sum + d.total, 0) / dailyChartData.length)
+      : 0;
+    const peakHour = hourlyChartData.reduce((max, d) => d.total > max.total ? d : max, { total: 0, label: "-" });
+    return { hourlyTotal, dailyAvg, peakHour };
+  }, [hourlyChartData, dailyChartData]);
 
   if (loading) {
     return (
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Hourly Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-[250px] w-full" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Daily Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-[250px] w-full" />
-          </CardContent>
-        </Card>
+      <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-3">
+          {[1, 2, 3].map(i => <Skeleton key={i} className="h-24" />)}
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Skeleton className="h-[300px]" />
+          <Skeleton className="h-[300px]" />
+        </div>
       </div>
     );
   }
 
-  const hasData = hourlyChartData.length > 0 || dailyChartData.length > 0;
-
-  if (!hasData) {
+  if (!data || (hourlyChartData.length === 0 && dailyChartData.length === 0)) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Time Analysis</CardTitle>
-          <CardDescription>No time-based data available yet</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center h-[200px] text-muted-foreground">
-            Time statistics will appear after matches are recorded
-          </div>
+      <Card className="border-dashed">
+        <CardContent className="flex flex-col items-center justify-center h-[200px] text-center">
+          <Activity className="h-12 w-12 text-muted-foreground/50 mb-4" />
+          <p className="text-muted-foreground">No time-based data available yet</p>
+          <p className="text-xs text-muted-foreground/70 mt-1">
+            Statistics will appear after threat matches are recorded
+          </p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {/* Hourly Chart */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Hourly Activity (24h)</CardTitle>
-          <CardDescription className="text-xs">
-            Threat matches per hour by category
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="h-[250px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={hourlyChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  {threatTypes.map((type) => (
-                    <linearGradient key={type} id={`color-${type}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={getColor(type)} stopOpacity={0.8} />
-                      <stop offset="95%" stopColor={getColor(type)} stopOpacity={0.1} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis 
-                  dataKey="label" 
-                  tick={{ fontSize: 10 }} 
-                  interval="preserveStartEnd"
-                  className="text-muted-foreground"
-                />
-                <YAxis tick={{ fontSize: 10 }} width={30} className="text-muted-foreground" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                  }}
-                  labelStyle={{ color: "hsl(var(--foreground))" }}
-                />
-                <Legend wrapperStyle={{ fontSize: "10px" }} />
-                {threatTypes.map((type) => (
-                  <Area
-                    key={type}
-                    type="monotone"
-                    dataKey={type}
-                    name={getTypeLabel(type)}
-                    stackId="1"
-                    stroke={getColor(type)}
-                    fill={`url(#color-${type})`}
-                  />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-4">
+      {/* Stats Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Clock className="h-4 w-4 text-blue-500" />
+              Last 24 Hours
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+              {totals.hourlyTotal.toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground">Total matches</p>
+          </CardContent>
+        </Card>
 
-      {/* Daily Chart */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Daily Activity (7d)</CardTitle>
-          <CardDescription className="text-xs">
-            Threat matches per day by category
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="h-[250px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dailyChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis 
-                  dataKey="label" 
-                  tick={{ fontSize: 10 }} 
-                  className="text-muted-foreground"
-                />
-                <YAxis tick={{ fontSize: 10 }} width={30} className="text-muted-foreground" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                  }}
-                  labelStyle={{ color: "hsl(var(--foreground))" }}
-                />
-                <Legend wrapperStyle={{ fontSize: "10px" }} />
-                {threatTypes.map((type) => (
-                  <Bar
-                    key={type}
-                    dataKey={type}
-                    name={getTypeLabel(type)}
-                    stackId="1"
-                    fill={getColor(type)}
-                  />
+        <Card className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-500/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-purple-500" />
+              Daily Average
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+              {totals.dailyAvg.toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground">Matches per day</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-orange-500" />
+              Peak Hour
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+              {totals.peakHour.label}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {totals.peakHour.total.toLocaleString()} matches
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Hourly Chart */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Hourly Activity
+                </CardTitle>
+                <CardDescription className="text-xs mt-1">
+                  Threat matches by category (24h)
+                </CardDescription>
+              </div>
+              <div className="flex gap-1 flex-wrap justify-end">
+                {threatTypes.slice(0, 4).map(type => (
+                  <Badge 
+                    key={type} 
+                    variant="outline" 
+                    className="text-[10px] px-1.5 py-0"
+                    style={{ borderColor: getColor(type), color: getColor(type) }}
+                  >
+                    {getTypeLabel(type)}
+                  </Badge>
                 ))}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={hourlyChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <defs>
+                    {threatTypes.map((type) => (
+                      <linearGradient key={type} id={`gradient-${type}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={getColor(type)} stopOpacity={0.6} />
+                        <stop offset="95%" stopColor={getColor(type)} stopOpacity={0.05} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted/50" vertical={false} />
+                  <XAxis 
+                    dataKey="label" 
+                    tick={{ fontSize: 10 }} 
+                    tickLine={false}
+                    axisLine={false}
+                    interval="preserveStartEnd"
+                    className="text-muted-foreground"
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 10 }} 
+                    tickLine={false}
+                    axisLine={false}
+                    width={35}
+                    tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}
+                    className="text-muted-foreground"
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                    }}
+                    labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold" }}
+                    formatter={(value: number, name: string) => [
+                      value.toLocaleString(),
+                      getTypeLabel(name)
+                    ]}
+                  />
+                  {threatTypes.map((type, i) => (
+                    <Area
+                      key={type}
+                      type="monotone"
+                      dataKey={type}
+                      stackId="1"
+                      stroke={getColor(type)}
+                      fill={`url(#gradient-${type})`}
+                      strokeWidth={i === 0 ? 2 : 1}
+                    />
+                  ))}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Daily Chart */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  Daily Activity
+                </CardTitle>
+                <CardDescription className="text-xs mt-1">
+                  Threat matches by category (7d)
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dailyChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted/50" vertical={false} />
+                  <XAxis 
+                    dataKey="label" 
+                    tick={{ fontSize: 11 }} 
+                    tickLine={false}
+                    axisLine={false}
+                    className="text-muted-foreground"
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 10 }} 
+                    tickLine={false}
+                    axisLine={false}
+                    width={35}
+                    tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}
+                    className="text-muted-foreground"
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                    }}
+                    labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold" }}
+                    formatter={(value: number, name: string) => [
+                      value.toLocaleString(),
+                      getTypeLabel(name)
+                    ]}
+                  />
+                  {threatTypes.map((type) => (
+                    <Bar
+                      key={type}
+                      dataKey={type}
+                      stackId="1"
+                      fill={getColor(type)}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

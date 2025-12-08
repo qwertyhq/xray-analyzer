@@ -21,6 +21,7 @@ import { AnomalyPanel } from "./anomaly-panel";
 import { RiskProfilePanel } from "./risk-profile-panel";
 import { DNSAnalysisPanel } from "./dns-analysis-panel";
 import { ReportsPanel } from "./reports-panel";
+import { Database, AlertTriangle, Clock, Radio, TrendingUp, Shield } from "lucide-react";
 
 interface OverviewTabProps {
   stats: ThreatStats | null;
@@ -40,55 +41,70 @@ interface OverviewTabProps {
   onDeleteReport?: (id: string) => Promise<void>;
 }
 
+// Gradient stat card component
+interface StatCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  subValue?: string;
+  gradient: string;
+}
+
+function StatCard({ icon, label, value, subValue, gradient }: StatCardProps) {
+  return (
+    <div className={`relative overflow-hidden rounded-xl p-4 ${gradient}`}>
+      <div className="absolute top-0 right-0 w-20 h-20 opacity-10">
+        <div className="w-full h-full rounded-full bg-white transform translate-x-4 -translate-y-4" />
+      </div>
+      <div className="relative z-10">
+        <div className="flex items-center gap-2 text-white/90 mb-2">
+          {icon}
+          <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
+        </div>
+        <div className="text-2xl font-bold text-white">{value}</div>
+        {subValue && (
+          <div className="text-xs text-white/70 mt-1">{subValue}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, geoStats, anomalies, riskProfiles, dnsAnalysis, reports, onRiskRefresh, onDnsRefresh, onReportsRefresh, onGenerateReport, onDeleteReport }: OverviewTabProps) {
+  const activeFeeds = feeds.filter((f) => f.status === "ok").length;
+  
   return (
     <div className="space-y-6">
-      {/* Stats Cards */}
+      {/* Gradient Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Indicators</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {stats?.total_indicators.toLocaleString() || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Loaded from feeds</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Matches</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">
-              {stats?.total_matches || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">All time</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Matches (24h)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-500">
-              {stats?.matches_24h || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Last 24 hours</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Active Feeds</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-500">
-              {feeds.filter((f) => f.status === "ok").length}/{feeds.length}
-            </div>
-            <p className="text-xs text-muted-foreground">Feeds online</p>
-          </CardContent>
-        </Card>
+        <StatCard
+          icon={<Database className="h-4 w-4" />}
+          label="Total Indicators"
+          value={stats?.total_indicators.toLocaleString() || "0"}
+          subValue="Loaded from feeds"
+          gradient="bg-gradient-to-br from-blue-500 to-blue-600"
+        />
+        <StatCard
+          icon={<AlertTriangle className="h-4 w-4" />}
+          label="Total Matches"
+          value={stats?.total_matches?.toLocaleString() || "0"}
+          subValue="All time detections"
+          gradient="bg-gradient-to-br from-red-500 to-red-600"
+        />
+        <StatCard
+          icon={<Clock className="h-4 w-4" />}
+          label="Matches (24h)"
+          value={stats?.matches_24h?.toLocaleString() || "0"}
+          subValue="Last 24 hours"
+          gradient="bg-gradient-to-br from-amber-500 to-amber-600"
+        />
+        <StatCard
+          icon={<Radio className="h-4 w-4" />}
+          label="Active Feeds"
+          value={`${activeFeeds}/${feeds.length}`}
+          subValue="Feeds online"
+          gradient="bg-gradient-to-br from-emerald-500 to-emerald-600"
+        />
       </div>
 
       {/* Time-based Charts */}
@@ -98,9 +114,12 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
       <GeoChart data={geoStats} />
 
       {/* Feed Status */}
-      <Card>
+      <Card className="border-0 shadow-md">
         <CardHeader>
-          <CardTitle>Feed Status</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-blue-500" />
+            Feed Status
+          </CardTitle>
           <CardDescription>Status of threat intelligence data sources</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -116,26 +135,27 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
             </TableHeader>
             <TableBody>
               {feeds.map((feed) => (
-                <TableRow key={feed.source}>
+                <TableRow key={feed.source} className="hover:bg-muted/50 transition-colors">
                   <TableCell className="font-medium text-xs sm:text-sm">
                     {sourceLabels[feed.source] || feed.source}
                   </TableCell>
                   <TableCell>
                     <Badge
                       variant={feed.status === "ok" ? "default" : "destructive"}
+                      className={feed.status === "ok" ? "bg-emerald-500 hover:bg-emerald-600" : ""}
                     >
-                      {feed.status}
+                      {feed.status === "ok" ? "✓ Online" : feed.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right hidden sm:table-cell">
+                  <TableCell className="text-right hidden sm:table-cell font-mono">
                     {feed.indicators.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-muted-foreground hidden md:table-cell">
+                  <TableCell className="text-muted-foreground hidden md:table-cell text-sm">
                     {feed.last_update
                       ? formatDistanceToNow(new Date(feed.last_update), { addSuffix: true })
                       : "—"}
                   </TableCell>
-                  <TableCell className="text-muted-foreground hidden lg:table-cell">
+                  <TableCell className="text-muted-foreground hidden lg:table-cell text-sm">
                     {feed.next_update
                       ? formatDistanceToNow(new Date(feed.next_update), { addSuffix: true })
                       : "—"}
