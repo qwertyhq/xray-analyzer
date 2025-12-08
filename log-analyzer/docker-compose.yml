@@ -3,6 +3,9 @@ version: '3.8'
 services:
   # Main analyzer server with Web UI
   analyzer-server:
+    # Use pre-built image from GitHub Container Registry
+    # Falls back to local build if image not available
+    image: ghcr.io/qwertyhq/xray/log-analyzer:latest
     build:
       context: ./server
       dockerfile: Dockerfile
