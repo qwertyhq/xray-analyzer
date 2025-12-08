@@ -11,7 +11,7 @@ import { ThreatIntelCard } from "@/components/threatintel/threat-intel-card";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { SystemHealth } from "@/components/dashboard/system-health";
 import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
-import { GeoMapMini } from "@/components/dashboard/geo-map-mini";
+import { GeoMap } from "@/components/dashboard/geo-map";
 import { TopOffenders } from "@/components/dashboard/top-offenders";
 import { RealTimeFeed, FeedEvent, EventType } from "@/components/dashboard/real-time-feed";
 import { TrafficDistribution } from "@/components/dashboard/traffic-distribution";
@@ -45,12 +45,12 @@ export default function DashboardPage() {
           headers["Authorization"] = `Bearer ${token}`;
         }
 
-        // Fetch geo stats
-        const geoRes = await fetch("/api/threatintel/geo-stats", { headers });
+        // Fetch geo stats (use summary=true to get GeoSummary with top_countries)
+        const geoRes = await fetch("/api/threatintel/geo-stats?summary=true", { headers });
         if (geoRes.ok) {
           const data = await geoRes.json();
-          // Transform data to match GeoMapMini format
-          const countries = data.by_country?.map((c: { country_code: string; country_name: string; total_matches: number; unique_users: number }) => ({
+          // Transform top_countries to match GeoMap format
+          const countries = data.top_countries?.map((c: { country_code: string; country_name: string; total_matches: number; unique_users: number }) => ({
             country: c.country_name || c.country_code,
             country_code: c.country_code,
             count: c.total_matches,
@@ -59,11 +59,19 @@ export default function DashboardPage() {
           setGeoData(countries);
         }
 
-        // Fetch top offenders
-        const offendersRes = await fetch("/api/users?sort=blacklist_hits&order=desc&limit=5", { headers });
+        // Fetch top offenders (API returns array directly, sorted by blacklist_hits)
+        const offendersRes = await fetch("/api/users", { headers });
         if (offendersRes.ok) {
           const data = await offendersRes.json();
-          setTopOffenders(data.users || []);
+          // Filter users with blacklist hits and take top 5
+          const topUsers = (data || [])
+            .filter((u: { blacklist_hits: number }) => u.blacklist_hits > 0)
+            .slice(0, 5)
+            .map((u: { user_email: string; blacklist_hits: number }) => ({
+              user_email: u.user_email,
+              blacklist_hits: u.blacklist_hits,
+            }));
+          setTopOffenders(topUsers);
         }
 
         // Check Remnawave status
@@ -302,10 +310,10 @@ export default function DashboardPage() {
         <TopOffenders users={topOffenders} title="Top Offenders" />
       </div>
 
-      {/* Row 5: Real-time Feed + Geo Distribution */}
+      {/* Row 5: Geo Distribution (larger) + Real-time Feed */}
       <div className="grid gap-6 md:grid-cols-2">
+        <GeoMap data={geoData} title="Geographic Distribution" />
         <RealTimeFeed events={feedEvents} title="Real-time Feed" />
-        <GeoMapMini data={geoData} title="Geographic Distribution" />
       </div>
 
       {/* Row 6: Nodes + Blacklist Alerts + Threat Intel */}
