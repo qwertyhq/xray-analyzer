@@ -37,34 +37,23 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
       return [];
     }
 
-    // Group by hour
-    const grouped = new Map<string, Record<string, number>>();
-    
-    for (const stat of data.hourly) {
-      const hour = stat.hour;
-      if (!grouped.has(hour)) {
-        grouped.set(hour, { total: 0 });
-      }
-      const entry = grouped.get(hour)!;
-      entry[stat.threat_type] = (entry[stat.threat_type] || 0) + stat.match_count;
-      entry.total += stat.match_count;
-    }
-
-    // Convert to array and sort
-    return Array.from(grouped.entries())
-      .map(([hour, counts]) => {
-        let label = hour;
+    // Backend sends aggregated data: { hour, total_count, by_type: {type: count}, unique_users }
+    return data.hourly
+      .map((stat) => {
+        let label = stat.hour;
         try {
           // Parse various ISO formats
-          const date = hour.includes("T") ? parseISO(hour) : new Date(hour);
+          const date = stat.hour.includes("T") ? parseISO(stat.hour) : new Date(stat.hour);
           label = format(date, "HH:mm");
         } catch {
           // Use original if parsing fails
         }
         return {
-          hour,
+          hour: stat.hour,
           label,
-          ...counts,
+          total: stat.total_count,
+          unique_users: stat.unique_users,
+          ...stat.by_type,
         };
       })
       .sort((a, b) => a.hour.localeCompare(b.hour));
@@ -76,33 +65,22 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
       return [];
     }
 
-    // Group by day
-    const grouped = new Map<string, Record<string, number>>();
-    
-    for (const stat of data.daily) {
-      const day = stat.day;
-      if (!grouped.has(day)) {
-        grouped.set(day, { total: 0 });
-      }
-      const entry = grouped.get(day)!;
-      entry[stat.threat_type] = (entry[stat.threat_type] || 0) + stat.match_count;
-      entry.total += stat.match_count;
-    }
-
-    // Convert to array and sort
-    return Array.from(grouped.entries())
-      .map(([day, counts]) => {
-        let label = day;
+    // Backend sends aggregated data: { day, total_count, by_type: {type: count}, unique_users }
+    return data.daily
+      .map((stat) => {
+        let label = stat.day;
         try {
-          const date = day.includes("T") ? parseISO(day) : new Date(day);
+          const date = stat.day.includes("T") ? parseISO(stat.day) : new Date(stat.day);
           label = format(date, "MMM d");
         } catch {
           // Use original if parsing fails
         }
         return {
-          day,
+          day: stat.day,
           label,
-          ...counts,
+          total: stat.total_count,
+          unique_users: stat.unique_users,
+          ...stat.by_type,
         };
       })
       .sort((a, b) => a.day.localeCompare(b.day));
@@ -111,8 +89,16 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
   // Get unique threat types for colors
   const threatTypes = useMemo(() => {
     const types = new Set<string>();
-    data?.hourly?.forEach((h) => types.add(h.threat_type));
-    data?.daily?.forEach((d) => types.add(d.threat_type));
+    data?.hourly?.forEach((h) => {
+      if (h.by_type) {
+        Object.keys(h.by_type).forEach((type) => types.add(type));
+      }
+    });
+    data?.daily?.forEach((d) => {
+      if (d.by_type) {
+        Object.keys(d.by_type).forEach((type) => types.add(type));
+      }
+    });
     return Array.from(types);
   }, [data]);
 

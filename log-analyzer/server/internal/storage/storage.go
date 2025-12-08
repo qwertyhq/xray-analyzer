@@ -205,6 +205,14 @@ func (s *Storage) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_threat_hourly_time ON threat_hourly_stats(hour DESC);
 
+	-- Unique users tracking per hour/threat_type (for accurate unique_users count)
+	CREATE TABLE IF NOT EXISTS threat_hourly_users (
+		hour TEXT NOT NULL,
+		threat_type TEXT NOT NULL,
+		user_email TEXT NOT NULL,
+		PRIMARY KEY (hour, threat_type, user_email)
+	);
+
 	-- Daily threat statistics for trend analysis
 	CREATE TABLE IF NOT EXISTS threat_daily_stats (
 		day TEXT NOT NULL,  -- Format: 2025-12-07 (YYYY-MM-DD)
@@ -214,6 +222,14 @@ func (s *Storage) migrate() error {
 		PRIMARY KEY (day, threat_type)
 	);
 	CREATE INDEX IF NOT EXISTS idx_threat_daily_time ON threat_daily_stats(day DESC);
+
+	-- Unique users tracking per day/threat_type (for accurate unique_users count)
+	CREATE TABLE IF NOT EXISTS threat_daily_users (
+		day TEXT NOT NULL,
+		threat_type TEXT NOT NULL,
+		user_email TEXT NOT NULL,
+		PRIMARY KEY (day, threat_type, user_email)
+	);
 
 	-- GeoIP statistics for threat matches by country
 	CREATE TABLE IF NOT EXISTS threat_geo_stats (

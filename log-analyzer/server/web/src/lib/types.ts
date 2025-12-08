@@ -224,20 +224,16 @@ export interface IPInfo {
 // Time-based threat statistics
 export interface HourlyThreatStats {
   hour: string;
-  threat_type: string;
-  match_count: number;
-  unique_users: number;
-  top_domain: string;
   total_count: number;
+  by_type: Record<string, number>;
+  unique_users: number;
 }
 
 export interface DailyThreatStats {
   day: string;
-  threat_type: string;
-  match_count: number;
-  unique_users: number;
-  top_domain: string;
   total_count: number;
+  by_type: Record<string, number>;
+  unique_users: number;
 }
 
 export interface TimeStats {

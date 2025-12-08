@@ -64,25 +64,40 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 		`, match.UserEmail, string(match.ThreatType), domain, now)
 	}
 
-	// Update hourly stats
+	// Update hourly stats with proper unique user tracking
 	t := time.Now()
 	hourKey := t.Format("2006-01-02T15")
 	dayKey := t.Format("2006-01-02")
 
+	// Track unique users per hour/threat_type using a separate table
+	s.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO threat_hourly_users (hour, threat_type, user_email)
+		VALUES (?, ?, ?)
+	`, hourKey, string(match.ThreatType), match.UserEmail)
+
+	// Update hourly stats - recalculate unique_users from actual data
 	s.db.ExecContext(ctx, `
 		INSERT INTO threat_hourly_stats (hour, threat_type, match_count, unique_users)
 		VALUES (?, ?, 1, 1)
 		ON CONFLICT(hour, threat_type) DO UPDATE SET
-			match_count = match_count + 1
-	`, hourKey, string(match.ThreatType))
+			match_count = match_count + 1,
+			unique_users = (SELECT COUNT(*) FROM threat_hourly_users WHERE hour = ? AND threat_type = ?)
+	`, hourKey, string(match.ThreatType), hourKey, string(match.ThreatType))
 
-	// Update daily stats
+	// Track unique users per day/threat_type
+	s.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO threat_daily_users (day, threat_type, user_email)
+		VALUES (?, ?, ?)
+	`, dayKey, string(match.ThreatType), match.UserEmail)
+
+	// Update daily stats - recalculate unique_users from actual data
 	s.db.ExecContext(ctx, `
 		INSERT INTO threat_daily_stats (day, threat_type, match_count, unique_users)
 		VALUES (?, ?, 1, 1)
 		ON CONFLICT(day, threat_type) DO UPDATE SET
-			match_count = match_count + 1
-	`, dayKey, string(match.ThreatType))
+			match_count = match_count + 1,
+			unique_users = (SELECT COUNT(*) FROM threat_daily_users WHERE day = ? AND threat_type = ?)
+	`, dayKey, string(match.ThreatType), dayKey, string(match.ThreatType))
 
 	// Delete old recent records keeping only MaxThreatMatches most recent
 	_, err = s.db.ExecContext(ctx, `
