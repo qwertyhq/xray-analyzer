@@ -1,16 +1,60 @@
 "use client";
 
+import { useMemo } from "react";
 import { useWsUsers, useWsStats } from "@/contexts/websocket-context";
 import { UsersTable } from "@/components/users/users-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Wifi, WifiOff } from "lucide-react";
+import { Wifi, WifiOff, Users, Activity, ShieldAlert, AlertTriangle } from "lucide-react";
+
+// Calculate risk score (same logic as in users-table)
+function calculateRiskScore(user: { total_requests: number; blacklist_hits: number; last_blacklist_hit?: string }) {
+  if (user.total_requests === 0) return 0;
+  const hitRatio = user.blacklist_hits / user.total_requests;
+  let score = Math.min(hitRatio * 500, 50);
+  if (user.blacklist_hits > 100) score += 30;
+  else if (user.blacklist_hits > 50) score += 20;
+  else if (user.blacklist_hits > 10) score += 10;
+  else if (user.blacklist_hits > 0) score += 5;
+  if (user.blacklist_hits > 0 && user.total_requests > 1000) score += 10;
+  if (user.last_blacklist_hit) {
+    const hoursSinceHit = (Date.now() - new Date(user.last_blacklist_hit).getTime()) / (1000 * 60 * 60);
+    if (hoursSinceHit < 1) score += 10;
+    else if (hoursSinceHit < 24) score += 5;
+  }
+  return Math.min(Math.round(score), 100);
+}
 
 export default function UsersPage() {
   const { users, loading, connected } = useWsUsers();
   const { stats } = useWsStats();
+
+  // Calculate risk groups
+  const { highRisk, mediumRisk, blacklistUsers, totalRequests, totalBlacklistHits } = useMemo(() => {
+    let high = 0, medium = 0;
+    let requests = 0, hits = 0;
+    const blacklist: typeof users = [];
+    
+    for (const u of users) {
+      requests += u.total_requests;
+      hits += u.blacklist_hits;
+      if (u.blacklist_hits > 0) blacklist.push(u);
+      
+      const risk = calculateRiskScore(u);
+      if (risk >= 70) high++;
+      else if (risk >= 40) medium++;
+    }
+    
+    return {
+      highRisk: high,
+      mediumRisk: medium,
+      blacklistUsers: blacklist,
+      totalRequests: requests,
+      totalBlacklistHits: hits,
+    };
+  }, [users]);
 
   if (loading) {
     return (
@@ -21,17 +65,13 @@ export default function UsersPage() {
     );
   }
 
-  const blacklistUsers = users.filter(u => u.blacklist_hits > 0);
-  const totalRequests = users.reduce((sum, u) => sum + u.total_requests, 0);
-  const totalBlacklistHits = users.reduce((sum, u) => sum + u.blacklist_hits, 0);
-
   return (
     <div className="p-4 md:p-8 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Users</h2>
           <p className="text-sm text-muted-foreground">
-            All users across all nodes, sorted by activity
+            All users across all nodes with risk assessment
           </p>
         </div>
         <Badge 
@@ -52,10 +92,13 @@ export default function UsersPage() {
         </Badge>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              Total Users
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{(stats.total_unique_users || users.length).toLocaleString()}</div>
@@ -63,7 +106,10 @@ export default function UsersPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Activity className="h-4 w-4 text-muted-foreground" />
+              Total Requests
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalRequests.toLocaleString()}</div>
@@ -71,10 +117,26 @@ export default function UsersPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-destructive">Flagged Users</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-2 text-destructive">
+              <ShieldAlert className="h-4 w-4" />
+              High Risk
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">{blacklistUsers.length}</div>
+            <div className="text-2xl font-bold text-destructive">{highRisk}</div>
+            <p className="text-xs text-muted-foreground">Score ≥ 70</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2 text-yellow-600">
+              <AlertTriangle className="h-4 w-4" />
+              Medium Risk
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-yellow-600">{mediumRisk}</div>
+            <p className="text-xs text-muted-foreground">Score 40-69</p>
           </CardContent>
         </Card>
         <Card>
@@ -82,7 +144,8 @@ export default function UsersPage() {
             <CardTitle className="text-sm font-medium text-destructive">Blacklist Hits</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">{totalBlacklistHits}</div>
+            <div className="text-2xl font-bold text-destructive">{totalBlacklistHits.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">{blacklistUsers.length} users affected</p>
           </CardContent>
         </Card>
       </div>
@@ -91,7 +154,7 @@ export default function UsersPage() {
         <CardHeader>
           <CardTitle>User Activity</CardTitle>
           <CardDescription>
-            Search and filter users by email or node
+            Filter by node, search by email/IP, sort by risk score
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -102,7 +165,7 @@ export default function UsersPage() {
                 <Badge variant="secondary" className="ml-2">{users.length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="blacklist">
-                Blacklist Only
+                Flagged
                 <Badge variant="destructive" className="ml-2">{blacklistUsers.length}</Badge>
               </TabsTrigger>
             </TabsList>
