@@ -1,7 +1,9 @@
 package remnawave
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
@@ -31,4 +33,18 @@ func (c *Client) GetHwidStats(ctx context.Context) (*HwidStats, error) {
 		return nil, err
 	}
 	return parseResponse[*HwidStats](data)
+}
+
+// DeleteAllUserHwidDevices deletes all HWID devices for a specific user
+func (c *Client) DeleteAllUserHwidDevices(ctx context.Context, userUUID string) (*HwidDevicesResponse, error) {
+	payload := map[string]string{"userUuid": userUUID}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal payload: %w", err)
+	}
+	data, err := c.doRequest(ctx, "POST", "/api/hwid/devices/delete-all", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	return parseResponse[*HwidDevicesResponse](data)
 }

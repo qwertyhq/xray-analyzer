@@ -10,17 +10,31 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Smartphone,
   ChevronDown,
   ChevronRight,
   Phone,
   User,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { RemnawaveAbuseUser } from "@/lib/types";
 
@@ -47,10 +61,12 @@ function getPlatformIcon(platform: string) {
 
 interface RemnawaveAbuseTableProps {
   users: RemnawaveAbuseUser[];
+  onHwidCleared?: (userUuid: string) => void;
 }
 
-export function RemnawaveAbuseTable({ users }: RemnawaveAbuseTableProps) {
+export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTableProps) {
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
+  const [clearingHwid, setClearingHwid] = useState<string | null>(null);
 
   const toggleUser = (uuid: string) => {
     setExpandedUsers((prev) => {
@@ -62,6 +78,29 @@ export function RemnawaveAbuseTable({ users }: RemnawaveAbuseTableProps) {
       }
       return next;
     });
+  };
+
+  const handleClearHwid = async (userUuid: string, username: string) => {
+    setClearingHwid(userUuid);
+    try {
+      const response = await fetch("/api/remnawave/hwid-clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userUuid }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || "Failed to clear HWID");
+      }
+
+      onHwidCleared?.(userUuid);
+    } catch (error) {
+      console.error("Failed to clear HWID:", error);
+      alert(`Ошибка: ${error instanceof Error ? error.message : "Не удалось очистить HWID"}`);
+    } finally {
+      setClearingHwid(null);
+    }
   };
 
   if (users.length === 0) {
@@ -86,6 +125,7 @@ export function RemnawaveAbuseTable({ users }: RemnawaveAbuseTableProps) {
             <TableHead className="text-right">Превышение</TableHead>
             <TableHead>Платформы</TableHead>
             <TableHead>Риск</TableHead>
+            <TableHead className="w-24">Действия</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -164,11 +204,50 @@ export function RemnawaveAbuseTable({ users }: RemnawaveAbuseTableProps) {
                           {riskLevel === "high" ? "Высокий" : riskLevel === "medium" ? "Средний" : "Низкий"}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={(e) => e.stopPropagation()}
+                              disabled={clearingHwid === user.uuid}
+                            >
+                              {clearingHwid === user.uuid ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                              <span className="ml-1.5 hidden sm:inline">Clear</span>
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Очистить HWID устройства?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Будут удалены все {user.deviceCount} устройств пользователя{" "}
+                                <span className="font-medium text-foreground">{user.username}</span>.
+                                Пользователю придётся заново подключить устройства.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Отмена</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={() => handleClearHwid(user.uuid, user.username)}
+                              >
+                                Очистить HWID
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
                     </TableRow>
                   </CollapsibleTrigger>
                   <CollapsibleContent asChild>
                     <TableRow className="bg-muted/30 hover:bg-muted/30">
-                      <TableCell colSpan={7} className="p-0">
+                      <TableCell colSpan={8} className="p-0">
                         <div className="p-4 space-y-4">
                           {/* Contact Info */}
                           {(user.parsedNote?.phone || user.parsedNote?.telegram_user) && (

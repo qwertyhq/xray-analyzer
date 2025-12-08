@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -574,4 +575,48 @@ func (s *Server) handleRemnawaveOnline(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// handleRemnawavelClearHwid clears all HWID devices for a specific user
+func (s *Server) handleRemnawavelClearHwid(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.remnawave == nil {
+		http.Error(w, "remnawave not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		UserUUID string `json:"userUuid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.UserUUID == "" {
+		http.Error(w, "userUuid is required", http.StatusBadRequest)
+		return
+	}
+
+	// Call the sync service to clear HWID devices
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	if err := s.remnawave.ClearUserHwidDevices(ctx, req.UserUUID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"userUuid": req.UserUUID,
+		"message":  "All HWID devices cleared successfully",
+	})
 }

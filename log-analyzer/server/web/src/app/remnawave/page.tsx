@@ -436,7 +436,10 @@ export default function RemnavewavePage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <RemnawaveAbuseTable users={abuseUsers} />
+              <RemnawaveAbuseTable 
+                users={abuseUsers} 
+                onHwidCleared={() => fetchData(true)}
+              />
             </CardContent>
           </Card>
         </TabsContent>

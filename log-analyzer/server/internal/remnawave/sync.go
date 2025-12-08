@@ -199,6 +199,23 @@ func (s *SyncService) GetUserHwidDevices(userUUID string) []HwidDevice {
 	return s.hwidDevices[userUUID]
 }
 
+// ClearUserHwidDevices deletes all HWID devices for a user via API and updates cache
+func (s *SyncService) ClearUserHwidDevices(ctx context.Context, userUUID string) error {
+	// Call API to delete all HWID devices
+	_, err := s.client.DeleteAllUserHwidDevices(ctx, userUUID)
+	if err != nil {
+		return err
+	}
+
+	// Update local cache
+	s.mu.Lock()
+	delete(s.hwidDevices, userUUID)
+	s.mu.Unlock()
+
+	log.Printf("[remnawave] cleared all HWID devices for user %s", userUUID)
+	return nil
+}
+
 // GetAllUsers returns all cached users
 func (s *SyncService) GetAllUsers() []*User {
 	s.mu.RLock()
