@@ -31,24 +31,24 @@ const getTypeLabel = (type: string): string => {
   return config?.label || type.charAt(0).toUpperCase() + type.slice(1);
 };
 
-// Modern color palette
+// Muted color palette with lower saturation
 const colors: Record<string, string> = {
-  social: "hsl(212, 96%, 54%)",
-  tiktok: "hsl(340, 82%, 52%)",
-  porn: "hsl(262, 83%, 58%)",
-  gambling: "hsl(32, 98%, 50%)",
-  ads: "hsl(48, 96%, 53%)",
-  malware: "hsl(0, 72%, 51%)",
-  phishing: "hsl(25, 95%, 53%)",
-  torrent: "hsl(165, 82%, 51%)",
-  tor: "hsl(0, 84%, 60%)",
-  tracking: "hsl(197, 71%, 53%)",
-  crypto: "hsl(142, 71%, 45%)",
-  fakenews: "hsl(280, 67%, 60%)",
-  drugs: "hsl(45, 93%, 47%)",
-  abuse: "hsl(15, 90%, 50%)",
-  fraud: "hsl(350, 90%, 50%)",
-  default: "hsl(215, 20%, 65%)",
+  social: "hsla(212, 60%, 55%, 0.7)",
+  tiktok: "hsla(340, 55%, 55%, 0.7)",
+  porn: "hsla(262, 55%, 60%, 0.7)",
+  gambling: "hsla(32, 60%, 55%, 0.7)",
+  ads: "hsla(48, 60%, 55%, 0.7)",
+  malware: "hsla(0, 50%, 55%, 0.7)",
+  phishing: "hsla(25, 60%, 55%, 0.7)",
+  torrent: "hsla(165, 50%, 50%, 0.7)",
+  tor: "hsla(0, 55%, 55%, 0.7)",
+  tracking: "hsla(197, 50%, 55%, 0.7)",
+  crypto: "hsla(142, 45%, 50%, 0.7)",
+  fakenews: "hsla(280, 45%, 55%, 0.7)",
+  drugs: "hsla(45, 55%, 50%, 0.7)",
+  abuse: "hsla(15, 55%, 55%, 0.7)",
+  fraud: "hsla(350, 55%, 55%, 0.7)",
+  default: "hsla(215, 20%, 60%, 0.7)",
 };
 
 const getColor = (type: string) => colors[type] || colors.default;

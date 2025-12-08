@@ -51,21 +51,21 @@ interface DNSAnalysisPanelProps {
 }
 
 const riskColors: Record<RiskLevel, string> = {
-  low: "hsl(142, 71%, 45%)",      // green
-  medium: "hsl(48, 96%, 53%)",    // yellow
-  high: "hsl(25, 95%, 53%)",      // orange
-  critical: "hsl(0, 84%, 60%)",   // red
+  low: "hsla(142, 45%, 50%, 0.8)",      // green muted
+  medium: "hsla(48, 55%, 55%, 0.8)",    // yellow muted
+  high: "hsla(25, 55%, 55%, 0.8)",      // orange muted
+  critical: "hsla(0, 50%, 55%, 0.8)",   // red muted
 };
 
-// Theme-aware chart colors using HSL
+// Muted chart colors
 const CHART_COLORS = [
-  "hsl(262, 83%, 58%)",   // purple (primary)
-  "hsl(142, 71%, 45%)",   // green
-  "hsl(48, 96%, 53%)",    // yellow
-  "hsl(25, 95%, 53%)",    // orange
-  "hsl(197, 71%, 53%)",   // cyan
-  "hsl(340, 82%, 52%)",   // pink
-  "hsl(212, 96%, 54%)",   // blue
+  "hsla(262, 50%, 58%, 0.75)",   // purple muted
+  "hsla(142, 45%, 50%, 0.75)",   // green muted
+  "hsla(48, 55%, 55%, 0.75)",    // yellow muted
+  "hsla(25, 55%, 55%, 0.75)",    // orange muted
+  "hsla(197, 45%, 55%, 0.75)",   // cyan muted
+  "hsla(340, 50%, 55%, 0.75)",   // pink muted
+  "hsla(212, 55%, 55%, 0.75)",   // blue muted
 ];
 
 // Return the appropriate icon component based on trend direction
@@ -256,52 +256,59 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="h-[250px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={dailyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="hsl(262, 83%, 58%)" stopOpacity={0.8} />
-                            <stop offset="95%" stopColor="hsl(262, 83%, 58%)" stopOpacity={0.1} />
-                          </linearGradient>
-                          <linearGradient id="colorBlocked" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.8} />
-                            <stop offset="95%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.1} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis
-                          dataKey="day"
-                          tick={{ fontSize: 10 }}
-                          interval="preserveStartEnd"
-                          className="text-muted-foreground"
-                        />
-                        <YAxis tick={{ fontSize: 10 }} width={40} className="text-muted-foreground" />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "hsl(var(--card))",
-                            border: "1px solid hsl(var(--border))",
-                            borderRadius: "8px",
-                            fontSize: "12px",
-                          }}
-                          labelStyle={{ color: "hsl(var(--foreground))" }}
-                        />
-                        <Legend wrapperStyle={{ fontSize: "10px" }} />
-                        <Area
-                          type="monotone"
-                          dataKey="total"
-                          stroke="hsl(262, 83%, 58%)"
-                          fill="url(#colorTotal)"
-                          name="Total"
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="blocked"
-                          stroke="hsl(0, 84%, 60%)"
-                          fill="url(#colorBlocked)"
-                          name="Blocked"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
+                    {dailyData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={dailyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsla(262, 50%, 60%, 0.6)" stopOpacity={0.6} />
+                              <stop offset="95%" stopColor="hsla(262, 50%, 60%, 0.1)" stopOpacity={0.05} />
+                            </linearGradient>
+                            <linearGradient id="colorBlocked" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsla(0, 50%, 58%, 0.6)" stopOpacity={0.6} />
+                              <stop offset="95%" stopColor="hsla(0, 50%, 58%, 0.1)" stopOpacity={0.05} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis
+                            dataKey="day"
+                            tick={{ fontSize: 10 }}
+                            interval="preserveStartEnd"
+                            className="text-muted-foreground"
+                          />
+                          <YAxis tick={{ fontSize: 10 }} width={40} className="text-muted-foreground" />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "hsl(var(--card))",
+                              border: "1px solid hsl(var(--border))",
+                              borderRadius: "8px",
+                              fontSize: "12px",
+                            }}
+                            labelStyle={{ color: "hsl(var(--foreground))" }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: "10px" }} />
+                          <Area
+                            type="monotone"
+                            dataKey="total"
+                            stroke="hsla(262, 50%, 60%, 0.8)"
+                            fill="url(#colorTotal)"
+                            name="Total"
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="blocked"
+                            stroke="hsla(0, 50%, 58%, 0.8)"
+                            fill="url(#colorBlocked)"
+                            name="Blocked"
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                        <Activity className="h-8 w-8 opacity-30 mb-2" />
+                        <p className="text-sm">No daily data available</p>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -313,36 +320,46 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="h-[250px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={categoryData}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          outerRadius={80}
-                          innerRadius={40}
-                          fill="hsl(262, 83%, 58%)"
-                          dataKey="value"
-                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                          paddingAngle={2}
-                        >
-                          {categoryData.map((_, index) => (
-                            <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "hsl(var(--card))",
-                            border: "1px solid hsl(var(--border))",
-                            borderRadius: "8px",
-                            fontSize: "12px",
-                          }}
-                          labelStyle={{ color: "hsl(var(--foreground))" }}
-                        />
-                        <Legend wrapperStyle={{ fontSize: "10px" }} />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    {categoryData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={categoryData}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            outerRadius={80}
+                            innerRadius={40}
+                            fill="hsl(262, 83%, 58%)"
+                            dataKey="value"
+                            paddingAngle={2}
+                          >
+                            {categoryData.map((_, index) => (
+                              <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "hsl(var(--card))",
+                              border: "1px solid hsl(var(--border))",
+                              borderRadius: "8px",
+                              fontSize: "12px",
+                            }}
+                            labelStyle={{ color: "hsl(var(--foreground))" }}
+                            formatter={(value: number, name: string) => [`${value.toLocaleString()} queries`, name]}
+                          />
+                          <Legend 
+                            wrapperStyle={{ fontSize: "11px" }} 
+                            formatter={(value) => <span className="text-foreground">{value}</span>}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                        <Globe className="h-8 w-8 opacity-30 mb-2" />
+                        <p className="text-sm">No category data available</p>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -376,8 +393,8 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                           labelStyle={{ color: "hsl(var(--foreground))" }}
                         />
                         <Legend wrapperStyle={{ fontSize: "10px" }} />
-                        <Bar dataKey="total" fill="hsl(262, 83%, 58%)" name="Total" radius={[2, 2, 0, 0]} />
-                        <Bar dataKey="blocked" fill="hsl(0, 84%, 60%)" name="Blocked" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="total" fill="hsla(262, 50%, 60%, 0.7)" name="Total" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="blocked" fill="hsla(0, 50%, 58%, 0.7)" name="Blocked" radius={[2, 2, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>

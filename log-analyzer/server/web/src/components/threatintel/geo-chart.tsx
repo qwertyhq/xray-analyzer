@@ -36,18 +36,18 @@ const getFlag = (countryCode: string): string => {
   return String.fromCodePoint(...codePoints);
 };
 
-// Modern color palette with gradients
+// Muted color palette
 const countryColors = [
-  "#6366f1", // indigo
-  "#8b5cf6", // violet
-  "#06b6d4", // cyan
-  "#10b981", // emerald
-  "#f59e0b", // amber
-  "#ef4444", // red
-  "#ec4899", // pink
-  "#14b8a6", // teal
-  "#f97316", // orange
-  "#84cc16", // lime
+  "hsla(240, 45%, 60%, 0.75)", // indigo muted
+  "hsla(270, 40%, 60%, 0.75)", // violet muted
+  "hsla(185, 45%, 50%, 0.75)", // cyan muted
+  "hsla(155, 40%, 50%, 0.75)", // emerald muted
+  "hsla(38, 50%, 55%, 0.75)",  // amber muted
+  "hsla(0, 50%, 55%, 0.75)",   // red muted
+  "hsla(330, 45%, 55%, 0.75)", // pink muted
+  "hsla(170, 40%, 50%, 0.75)", // teal muted
+  "hsla(25, 50%, 55%, 0.75)",  // orange muted
+  "hsla(80, 40%, 50%, 0.75)",  // lime muted
 ];
 
 // Get label for threat type
@@ -90,7 +90,7 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
   const barData = useMemo(() => {
     if (!data?.top_countries?.length) return [];
     return data.top_countries.slice(0, 8).map((c, i) => ({
-      name: `${getFlag(c.country_code)} ${c.country_code}`,
+      name: c.country_code,
       fullName: c.country_name,
       matches: c.total_matches,
       users: c.unique_users,
@@ -214,14 +214,6 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
             <div className="h-[280px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={barData} layout="vertical" margin={{ top: 5, right: 30, left: 50, bottom: 5 }}>
-                  <defs>
-                    {barData.map((entry, index) => (
-                      <linearGradient key={`gradient-${index}`} id={`barGradient-${index}`} x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor={entry.color} stopOpacity={0.8} />
-                        <stop offset="100%" stopColor={entry.color} stopOpacity={1} />
-                      </linearGradient>
-                    ))}
-                  </defs>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" horizontal={false} />
                   <XAxis 
                     type="number" 
@@ -232,7 +224,8 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                     type="category" 
                     dataKey="name" 
                     tick={{ fontSize: 12 }} 
-                    width={55}
+                    width={40}
+                    tickFormatter={(value) => value}
                   />
                   <Tooltip
                     contentStyle={{
@@ -242,7 +235,7 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                       fontSize: "12px",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                     }}
-                    formatter={(value: number, name: string) => [value.toLocaleString(), "Matches"]}
+                    formatter={(value: number) => [value.toLocaleString(), "Matches"]}
                     labelFormatter={(label) => {
                       const item = barData.find(d => d.name === label);
                       return item?.fullName || label;
@@ -250,7 +243,7 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                   />
                   <Bar dataKey="matches" radius={[0, 6, 6, 0]}>
                     {barData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={`url(#barGradient-${index})`} />
+                      <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -272,14 +265,6 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
             <div className="h-[280px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <defs>
-                    {pieData.map((entry, index) => (
-                      <linearGradient key={`pieGradient-${index}`} id={`pieGradient-${index}`} x1="0" y1="0" x2="1" y2="1">
-                        <stop offset="0%" stopColor={entry.color} stopOpacity={0.9} />
-                        <stop offset="100%" stopColor={entry.color} stopOpacity={1} />
-                      </linearGradient>
-                    ))}
-                  </defs>
                   <Pie
                     data={pieData}
                     cx="50%"
@@ -292,7 +277,7 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                     stroke="hsl(var(--background))"
                   >
                     {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={`url(#pieGradient-${index})`} />
+                      <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip
@@ -308,7 +293,7 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                   <Legend 
                     formatter={(value) => {
                       const item = pieData.find(d => d.name === value);
-                      return `${getFlag(value)} ${item?.fullName || value}`;
+                      return `${value} ${item?.fullName || ''}`;
                     }}
                     wrapperStyle={{ fontSize: "11px" }}
                   />
@@ -318,50 +303,6 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
           </CardContent>
         </Card>
       </div>
-
-      {/* Country Details Table */}
-      <Card className="border-0 shadow-md">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-cyan-500" />
-            Country Details
-          </CardTitle>
-          <CardDescription className="text-xs">Detailed breakdown by country</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {data.top_countries.slice(0, 10).map((country, i) => (
-              <div
-                key={country.country_code}
-                className="flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-muted/50 to-transparent hover:from-muted transition-all"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center text-xl shadow-sm">
-                    {getFlag(country.country_code)}
-                  </div>
-                  <div>
-                    <div className="font-medium text-sm">{country.country_name}</div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-2">
-                      <span className="flex items-center gap-1">
-                        <Users className="h-3 w-3" />
-                        {country.unique_users} users
-                      </span>
-                      <span className="text-muted-foreground/50">•</span>
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                        {getTypeLabel(country.top_threat)}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold text-lg">{country.total_matches.toLocaleString()}</div>
-                  <div className="text-xs text-muted-foreground">matches</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
