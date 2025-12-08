@@ -452,8 +452,8 @@ func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
 			effectiveLimit = *u.HwidDeviceLimit
 		}
 
-		// Check if user exceeds HWID limit
-		if len(devices) > effectiveLimit {
+		// Check if user is at or exceeds HWID limit (show both at limit and over limit)
+		if len(devices) >= effectiveLimit && effectiveLimit > 0 {
 			record := AbuseUser{
 				UUID:          u.UUID,
 				Username:      u.Username,

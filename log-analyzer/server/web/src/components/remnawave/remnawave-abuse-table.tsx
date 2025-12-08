@@ -107,8 +107,8 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
     return (
       <div className="text-center py-8 text-muted-foreground">
         <Smartphone className="h-12 w-12 mx-auto mb-4 opacity-50" />
-        <p className="text-lg font-medium">Подозрительных не найдено</p>
-        <p className="text-sm">Все пользователи в рамках лимитов устройств</p>
+        <p className="text-lg font-medium">Пользователей на пределе или с превышением нет</p>
+        <p className="text-sm">Все пользователи ниже лимитов устройств</p>
       </div>
     );
   }
@@ -131,7 +131,8 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
         <TableBody>
           {users.map((user) => {
             const isExpanded = expandedUsers.has(user.uuid);
-            const riskLevel = user.excessDevices >= 3 ? "high" : user.excessDevices === 2 ? "medium" : "low";
+            // at_limit = 5/5, low = +1, medium = +2, high = +3+
+            const riskLevel = user.excessDevices >= 3 ? "high" : user.excessDevices === 2 ? "medium" : user.excessDevices === 1 ? "low" : "at_limit";
             
             return (
               <Collapsible key={user.uuid} asChild open={isExpanded}>
@@ -175,7 +176,7 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className="text-destructive font-bold">
+                        <span className={user.excessDevices > 0 ? "text-destructive font-bold" : "text-orange-500 font-bold"}>
                           {user.deviceCount}
                         </span>
                         <span className="text-muted-foreground">
@@ -183,9 +184,15 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Badge variant="destructive">
-                          +{user.excessDevices}
-                        </Badge>
+                        {user.excessDevices > 0 ? (
+                          <Badge variant="destructive">
+                            +{user.excessDevices}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-orange-500 text-orange-500">
+                            На пределе
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1 flex-wrap">
@@ -198,10 +205,10 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                       </TableCell>
                       <TableCell>
                         <Badge
-                          variant={riskLevel === "high" ? "destructive" : riskLevel === "medium" ? "default" : "secondary"}
-                          className={riskLevel === "medium" ? "bg-orange-500" : ""}
+                          variant={riskLevel === "high" ? "destructive" : riskLevel === "medium" ? "default" : "outline"}
+                          className={riskLevel === "medium" ? "bg-orange-500" : riskLevel === "low" ? "border-yellow-500 text-yellow-500" : riskLevel === "at_limit" ? "border-blue-500 text-blue-500" : ""}
                         >
-                          {riskLevel === "high" ? "Высокий" : riskLevel === "medium" ? "Средний" : "Низкий"}
+                          {riskLevel === "high" ? "Высокий" : riskLevel === "medium" ? "Средний" : riskLevel === "low" ? "Низкий" : "На пределе"}
                         </Badge>
                       </TableCell>
                       <TableCell>

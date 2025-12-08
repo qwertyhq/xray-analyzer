@@ -391,7 +391,6 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 		GROUP BY h.user_email
 		HAVING unique_ips >= ?
 		ORDER BY unique_ips DESC, unique_nodes DESC, total_requests DESC
-		LIMIT 50
 	`, sinceStr, minIPs)
 	if err != nil {
 		return nil, err
