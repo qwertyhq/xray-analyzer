@@ -538,6 +538,31 @@ export interface RemnawaveHwidDevice {
   createdAt: string;
 }
 
+// Remnawave Online Stats (more accurate than log-based)
+export interface RemnawaveOnlineStats {
+  now: number;          // Last 5 min
+  recent: number;       // Last 15 min
+  lastHour: number;     // Last hour
+  last24h: number;      // Last 24 hours
+  neverOnline: number;  // Never been online
+  totalActive: number;  // Total active users
+  onlineUsers: RemnawaveOnlineUser[];
+  lastSync: string;
+  syncInterval: string;
+}
+
+export interface RemnawaveOnlineUser {
+  uuid: string;
+  username: string;
+  email?: string;
+  onlineAt: string;
+  minutesAgo: number;
+  lastConnectedNode?: string;
+  countryCode?: string;
+  status: string;
+  parsedRealName?: string;
+}
+
 export interface RemnawaveUser {
   uuid: string;
   username: string;

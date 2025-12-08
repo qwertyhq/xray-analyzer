@@ -128,6 +128,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/remnawave/user/", s.handleRemnawaveUser)
 	mux.HandleFunc("/api/remnawave/hwid/", s.handleRemnawaveHwid)
 	mux.HandleFunc("/api/remnawave/abuse", s.handleRemnawaveAbuse)
+	mux.HandleFunc("/api/remnawave/online", s.handleRemnawaveOnline)
 
 	// User-specific endpoints (must be registered before /api/users/)
 	mux.HandleFunc("/api/users/", s.handleUserRouter)

@@ -52,7 +52,7 @@ func Load() *Config {
 		RemnawaveEnabled:       getBoolEnv("REMNAWAVE_ENABLED", false),
 		RemnawaveURL:           getEnv("REMNAWAVE_URL", ""),
 		RemnawaveAPIToken:      getEnv("REMNAWAVE_API_TOKEN", ""),
-		RemnawaveSyncInterval:  getDurationEnv("REMNAWAVE_SYNC_INTERVAL", 5*time.Minute),
+		RemnawaveSyncInterval:  getDurationEnv("REMNAWAVE_SYNC_INTERVAL", 1*time.Minute), // More frequent for accurate online stats
 	}
 }
 

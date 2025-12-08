@@ -6,6 +6,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { RemnawaveUsersTable } from "@/components/remnawave/remnawave-users-table";
 import { RemnawaveAbuseTable } from "@/components/remnawave/remnawave-abuse-table";
 import { 
@@ -16,12 +24,16 @@ import {
   RefreshCw,
   Server,
   Shield,
-  TrendingUp
+  TrendingUp,
+  Wifi,
+  Clock,
+  Globe
 } from "lucide-react";
-import { RemnawaveStats, RemnawaveAbuseUser } from "@/lib/types";
+import { RemnawaveStats, RemnawaveAbuseUser, RemnawaveOnlineStats } from "@/lib/types";
 
 export default function RemnavewavePage() {
   const [stats, setStats] = useState<RemnawaveStats | null>(null);
+  const [onlineStats, setOnlineStats] = useState<RemnawaveOnlineStats | null>(null);
   const [abuseUsers, setAbuseUsers] = useState<RemnawaveAbuseUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,25 +53,22 @@ export default function RemnavewavePage() {
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const [statsRes, abuseRes] = await Promise.all([
+      const [statsRes, abuseRes, onlineRes] = await Promise.all([
         fetch("/api/remnawave/stats", { headers }),
-        fetch("/api/remnawave/abuse", { headers })
+        fetch("/api/remnawave/abuse", { headers }),
+        fetch("/api/remnawave/online", { headers })
       ]);
 
-      if (!statsRes.ok) {
-        throw new Error(`Stats fetch failed: ${statsRes.status}`);
-      }
-      if (!abuseRes.ok) {
-        throw new Error(`Abuse fetch failed: ${abuseRes.status}`);
-      }
-
-      const [statsData, abuseData] = await Promise.all([
-        statsRes.json(),
-        abuseRes.json()
+      // All endpoints now return JSON even when Remnawave is not configured
+      const [statsData, abuseData, onlineData] = await Promise.all([
+        statsRes.ok ? statsRes.json() : { enabled: false },
+        abuseRes.ok ? abuseRes.json() : { enabled: false, users: [] },
+        onlineRes.ok ? onlineRes.json() : { enabled: false, onlineUsers: [] }
       ]);
 
       setStats(statsData);
       setAbuseUsers(abuseData.users || []);
+      setOnlineStats(onlineData);
       setLastUpdate(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch data");
@@ -71,8 +80,8 @@ export default function RemnavewavePage() {
 
   useEffect(() => {
     fetchData();
-    // Auto-refresh every 5 minutes
-    const interval = setInterval(() => fetchData(true), 5 * 60 * 1000);
+    // Auto-refresh every 1 minute for more accurate online stats
+    const interval = setInterval(() => fetchData(true), 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -149,6 +158,11 @@ export default function RemnavewavePage() {
                 • Обновлено: {lastUpdate.toLocaleTimeString()}
               </span>
             )}
+            {onlineStats?.lastSync && (
+              <span className="ml-2 text-xs text-green-500">
+                • Синхронизация каждую минуту
+              </span>
+            )}
           </p>
         </div>
         <Button 
@@ -162,7 +176,25 @@ export default function RemnavewavePage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Online Now - Featured Card */}
+        <Card className="border-green-500/50 bg-green-500/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Wifi className="h-4 w-4 text-green-500" />
+              Онлайн сейчас
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-green-500">{onlineStats?.now ?? 0}</div>
+            <div className="flex gap-2 mt-2 text-xs text-muted-foreground">
+              <span>15 мин: {onlineStats?.recent ?? 0}</span>
+              <span>•</span>
+              <span>1ч: {onlineStats?.lastHour ?? 0}</span>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -175,9 +207,6 @@ export default function RemnavewavePage() {
             <div className="flex gap-2 mt-2">
               <Badge variant="default" className="bg-green-500 text-xs">
                 Active: {stats?.activeUsers ?? 0}
-              </Badge>
-              <Badge variant="secondary" className="text-xs">
-                Disabled: {stats?.disabledUsers ?? 0}
               </Badge>
             </div>
           </CardContent>
@@ -193,7 +222,7 @@ export default function RemnavewavePage() {
           <CardContent>
             <div className="text-2xl font-bold">{stats?.hwidStats?.totalDevices ?? 0}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Уникальных пользователей: {stats?.hwidStats?.uniqueUsers ?? 0}
+              Уникальных: {stats?.hwidStats?.uniqueUsers ?? 0}
             </p>
           </CardContent>
         </Card>
@@ -255,8 +284,17 @@ export default function RemnavewavePage() {
       </div>
 
       {/* Main Content */}
-      <Tabs defaultValue="abuse" className="space-y-4">
+      <Tabs defaultValue="online" className="space-y-4">
         <TabsList>
+          <TabsTrigger value="online" className="flex items-center gap-2">
+            <Wifi className="h-4 w-4" />
+            Онлайн
+            {onlineStats && onlineStats.now > 0 && (
+              <Badge variant="default" className="ml-1 bg-green-500">
+                {onlineStats.now}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="abuse" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
             Abuse Detection
@@ -275,6 +313,114 @@ export default function RemnavewavePage() {
             Аналитика
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="online" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Wifi className="h-5 w-5 text-green-500" />
+                Онлайн пользователи (Remnawave)
+              </CardTitle>
+              <CardDescription>
+                Точная статистика онлайн из Remnawave API. 
+                Данные обновляются каждую минуту и более точны, чем статистика на основе логов.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Online Stats Summary */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                <div className="text-center p-3 bg-green-500/10 rounded-lg">
+                  <div className="text-2xl font-bold text-green-500">{onlineStats?.now ?? 0}</div>
+                  <div className="text-xs text-muted-foreground">Сейчас (5 мин)</div>
+                </div>
+                <div className="text-center p-3 bg-muted/50 rounded-lg">
+                  <div className="text-2xl font-bold">{onlineStats?.recent ?? 0}</div>
+                  <div className="text-xs text-muted-foreground">За 15 минут</div>
+                </div>
+                <div className="text-center p-3 bg-muted/50 rounded-lg">
+                  <div className="text-2xl font-bold">{onlineStats?.lastHour ?? 0}</div>
+                  <div className="text-xs text-muted-foreground">За час</div>
+                </div>
+                <div className="text-center p-3 bg-muted/50 rounded-lg">
+                  <div className="text-2xl font-bold">{onlineStats?.last24h ?? 0}</div>
+                  <div className="text-xs text-muted-foreground">За 24 часа</div>
+                </div>
+                <div className="text-center p-3 bg-muted/50 rounded-lg">
+                  <div className="text-2xl font-bold text-muted-foreground">{onlineStats?.neverOnline ?? 0}</div>
+                  <div className="text-xs text-muted-foreground">Никогда</div>
+                </div>
+              </div>
+
+              {/* Online Users Table */}
+              {onlineStats?.onlineUsers && onlineStats.onlineUsers.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Пользователь</TableHead>
+                      <TableHead>Статус</TableHead>
+                      <TableHead>Последняя активность</TableHead>
+                      <TableHead>Нода</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {onlineStats.onlineUsers.map((user) => (
+                      <TableRow key={user.uuid}>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="font-medium flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                              {user.username}
+                            </div>
+                            {user.email && (
+                              <div className="text-xs text-muted-foreground">{user.email}</div>
+                            )}
+                            {user.parsedRealName && (
+                              <div className="text-xs text-muted-foreground">{user.parsedRealName}</div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={user.status === "ACTIVE" ? "default" : "secondary"}
+                                 className={user.status === "ACTIVE" ? "bg-green-500" : ""}>
+                            {user.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Clock className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-sm">
+                              {user.minutesAgo === 0 ? "Только что" : `${user.minutesAgo} мин назад`}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {user.lastConnectedNode ? (
+                            <div className="flex items-center gap-2">
+                              <Globe className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-sm">{user.lastConnectedNode}</span>
+                              {user.countryCode && (
+                                <Badge variant="outline" className="text-xs">
+                                  {user.countryCode}
+                                </Badge>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Wifi className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>Нет онлайн пользователей за последние 15 минут</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="abuse" className="space-y-4">
           <Card>

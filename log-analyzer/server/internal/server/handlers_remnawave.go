@@ -120,8 +120,11 @@ func (s *Server) handleRemnawaveStats(w http.ResponseWriter, r *http.Request) {
 
 // handleRemnawaveUsers returns all Remnawave users with enriched data
 func (s *Server) handleRemnawaveUsers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	if s.remnawave == nil {
-		http.Error(w, "Remnawave not configured", http.StatusServiceUnavailable)
+		// Return empty array when not configured
+		json.NewEncoder(w).Encode([]interface{}{})
 		return
 	}
 
@@ -215,8 +218,11 @@ func (s *Server) handleRemnawaveUsers(w http.ResponseWriter, r *http.Request) {
 
 // handleRemnawaveUser returns a single Remnawave user by UUID or username
 func (s *Server) handleRemnawaveUser(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	if s.remnawave == nil {
-		http.Error(w, "Remnawave not configured", http.StatusServiceUnavailable)
+		// Return null when not configured
+		json.NewEncoder(w).Encode(map[string]interface{}{"enabled": false, "user": nil})
 		return
 	}
 
@@ -322,8 +328,11 @@ func (s *Server) handleRemnawaveUser(w http.ResponseWriter, r *http.Request) {
 
 // handleRemnawaveHwid returns HWID devices for a user
 func (s *Server) handleRemnawaveHwid(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	if s.remnawave == nil {
-		http.Error(w, "Remnawave not configured", http.StatusServiceUnavailable)
+		// Return empty response when not configured
+		json.NewEncoder(w).Encode(map[string]interface{}{"enabled": false, "devices": []interface{}{}, "count": 0})
 		return
 	}
 
@@ -348,8 +357,15 @@ func (s *Server) handleRemnawaveHwid(w http.ResponseWriter, r *http.Request) {
 
 // handleRemnawaveAbuse detects subscription abuse based on HWID device limits
 func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	if s.remnawave == nil {
-		http.Error(w, "Remnawave not configured", http.StatusServiceUnavailable)
+		// Return empty response instead of error when not configured
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"enabled":      false,
+			"totalAbusers": 0,
+			"users":        []interface{}{},
+		})
 		return
 	}
 
@@ -447,4 +463,115 @@ func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
 		"totalAbusers": len(abuseUsers),
 		"users":        abuseUsers,
 	})
+}
+
+// handleRemnawaveOnline returns online users statistics from Remnawave
+// This data is more accurate than log-based stats as it comes directly from Remnawave
+func (s *Server) handleRemnawaveOnline(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if s.remnawave == nil {
+		// Return empty stats when not configured
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"enabled":      false,
+			"now":          0,
+			"recent":       0,
+			"lastHour":     0,
+			"last24h":      0,
+			"neverOnline":  0,
+			"totalActive":  0,
+			"onlineUsers":  []interface{}{},
+			"lastSync":     "",
+			"syncInterval": "",
+		})
+		return
+	}
+
+	users := s.remnawave.GetAllUsers()
+	now := time.Now()
+
+	// Time windows for different online categories
+	fiveMinAgo := now.Add(-5 * time.Minute)
+	fifteenMinAgo := now.Add(-15 * time.Minute)
+	oneHourAgo := now.Add(-1 * time.Hour)
+	oneDayAgo := now.Add(-24 * time.Hour)
+
+	type OnlineUser struct {
+		UUID              string  `json:"uuid"`
+		Username          string  `json:"username"`
+		Email             *string `json:"email,omitempty"`
+		OnlineAt          string  `json:"onlineAt"`
+		MinutesAgo        int     `json:"minutesAgo"`
+		LastConnectedNode *string `json:"lastConnectedNode,omitempty"`
+		CountryCode       *string `json:"countryCode,omitempty"`
+		Status            string  `json:"status"`
+		ParsedRealName    *string `json:"parsedRealName,omitempty"`
+	}
+
+	type OnlineStats struct {
+		Now          int          `json:"now"`         // Last 5 min
+		Recent       int          `json:"recent"`      // Last 15 min
+		LastHour     int          `json:"lastHour"`    // Last hour
+		Last24h      int          `json:"last24h"`     // Last 24 hours
+		NeverOnline  int          `json:"neverOnline"` // Never been online
+		TotalActive  int          `json:"totalActive"` // Total active users
+		OnlineUsers  []OnlineUser `json:"onlineUsers"` // Currently online (last 15 min)
+		LastSync     string       `json:"lastSync"`
+		SyncInterval string       `json:"syncInterval"` // How often data is refreshed
+	}
+
+	stats := OnlineStats{
+		OnlineUsers:  make([]OnlineUser, 0),
+		SyncInterval: "1m", // Default sync interval
+	}
+
+	lastSync := s.remnawave.GetLastSyncTime()
+	if !lastSync.IsZero() {
+		stats.LastSync = lastSync.Format("2006-01-02T15:04:05Z")
+	}
+
+	for _, u := range users {
+		if u.Status == "ACTIVE" {
+			stats.TotalActive++
+		}
+
+		if u.OnlineAt == nil {
+			stats.NeverOnline++
+			continue
+		}
+
+		if u.OnlineAt.After(fiveMinAgo) {
+			stats.Now++
+		}
+		if u.OnlineAt.After(fifteenMinAgo) {
+			stats.Recent++
+
+			// Add to online users list
+			ou := OnlineUser{
+				UUID:       u.UUID,
+				Username:   u.Username,
+				Email:      u.Email,
+				OnlineAt:   u.OnlineAt.Format("2006-01-02T15:04:05Z"),
+				MinutesAgo: int(now.Sub(*u.OnlineAt).Minutes()),
+				Status:     u.Status,
+			}
+			if u.LastConnectedNode != nil {
+				ou.LastConnectedNode = &u.LastConnectedNode.NodeName
+				ou.CountryCode = &u.LastConnectedNode.CountryCode
+			}
+			if u.ParsedNote != nil && u.ParsedNote.RealName != "" {
+				ou.ParsedRealName = &u.ParsedNote.RealName
+			}
+			stats.OnlineUsers = append(stats.OnlineUsers, ou)
+		}
+		if u.OnlineAt.After(oneHourAgo) {
+			stats.LastHour++
+		}
+		if u.OnlineAt.After(oneDayAgo) {
+			stats.Last24h++
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
 }
