@@ -5,13 +5,36 @@ import (
 	"fmt"
 )
 
-// GetUsers fetches all users from Remnawave
+// GetUsers fetches all users from Remnawave with pagination
 func (c *Client) GetUsers(ctx context.Context) (*UsersResponse, error) {
-	data, err := c.doRequest(ctx, "GET", "/api/users?start=0&size=1000", nil)
-	if err != nil {
-		return nil, err
+	const pageSize = 1000
+	var allUsers []User
+	start := 0
+
+	for {
+		endpoint := fmt.Sprintf("/api/users?start=%d&size=%d", start, pageSize)
+		data, err := c.doRequest(ctx, "GET", endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := parseResponse[*UsersResponse](data)
+		if err != nil {
+			return nil, err
+		}
+
+		allUsers = append(allUsers, resp.Users...)
+
+		// If we got less than pageSize, we've reached the end
+		if len(resp.Users) < pageSize {
+			return &UsersResponse{
+				Users: allUsers,
+				Total: resp.Total,
+			}, nil
+		}
+
+		start += pageSize
 	}
-	return parseResponse[*UsersResponse](data)
 }
 
 // GetUserByUUID fetches a specific user by UUID
