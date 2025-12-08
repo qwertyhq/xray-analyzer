@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -11,10 +13,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ThreatMatch } from "@/lib/types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ThreatMatch, ThreatType } from "@/lib/types";
 import { format } from "date-fns";
 import Link from "next/link";
 import { threatTypeConfig, sourceLabels } from "./config";
+import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface MatchesTableProps {
   matches: ThreatMatch[];
@@ -24,42 +34,109 @@ interface MatchesTableProps {
 
 export function MatchesTable({ matches, title, description }: MatchesTableProps) {
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
   const pageSize = 20;
-  const totalPages = Math.ceil(matches.length / pageSize);
-  const paginatedMatches = matches.slice((page - 1) * pageSize, page * pageSize);
+
+  // Get unique threat types from matches
+  const threatTypes = useMemo(() => {
+    const types = new Set<ThreatType>();
+    matches.forEach(m => types.add(m.threat_type));
+    return Array.from(types).sort();
+  }, [matches]);
+
+  // Filter matches
+  const filteredMatches = useMemo(() => {
+    let result = [...matches];
+    
+    // Search filter
+    if (search.trim()) {
+      const searchLower = search.toLowerCase();
+      result = result.filter(m => 
+        m.user_email.toLowerCase().includes(searchLower) ||
+        m.destination.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Type filter
+    if (typeFilter !== "all") {
+      result = result.filter(m => m.threat_type === typeFilter);
+    }
+    
+    // Confidence filter
+    if (confidenceFilter !== "all") {
+      const minConf = parseInt(confidenceFilter);
+      result = result.filter(m => m.confidence >= minConf);
+    }
+    
+    return result;
+  }, [matches, search, typeFilter, confidenceFilter]);
+
+  const totalPages = Math.ceil(filteredMatches.length / pageSize);
+  const paginatedMatches = filteredMatches.slice((page - 1) * pageSize, page * pageSize);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [search, typeFilter, confidenceFilter]);
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
-            <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
-          </div>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-2 sm:px-3 py-1 text-xs sm:text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Назад
-              </button>
-              <span className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
-                {page} / {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="px-2 sm:px-3 py-1 text-xs sm:text-sm border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Далее
-              </button>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
             </div>
-          )}
+            <div className="text-sm text-muted-foreground">
+              {filteredMatches.length} из {matches.length}
+            </div>
+          </div>
+          
+          {/* Filters */}
+          <div className="flex flex-wrap gap-2">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Поиск по email или destination..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8 h-9"
+              />
+            </div>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="w-[130px] h-9">
+                <SelectValue placeholder="Тип" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все типы</SelectItem>
+                {threatTypes.map(type => {
+                  const config = threatTypeConfig[type];
+                  return (
+                    <SelectItem key={type} value={type}>
+                      {config?.label || type}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            <Select value={confidenceFilter} onValueChange={setConfidenceFilter}>
+              <SelectTrigger className="w-[130px] h-9">
+                <SelectValue placeholder="Confidence" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все</SelectItem>
+                <SelectItem value="90">≥ 90%</SelectItem>
+                <SelectItem value="80">≥ 80%</SelectItem>
+                <SelectItem value="50">≥ 50%</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="max-h-[500px] overflow-y-auto overflow-x-auto">
+      <CardContent className="max-h-[500px] overflow-y-auto overflow-x-auto scrollbar-thin">
         <Table>
           <TableHeader>
             <TableRow>
@@ -108,16 +185,45 @@ export function MatchesTable({ matches, title, description }: MatchesTableProps)
                 </TableRow>
               );
             })}
-            {matches.length === 0 && (
+            {filteredMatches.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  No matches detected
+                  Совпадений не найдено
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </CardContent>
+      
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between p-4 pt-2 border-t">
+          <p className="text-sm text-muted-foreground">
+            Страница {page} из {totalPages}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Назад
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+            >
+              Далее
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

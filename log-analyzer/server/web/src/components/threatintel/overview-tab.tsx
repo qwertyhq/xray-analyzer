@@ -94,7 +94,7 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
           </CardTitle>
           <CardDescription>Status of threat intelligence data sources</CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="max-h-[350px] overflow-y-auto overflow-x-auto scrollbar-thin">
           <Table>
             <TableHeader>
               <TableRow>

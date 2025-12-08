@@ -78,6 +78,8 @@ export function RemnawaveUsersTable() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [abuseFilter, setAbuseFilter] = useState<string>("all");
+  const [minDevices, setMinDevices] = useState<number>(0);
+  const [sortBy, setSortBy] = useState<"username" | "devices" | "traffic" | "online">("username");
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
@@ -108,32 +110,53 @@ export function RemnawaveUsersTable() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  // Filter users
-  const filteredUsers = users.filter((u) => {
-    // Search filter
-    if (search) {
-      const searchLower = search.toLowerCase();
-      const matches =
-        u.username.toLowerCase().includes(searchLower) ||
-        u.email?.toLowerCase().includes(searchLower) ||
-        u.parsed_real_name?.toLowerCase().includes(searchLower) ||
-        u.parsed_phone?.includes(search) ||
-        u.parsed_telegram_user?.toLowerCase().includes(searchLower);
-      if (!matches) return false;
-    }
+  // Filter and sort users
+  const filteredUsers = users
+    .filter((u) => {
+      // Search filter
+      if (search) {
+        const searchLower = search.toLowerCase();
+        const matches =
+          u.username.toLowerCase().includes(searchLower) ||
+          u.email?.toLowerCase().includes(searchLower) ||
+          u.parsed_real_name?.toLowerCase().includes(searchLower) ||
+          u.parsed_phone?.includes(search) ||
+          u.parsed_telegram_user?.toLowerCase().includes(searchLower);
+        if (!matches) return false;
+      }
 
-    // Status filter
-    if (statusFilter !== "all" && u.status !== statusFilter) {
-      return false;
-    }
+      // Status filter
+      if (statusFilter !== "all" && u.status !== statusFilter) {
+        return false;
+      }
 
-    // Abuse filter
-    if (abuseFilter === "exceeds" && !u.hwid_exceeds_limit) {
-      return false;
-    }
+      // Abuse filter
+      if (abuseFilter === "exceeds" && !u.hwid_exceeds_limit) {
+        return false;
+      }
 
-    return true;
-  });
+      // Min devices filter
+      if (minDevices > 0 && (u.hwid_device_count || 0) < minDevices) {
+        return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case "devices":
+          return (b.hwid_device_count || 0) - (a.hwid_device_count || 0);
+        case "traffic":
+          return (b.used_traffic_bytes || 0) - (a.used_traffic_bytes || 0);
+        case "online":
+          const aTime = a.online_at ? new Date(a.online_at).getTime() : 0;
+          const bTime = b.online_at ? new Date(b.online_at).getTime() : 0;
+          return bTime - aTime;
+        case "username":
+        default:
+          return a.username.localeCompare(b.username);
+      }
+    });
 
   // Pagination
   const totalPages = Math.ceil(filteredUsers.length / pageSize);
@@ -145,7 +168,7 @@ export function RemnawaveUsersTable() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, abuseFilter]);
+  }, [search, statusFilter, abuseFilter, minDevices, sortBy]);
 
   if (loading) {
     return (
@@ -258,12 +281,12 @@ export function RemnawaveUsersTable() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-4">
+      <div className="flex flex-wrap gap-3">
         <div className="flex-1 min-w-[200px]">
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by username, email, name, phone, telegram..."
+              placeholder="Поиск по имени, email, телефону, telegram..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-8"
@@ -271,11 +294,11 @@ export function RemnawaveUsersTable() {
           </div>
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Status" />
+          <SelectTrigger className="w-[130px]">
+            <SelectValue placeholder="Статус" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="all">Все статусы</SelectItem>
             <SelectItem value="ACTIVE">Active</SelectItem>
             <SelectItem value="DISABLED">Disabled</SelectItem>
             <SelectItem value="LIMITED">Limited</SelectItem>
@@ -283,23 +306,46 @@ export function RemnawaveUsersTable() {
           </SelectContent>
         </Select>
         <Select value={abuseFilter} onValueChange={setAbuseFilter}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="HWID Filter" />
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="HWID" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Users</SelectItem>
-            <SelectItem value="exceeds">Exceeds HWID Limit</SelectItem>
+            <SelectItem value="all">Все</SelectItem>
+            <SelectItem value="exceeds">Превышен лимит</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={String(minDevices)} onValueChange={(v) => setMinDevices(Number(v))}>
+          <SelectTrigger className="w-[130px]">
+            <SelectValue placeholder="Устройства" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="0">Все устр.</SelectItem>
+            <SelectItem value="2">≥ 2 устр.</SelectItem>
+            <SelectItem value="3">≥ 3 устр.</SelectItem>
+            <SelectItem value="5">≥ 5 устр.</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Сортировка" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="username">По имени</SelectItem>
+            <SelectItem value="devices">По устройствам</SelectItem>
+            <SelectItem value="traffic">По трафику</SelectItem>
+            <SelectItem value="online">По онлайну</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {/* Results count */}
       <p className="text-sm text-muted-foreground">
-        Showing {paginatedUsers.length} of {filteredUsers.length} users
+        Показано {paginatedUsers.length} из {filteredUsers.length} пользователей
       </p>
 
       {/* Users Table */}
       <Card>
+        <div className="max-h-[600px] overflow-y-auto scrollbar-thin">
         <Table>
           <TableHeader>
             <TableRow>
@@ -429,19 +475,20 @@ export function RemnawaveUsersTable() {
             {paginatedUsers.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  No users found
+                  Пользователи не найдены
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </div>
       </Card>
 
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
+            Страница {page} из {totalPages}
           </p>
           <div className="flex gap-2">
             <Button
@@ -451,7 +498,7 @@ export function RemnawaveUsersTable() {
               disabled={page === 1}
             >
               <ChevronLeft className="h-4 w-4" />
-              Previous
+              Назад
             </Button>
             <Button
               variant="outline"
@@ -459,7 +506,7 @@ export function RemnawaveUsersTable() {
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
-              Next
+              Далее
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

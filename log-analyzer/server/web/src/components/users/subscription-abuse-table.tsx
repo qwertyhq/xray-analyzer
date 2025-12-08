@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import {
   Table,
@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -42,7 +43,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Users, Globe, ExternalLink, ChevronDown, AlertTriangle, RefreshCw, Server, Smartphone, Monitor, Trash2, Loader2 } from "lucide-react";
+import { PaginationControls, usePagination } from "@/components/ui/data-table";
+import { Users, Globe, ExternalLink, ChevronDown, AlertTriangle, RefreshCw, Server, Smartphone, Monitor, Trash2, Loader2, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { SubscriptionAbuse, TimeRange } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
@@ -78,7 +80,12 @@ export function SubscriptionAbuseTable({
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<TimeRange>(defaultPeriod);
   const [minIPs, setMinIPs] = useState(defaultMinIPs);
+  const [minHWIDs, setMinHWIDs] = useState(0);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"score" | "ips" | "hwids" | "requests">("score");
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
 
   const fetchData = useCallback(async () => {
     try {
@@ -143,6 +150,51 @@ export function SubscriptionAbuseTable({
     fetchData();
   }, [fetchData]);
 
+  // Filter and sort abusers
+  const filteredAbusers = useMemo(() => {
+    let result = [...abusers];
+    
+    // Search filter
+    if (search.trim()) {
+      const searchLower = search.toLowerCase();
+      result = result.filter(a => 
+        a.user_email.toLowerCase().includes(searchLower) ||
+        a.username?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Min HWIDs filter
+    if (minHWIDs > 0) {
+      result = result.filter(a => (a.unique_hwids || 0) >= minHWIDs);
+    }
+    
+    // Sort
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case "ips":
+          return b.unique_ips - a.unique_ips;
+        case "hwids":
+          return (b.unique_hwids || 0) - (a.unique_hwids || 0);
+        case "requests":
+          return b.total_requests - a.total_requests;
+        case "score":
+        default:
+          return (b.abuse_score || 0) - (a.abuse_score || 0);
+      }
+    });
+    
+    return result;
+  }, [abusers, search, minHWIDs, sortBy]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredAbusers.length / pageSize);
+  const paginatedAbusers = filteredAbusers.slice((page - 1) * pageSize, page * pageSize);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [search, minHWIDs, sortBy, period, minIPs]);
+
   const toggleExpanded = (email: string) => {
     setExpandedUsers(prev => {
       const next = new Set(prev);
@@ -180,65 +232,101 @@ export function SubscriptionAbuseTable({
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-2 justify-between">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Users className="h-4 w-4" />
-          <span>{abusers.length} suspicious users found</span>
+      {/* Search and Filters */}
+      <div className="flex flex-col gap-3">
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Поиск по email или username..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
+          />
         </div>
-        <div className="flex gap-2">
-          <Select value={period} onValueChange={(v) => setPeriod(v as TimeRange)}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1h">Last hour</SelectItem>
-              <SelectItem value="6h">Last 6h</SelectItem>
-              <SelectItem value="24h">Last 24h</SelectItem>
-              <SelectItem value="7d">Last 7 days</SelectItem>
-              <SelectItem value="30d">Last 30 days</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={String(minIPs)} onValueChange={(v) => setMinIPs(Number(v))}>
-            <SelectTrigger className="w-[100px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="2">≥ 2 IPs</SelectItem>
-              <SelectItem value="3">≥ 3 IPs</SelectItem>
-              <SelectItem value="5">≥ 5 IPs</SelectItem>
-              <SelectItem value="10">≥ 10 IPs</SelectItem>
-            </SelectContent>
-          </Select>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleForceSync}
-                  disabled={syncing}
-                >
-                  <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Sync HWID data from Remnawave</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+        
+        {/* Filters Row */}
+        <div className="flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Users className="h-4 w-4" />
+            <span>{filteredAbusers.length} из {abusers.length} пользователей</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Select value={period} onValueChange={(v) => setPeriod(v as TimeRange)}>
+              <SelectTrigger className="w-[110px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1h">1 час</SelectItem>
+                <SelectItem value="6h">6 часов</SelectItem>
+                <SelectItem value="24h">24 часа</SelectItem>
+                <SelectItem value="7d">7 дней</SelectItem>
+                <SelectItem value="30d">30 дней</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={String(minIPs)} onValueChange={(v) => setMinIPs(Number(v))}>
+              <SelectTrigger className="w-[95px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2">≥ 2 IP</SelectItem>
+                <SelectItem value="3">≥ 3 IP</SelectItem>
+                <SelectItem value="5">≥ 5 IP</SelectItem>
+                <SelectItem value="10">≥ 10 IP</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={String(minHWIDs)} onValueChange={(v) => setMinHWIDs(Number(v))}>
+              <SelectTrigger className="w-[110px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">Все HWID</SelectItem>
+                <SelectItem value="2">≥ 2 HWID</SelectItem>
+                <SelectItem value="3">≥ 3 HWID</SelectItem>
+                <SelectItem value="5">≥ 5 HWID</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+              <SelectTrigger className="w-[130px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="score">По риску</SelectItem>
+                <SelectItem value="ips">По кол-ву IP</SelectItem>
+                <SelectItem value="hwids">По кол-ву HWID</SelectItem>
+                <SelectItem value="requests">По запросам</SelectItem>
+              </SelectContent>
+            </Select>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleForceSync}
+                    disabled={syncing}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Синхронизировать HWID из Remnawave</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </div>
       </div>
 
-      {abusers.length === 0 ? (
+      {filteredAbusers.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
           <Users className="h-12 w-12 opacity-20 mb-3" />
-          <p className="text-lg font-medium">No suspicious activity detected</p>
-          <p className="text-sm">No users with {minIPs}+ unique IPs in the selected period</p>
+          <p className="text-lg font-medium">Подозрительная активность не обнаружена</p>
+          <p className="text-sm">Нет пользователей с {minIPs}+ IP{minHWIDs > 0 ? ` и ${minHWIDs}+ HWID` : ""}</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {abusers.map((abuser) => (
+        <div className="space-y-2 max-h-[600px] overflow-y-auto scrollbar-thin pr-1">
+          {paginatedAbusers.map((abuser) => (
             <Collapsible
               key={abuser.user_email}
               open={expandedUsers.has(abuser.user_email)}
@@ -475,6 +563,35 @@ export function SubscriptionAbuseTable({
               </div>
             </Collapsible>
           ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-2">
+          <p className="text-sm text-muted-foreground">
+            Страница {page} из {totalPages}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Назад
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+            >
+              Далее
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
     </div>
