@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -29,6 +30,41 @@ type HwidStatsResponse struct {
 	TotalDevices      int            `json:"totalDevices"`
 	UniqueUsers       int            `json:"uniqueUsers"`
 	PlatformBreakdown map[string]int `json:"platformBreakdown"`
+}
+
+// handleRemnawaveSync triggers a force synchronization
+func (s *Server) handleRemnawaveSync(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.remnawave == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Remnawave not configured",
+		})
+		return
+	}
+
+	// Trigger force sync
+	if err := s.remnawave.ForceSync(r.Context()); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	stats := s.remnawave.GetStats()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":     true,
+		"total_users": stats.TotalUsers,
+		"total_hwids": stats.TotalHwidDevices,
+		"last_sync":   stats.LastSync.Format("2006-01-02T15:04:05Z"),
+	})
 }
 
 // handleRemnawaveStats returns Remnawave sync statistics
@@ -596,11 +632,15 @@ func (s *Server) handleRemnawavelClearHwid(w http.ResponseWriter, r *http.Reques
 		UserUUID string `json:"userUuid"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[hwid-clear] ERROR parsing request body: %v", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	log.Printf("[hwid-clear] Request to clear HWID for userUuid: %s", req.UserUUID)
+
 	if req.UserUUID == "" {
+		log.Printf("[hwid-clear] ERROR: userUuid is empty")
 		http.Error(w, "userUuid is required", http.StatusBadRequest)
 		return
 	}
@@ -610,10 +650,12 @@ func (s *Server) handleRemnawavelClearHwid(w http.ResponseWriter, r *http.Reques
 	defer cancel()
 
 	if err := s.remnawave.ClearUserHwidDevices(ctx, req.UserUUID); err != nil {
+		log.Printf("[hwid-clear] ERROR clearing HWID for %s: %v", req.UserUUID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	log.Printf("[hwid-clear] Successfully cleared HWID for user %s", req.UserUUID)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":  true,
 		"userUuid": req.UserUUID,

@@ -137,6 +137,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/remnawave/hwid-clear", s.handleRemnawavelClearHwid)
 	mux.HandleFunc("/api/remnawave/abuse", s.handleRemnawaveAbuse)
 	mux.HandleFunc("/api/remnawave/online", s.handleRemnawaveOnline)
+	mux.HandleFunc("/api/remnawave/sync", s.handleRemnawaveSync)
 
 	// Correlation API endpoints
 	mux.HandleFunc("/api/correlation/stats", s.handleCorrelationStats)

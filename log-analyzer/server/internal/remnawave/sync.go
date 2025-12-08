@@ -2,6 +2,7 @@ package remnawave
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -39,6 +40,15 @@ func NewSyncService(client *Client, syncInterval time.Duration) *SyncService {
 // OnSyncComplete sets a callback to be called when sync completes
 func (s *SyncService) OnSyncComplete(fn func()) {
 	s.onSyncComplete = fn
+}
+
+// ForceSync triggers an immediate synchronization
+func (s *SyncService) ForceSync(ctx context.Context) error {
+	if !s.client.IsConfigured() {
+		return fmt.Errorf("client not configured")
+	}
+	s.sync(ctx)
+	return nil
 }
 
 // Start begins the periodic synchronization
@@ -201,11 +211,16 @@ func (s *SyncService) GetUserHwidDevices(userUUID string) []HwidDevice {
 
 // ClearUserHwidDevices deletes all HWID devices for a user via API and updates cache
 func (s *SyncService) ClearUserHwidDevices(ctx context.Context, userUUID string) error {
+	log.Printf("[remnawave] ClearUserHwidDevices called for user %s", userUUID)
+
 	// Call API to delete all HWID devices
-	_, err := s.client.DeleteAllUserHwidDevices(ctx, userUUID)
+	resp, err := s.client.DeleteAllUserHwidDevices(ctx, userUUID)
 	if err != nil {
+		log.Printf("[remnawave] ERROR clearing HWID devices for user %s: %v", userUUID, err)
 		return err
 	}
+
+	log.Printf("[remnawave] API response: total=%d devices remaining", resp.Total)
 
 	// Update local cache
 	s.mu.Lock()

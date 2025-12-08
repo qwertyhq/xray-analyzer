@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 )
 
 // GetAllHwidDevices fetches all HWID devices with pagination
@@ -42,9 +43,16 @@ func (c *Client) DeleteAllUserHwidDevices(ctx context.Context, userUUID string) 
 	if err != nil {
 		return nil, fmt.Errorf("marshal payload: %w", err)
 	}
+
+	log.Printf("[remnawave-client] DELETE ALL HWID - sending payload: %s", string(body))
+
 	data, err := c.doRequest(ctx, "POST", "/api/hwid/devices/delete-all", bytes.NewReader(body))
 	if err != nil {
+		log.Printf("[remnawave-client] DELETE ALL HWID - error: %v", err)
 		return nil, err
 	}
+
+	log.Printf("[remnawave-client] DELETE ALL HWID - response: %s", string(data))
+
 	return parseResponse[*HwidDevicesResponse](data)
 }

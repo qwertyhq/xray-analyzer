@@ -62,6 +62,7 @@ export function SubscriptionAbuseTable({
 }: SubscriptionAbuseTableProps) {
   const [abusers, setAbusers] = useState<SubscriptionAbuse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<TimeRange>(defaultPeriod);
   const [minIPs, setMinIPs] = useState(defaultMinIPs);
@@ -85,6 +86,21 @@ export function SubscriptionAbuseTable({
       setLoading(false);
     }
   }, [period, minIPs]);
+
+  // Force sync HWID data from Remnawave
+  const handleForceSync = useCallback(async () => {
+    try {
+      setSyncing(true);
+      const res = await fetch("/api/remnawave/sync", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to sync");
+      // Refetch data after sync
+      await fetchData();
+    } catch (err) {
+      console.error("Sync failed:", err);
+    } finally {
+      setSyncing(false);
+    }
+  }, [fetchData]);
 
   useEffect(() => {
     fetchData();
@@ -157,6 +173,23 @@ export function SubscriptionAbuseTable({
               <SelectItem value="10">≥ 10 IPs</SelectItem>
             </SelectContent>
           </Select>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleForceSync}
+                  disabled={syncing}
+                >
+                  <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Sync HWID data from Remnawave</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
