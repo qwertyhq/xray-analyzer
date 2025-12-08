@@ -49,6 +49,7 @@ export function ActivityChart({
           fullDate: format(date, "MMM d, HH:mm"),
           requests: d.total_requests || 0,
           blacklist: d.blacklist_hits || 0,
+          online: d.unique_users || 0,
         };
       });
   }, [data, timeRange]);
@@ -99,6 +100,10 @@ export function ActivityChart({
                   <stop offset="5%" stopColor="hsl(var(--destructive))" stopOpacity={0.8}/>
                   <stop offset="95%" stopColor="hsl(var(--destructive))" stopOpacity={0.1}/>
                 </linearGradient>
+                <linearGradient id="colorOnline" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.1}/>
+                </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
               <XAxis 
@@ -110,11 +115,21 @@ export function ActivityChart({
                 interval={tickInterval}
               />
               <YAxis 
+                yAxisId="left"
                 tick={{ fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
                 className="text-muted-foreground"
                 tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}
+              />
+              <YAxis 
+                yAxisId="right"
+                orientation="right"
+                tick={{ fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
+                className="text-muted-foreground"
+                domain={[0, 'auto']}
               />
               <Tooltip 
                 contentStyle={{ 
@@ -132,15 +147,24 @@ export function ActivityChart({
                   const item = chartData.find(d => d.hour === label);
                   return item?.fullDate || label;
                 }}
-                formatter={(value: number, name: string) => [
-                  value.toLocaleString(),
-                  name === "requests" ? "Requests" : "Blacklist"
-                ]}
+                formatter={(value: number, name: string) => {
+                  const labels: Record<string, string> = {
+                    requests: "Requests",
+                    blacklist: "Blacklist",
+                    online: "Online Users"
+                  };
+                  return [value.toLocaleString(), labels[name] || name];
+                }}
               />
               <Legend 
                 verticalAlign="top"
                 height={36}
-                formatter={(value) => value === "requests" ? "Requests" : "Blacklist Hits"}
+                formatter={(value) => {
+                  if (value === "requests") return "Requests";
+                  if (value === "blacklist") return "Blacklist";
+                  if (value === "online") return "Online Users";
+                  return value;
+                }}
               />
               <Area
                 type="monotone"
@@ -149,6 +173,7 @@ export function ActivityChart({
                 fillOpacity={1}
                 fill="url(#colorRequests)"
                 strokeWidth={2}
+                yAxisId="left"
               />
               <Area
                 type="monotone"
@@ -157,6 +182,16 @@ export function ActivityChart({
                 fillOpacity={1}
                 fill="url(#colorBlacklist)"
                 strokeWidth={2}
+                yAxisId="left"
+              />
+              <Area
+                type="monotone"
+                dataKey="online"
+                stroke="hsl(142, 76%, 36%)"
+                fillOpacity={1}
+                fill="url(#colorOnline)"
+                strokeWidth={2}
+                yAxisId="right"
               />
             </AreaChart>
           </ResponsiveContainer>

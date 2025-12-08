@@ -7,7 +7,7 @@ import (
 
 // GetUsers fetches all users from Remnawave
 func (c *Client) GetUsers(ctx context.Context) (*UsersResponse, error) {
-	data, err := c.doRequest(ctx, "GET", "/api/users", nil)
+	data, err := c.doRequest(ctx, "GET", "/api/users?start=0&size=100000", nil)
 	if err != nil {
 		return nil, err
 	}
