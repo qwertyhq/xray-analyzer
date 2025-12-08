@@ -118,12 +118,16 @@ export function ActivityChart({
               />
               <Tooltip 
                 contentStyle={{ 
-                  backgroundColor: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
+                  backgroundColor: "rgb(24, 24, 27)",
+                  border: "1px solid rgb(63, 63, 70)",
                   borderRadius: "8px",
                   fontSize: "12px",
+                  color: "rgb(250, 250, 250)",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
                 }}
-                labelStyle={{ color: "hsl(var(--foreground))" }}
+                labelStyle={{ color: "rgb(250, 250, 250)", fontWeight: "bold" }}
+                itemStyle={{ color: "rgb(212, 212, 216)" }}
+                cursor={{ stroke: "rgba(63, 63, 70, 0.5)", strokeWidth: 1 }}
                 labelFormatter={(label) => {
                   const item = chartData.find(d => d.hour === label);
                   return item?.fullDate || label;

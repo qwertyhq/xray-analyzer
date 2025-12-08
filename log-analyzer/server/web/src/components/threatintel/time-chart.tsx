@@ -284,6 +284,7 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
                   />
                   <Tooltip
                     {...tooltipStyle}
+                    cursor={{ stroke: "rgba(63, 63, 70, 0.5)", strokeWidth: 1 }}
                     formatter={(value: number, name: string) => [
                       value.toLocaleString(),
                       getTypeLabel(name)
@@ -343,6 +344,7 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
                   />
                   <Tooltip
                     {...tooltipStyle}
+                    cursor={{ fill: "rgba(63, 63, 70, 0.3)" }}
                     formatter={(value: number, name: string) => [
                       value.toLocaleString(),
                       getTypeLabel(name)

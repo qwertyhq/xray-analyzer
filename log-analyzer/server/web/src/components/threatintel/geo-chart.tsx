@@ -243,6 +243,7 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                     contentStyle={tooltipStyle.contentStyle}
                     labelStyle={tooltipStyle.labelStyle}
                     itemStyle={tooltipStyle.itemStyle}
+                    cursor={{ fill: "rgba(63, 63, 70, 0.3)" }}
                     formatter={(value: number) => [value.toLocaleString(), "Matches"]}
                     labelFormatter={(label) => {
                       const item = barData.find(d => d.name === label);
@@ -287,6 +288,7 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                     contentStyle={tooltipStyle.contentStyle}
                     labelStyle={tooltipStyle.labelStyle}
                     itemStyle={tooltipStyle.itemStyle}
+                    cursor={{ fill: "rgba(63, 63, 70, 0.3)" }}
                     formatter={(value: number) => [value.toLocaleString(), "Matches"]}
                     labelFormatter={(label) => {
                       const item = pieData.find(d => d.name === label);
