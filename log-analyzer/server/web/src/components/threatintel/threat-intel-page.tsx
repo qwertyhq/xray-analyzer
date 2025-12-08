@@ -1,162 +1,35 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldAlert, RefreshCw, Download, Globe } from "lucide-react";
-import { FeedStatus, TimeStats, GeoSummary, AnomalySummary, UserRiskSummary, DNSAnalysisSummary, ReportSummary, ReportConfig } from "@/lib/types";
 import { useWsThreatIntel } from "@/contexts/websocket-context";
+import { useThreatIntelData } from "@/hooks/use-threat-intel-data";
 import { OverviewTab } from "./overview-tab";
 import { TorrentTab } from "./torrent-tab";
 import { TorTab } from "./tor-tab";
 
 export function ThreatIntelPage() {
   const { threatIntel, loading: wsLoading, connected } = useWsThreatIntel();
+  const {
+    feeds,
+    timeStats,
+    geoStats,
+    anomalies,
+    riskProfiles,
+    dnsAnalysis,
+    reports,
+    loading: apiLoading,
+    refreshRiskProfiles,
+    refreshDnsAnalysis,
+    refreshReports,
+    generateReport,
+    deleteReport,
+  } = useThreatIntelData();
   
-  const [feeds, setFeeds] = useState<FeedStatus[]>([]);
-  const [timeStats, setTimeStats] = useState<TimeStats | null>(null);
-  const [geoStats, setGeoStats] = useState<GeoSummary | null>(null);
-  const [anomalies, setAnomalies] = useState<AnomalySummary | null>(null);
-  const [riskProfiles, setRiskProfiles] = useState<UserRiskSummary | null>(null);
-  const [dnsAnalysis, setDnsAnalysis] = useState<DNSAnalysisSummary | null>(null);
-  const [reports, setReports] = useState<ReportSummary | null>(null);
-  const [apiLoading, setApiLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
-
-  // Fetch feeds status (not in WebSocket)
-  const fetchFeeds = async () => {
-    try {
-      const feedsRes = await fetch("/api/threatintel/feeds");
-      if (feedsRes.ok) setFeeds((await feedsRes.json()) || []);
-    } catch {
-      // ignore
-    } finally {
-      setApiLoading(false);
-    }
-  };
-
-  // Fetch time-based statistics
-  const fetchTimeStats = async () => {
-    try {
-      const res = await fetch("/api/threatintel/time-stats");
-      if (res.ok) setTimeStats(await res.json());
-    } catch {
-      // ignore
-    }
-  };
-
-  // Fetch geo statistics
-  const fetchGeoStats = async () => {
-    try {
-      const res = await fetch("/api/threatintel/geo-stats?summary=true");
-      if (res.ok) setGeoStats(await res.json());
-    } catch {
-      // ignore
-    }
-  };
-
-  // Fetch anomalies
-  const fetchAnomalies = useCallback(async () => {
-    try {
-      const res = await fetch("/api/threatintel/anomalies?summary=true");
-      if (res.ok) setAnomalies(await res.json());
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Fetch risk profiles
-  const fetchRiskProfiles = useCallback(async () => {
-    try {
-      const res = await fetch("/api/threatintel/risk-profiles");
-      if (res.ok) setRiskProfiles(await res.json());
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Fetch DNS analysis
-  const fetchDnsAnalysis = useCallback(async () => {
-    try {
-      const res = await fetch("/api/threatintel/dns-analysis");
-      if (res.ok) setDnsAnalysis(await res.json());
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Fetch reports
-  const fetchReports = useCallback(async () => {
-    try {
-      const res = await fetch("/api/threatintel/reports");
-      if (res.ok) setReports(await res.json());
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Generate report
-  const generateReport = useCallback(async (config: ReportConfig) => {
-    try {
-      const res = await fetch("/api/threatintel/reports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
-      });
-      if (res.ok) {
-        await fetchReports();
-      }
-    } catch {
-      // ignore
-    }
-  }, [fetchReports]);
-
-  // Delete report
-  const deleteReport = useCallback(async (id: string) => {
-    try {
-      await fetch(`/api/threatintel/reports?id=${id}`, { method: "DELETE" });
-      await fetchReports();
-    } catch {
-      // ignore
-    }
-  }, [fetchReports]);
-
-  // Run anomaly detection
-  const runAnomalyDetection = useCallback(async () => {
-    try {
-      await fetch("/api/threatintel/anomalies", { method: "POST" });
-      await fetchAnomalies();
-    } catch {
-      // ignore
-    }
-  }, [fetchAnomalies]);
-
-  useEffect(() => {
-    fetchFeeds();
-    fetchTimeStats();
-    fetchGeoStats();
-    fetchAnomalies();
-    fetchRiskProfiles();
-    fetchDnsAnalysis();
-    fetchReports();
-    const feedsInterval = setInterval(fetchFeeds, 60000);
-    const timeInterval = setInterval(fetchTimeStats, 30000);
-    const geoInterval = setInterval(fetchGeoStats, 60000);
-    const anomalyInterval = setInterval(fetchAnomalies, 60000);
-    const riskInterval = setInterval(fetchRiskProfiles, 120000);
-    const dnsInterval = setInterval(fetchDnsAnalysis, 60000);
-    const reportsInterval = setInterval(fetchReports, 60000);
-    return () => {
-      clearInterval(feedsInterval);
-      clearInterval(timeInterval);
-      clearInterval(geoInterval);
-      clearInterval(anomalyInterval);
-      clearInterval(riskInterval);
-      clearInterval(dnsInterval);
-      clearInterval(reportsInterval);
-    };
-  }, [fetchAnomalies, fetchRiskProfiles, fetchDnsAnalysis, fetchReports]);
 
   const stats = threatIntel.stats;
   const matches = threatIntel.matches || [];
@@ -242,9 +115,9 @@ export function ThreatIntelPage() {
             riskProfiles={riskProfiles}
             dnsAnalysis={dnsAnalysis}
             reports={reports}
-            onRiskRefresh={fetchRiskProfiles}
-            onDnsRefresh={fetchDnsAnalysis}
-            onReportsRefresh={fetchReports}
+            onRiskRefresh={refreshRiskProfiles}
+            onDnsRefresh={refreshDnsAnalysis}
+            onReportsRefresh={refreshReports}
             onGenerateReport={generateReport}
             onDeleteReport={deleteReport}
           />

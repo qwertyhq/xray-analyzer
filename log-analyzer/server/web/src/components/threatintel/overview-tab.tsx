@@ -21,7 +21,8 @@ import { AnomalyPanel } from "./anomaly-panel";
 import { RiskProfilePanel } from "./risk-profile-panel";
 import { DNSAnalysisPanel } from "./dns-analysis-panel";
 import { ReportsPanel } from "./reports-panel";
-import { Database, AlertTriangle, Clock, Radio, TrendingUp, Shield } from "lucide-react";
+import { StatCard, StatCardGrid } from "./stat-card";
+import { Database, AlertTriangle, Clock, Radio, Shield } from "lucide-react";
 
 interface OverviewTabProps {
   stats: ThreatStats | null;
@@ -41,71 +42,42 @@ interface OverviewTabProps {
   onDeleteReport?: (id: string) => Promise<void>;
 }
 
-// Gradient stat card component
-interface StatCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  subValue?: string;
-  gradient: string;
-}
-
-function StatCard({ icon, label, value, subValue, gradient }: StatCardProps) {
-  return (
-    <div className={`relative overflow-hidden rounded-xl p-4 ${gradient}`}>
-      <div className="absolute top-0 right-0 w-20 h-20 opacity-10">
-        <div className="w-full h-full rounded-full bg-white transform translate-x-4 -translate-y-4" />
-      </div>
-      <div className="relative z-10">
-        <div className="flex items-center gap-2 text-white/90 mb-2">
-          {icon}
-          <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
-        </div>
-        <div className="text-2xl font-bold text-white">{value}</div>
-        {subValue && (
-          <div className="text-xs text-white/70 mt-1">{subValue}</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, geoStats, anomalies, riskProfiles, dnsAnalysis, reports, onRiskRefresh, onDnsRefresh, onReportsRefresh, onGenerateReport, onDeleteReport }: OverviewTabProps) {
   const activeFeeds = feeds.filter((f) => f.status === "ok").length;
   
   return (
     <div className="space-y-6">
-      {/* Gradient Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      {/* Stats Cards */}
+      <StatCardGrid columns={4}>
         <StatCard
           icon={<Database className="h-4 w-4" />}
           label="Total Indicators"
-          value={stats?.total_indicators.toLocaleString() || "0"}
+          value={stats?.total_indicators || 0}
           subValue="Loaded from feeds"
-          gradient="bg-gradient-to-br from-blue-500 to-blue-600"
+          variant="info"
         />
         <StatCard
           icon={<AlertTriangle className="h-4 w-4" />}
           label="Total Matches"
-          value={stats?.total_matches?.toLocaleString() || "0"}
+          value={stats?.total_matches || 0}
           subValue="All time detections"
-          gradient="bg-gradient-to-br from-red-500 to-red-600"
+          variant="danger"
         />
         <StatCard
           icon={<Clock className="h-4 w-4" />}
           label="Matches (24h)"
-          value={stats?.matches_24h?.toLocaleString() || "0"}
+          value={stats?.matches_24h || 0}
           subValue="Last 24 hours"
-          gradient="bg-gradient-to-br from-amber-500 to-amber-600"
+          variant="warning"
         />
         <StatCard
           icon={<Radio className="h-4 w-4" />}
           label="Active Feeds"
           value={`${activeFeeds}/${feeds.length}`}
           subValue="Feeds online"
-          gradient="bg-gradient-to-br from-emerald-500 to-emerald-600"
+          variant="success"
         />
-      </div>
+      </StatCardGrid>
 
       {/* Time-based Charts */}
       <TimeChart data={timeStats} />
@@ -114,10 +86,10 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
       <GeoChart data={geoStats} />
 
       {/* Feed Status */}
-      <Card className="border-0 shadow-md">
+      <Card className="border shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-blue-500" />
+            <Shield className="h-5 w-5 text-muted-foreground" />
             Feed Status
           </CardTitle>
           <CardDescription>Status of threat intelligence data sources</CardDescription>
@@ -141,8 +113,8 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={feed.status === "ok" ? "default" : "destructive"}
-                      className={feed.status === "ok" ? "bg-emerald-500 hover:bg-emerald-600" : ""}
+                      variant={feed.status === "ok" ? "secondary" : "destructive"}
+                      className={feed.status === "ok" ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" : ""}
                     >
                       {feed.status === "ok" ? "✓ Online" : feed.status}
                     </Badge>

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { AnomalySummary, Anomaly, AnomalyType, AnomalySeverity } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
+import { StatCard, StatCardGrid } from "./stat-card";
 
 interface AnomalyPanelProps {
   data: AnomalySummary | null;
@@ -32,92 +33,62 @@ const anomalyTypeConfig: Record<AnomalyType, { icon: React.ReactNode; label: str
   activity_spike: { 
     icon: <TrendingUp className="h-4 w-4" />, 
     label: "Activity Spike", 
-    color: "text-orange-500" 
+    color: "text-amber-600 dark:text-amber-400" 
   },
   night_activity: { 
     icon: <Moon className="h-4 w-4" />, 
     label: "Night Activity", 
-    color: "text-purple-500" 
+    color: "text-violet-600 dark:text-violet-400" 
   },
   new_user_high_vol: { 
     icon: <UserPlus className="h-4 w-4" />, 
     label: "New User High Volume", 
-    color: "text-blue-500" 
+    color: "text-blue-600 dark:text-blue-400" 
   },
   geo_anomaly: { 
     icon: <Globe className="h-4 w-4" />, 
     label: "Geo Anomaly", 
-    color: "text-green-500" 
+    color: "text-emerald-600 dark:text-emerald-400" 
   },
   threat_burst: { 
     icon: <Zap className="h-4 w-4" />, 
     label: "Threat Burst", 
-    color: "text-red-500" 
+    color: "text-red-600 dark:text-red-400" 
   },
   multiple_countries: { 
     icon: <MapPin className="h-4 w-4" />, 
     label: "Multiple Countries", 
-    color: "text-pink-500" 
+    color: "text-pink-600 dark:text-pink-400" 
   },
   blacklist_spike: { 
     icon: <AlertTriangle className="h-4 w-4" />, 
     label: "Blacklist Spike", 
-    color: "text-red-500" 
+    color: "text-red-600 dark:text-red-400" 
   },
   traffic_spike: { 
     icon: <TrendingUp className="h-4 w-4" />, 
     label: "Traffic Spike", 
-    color: "text-orange-500" 
+    color: "text-amber-600 dark:text-amber-400" 
   },
   user_spike: { 
     icon: <UserPlus className="h-4 w-4" />, 
     label: "User Spike", 
-    color: "text-blue-500" 
+    color: "text-blue-600 dark:text-blue-400" 
   },
   user_blacklist_spike: { 
     icon: <AlertTriangle className="h-4 w-4" />, 
     label: "User Blacklist Spike", 
-    color: "text-red-500" 
+    color: "text-red-600 dark:text-red-400" 
   },
 };
 
 // Config for severity
 const severityConfig: Record<AnomalySeverity, { color: string; bgColor: string }> = {
-  low: { color: "text-blue-600", bgColor: "bg-blue-100 dark:bg-blue-900/30" },
-  medium: { color: "text-yellow-600", bgColor: "bg-yellow-100 dark:bg-yellow-900/30" },
-  high: { color: "text-orange-600", bgColor: "bg-orange-100 dark:bg-orange-900/30" },
-  critical: { color: "text-red-600", bgColor: "bg-red-100 dark:bg-red-900/30" },
+  low: { color: "text-blue-600 dark:text-blue-400", bgColor: "bg-blue-500/10 border-blue-500/20" },
+  medium: { color: "text-amber-600 dark:text-amber-400", bgColor: "bg-amber-500/10 border-amber-500/20" },
+  high: { color: "text-orange-600 dark:text-orange-400", bgColor: "bg-orange-500/10 border-orange-500/20" },
+  critical: { color: "text-red-600 dark:text-red-400", bgColor: "bg-red-500/10 border-red-500/20" },
 };
-
-// Gradient stat card component
-interface StatCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  subValue?: string;
-  gradient: string;
-  highlight?: boolean;
-}
-
-function StatCard({ icon, label, value, subValue, gradient, highlight }: StatCardProps) {
-  return (
-    <div className={`relative overflow-hidden rounded-xl p-4 ${gradient} ${highlight ? 'ring-2 ring-offset-2 ring-offset-background ring-orange-500' : ''}`}>
-      <div className="absolute top-0 right-0 w-20 h-20 opacity-10">
-        <div className="w-full h-full rounded-full bg-white transform translate-x-4 -translate-y-4" />
-      </div>
-      <div className="relative z-10">
-        <div className="flex items-center gap-2 text-white/90 mb-2">
-          {icon}
-          <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
-        </div>
-        <div className="text-2xl font-bold text-white">{value}</div>
-        {subValue && (
-          <div className="text-xs text-white/70 mt-1">{subValue}</div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: AnomalyPanelProps) {
   const [resolving, setResolving] = useState<string | null>(null);
@@ -153,46 +124,46 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
 
   return (
     <div className="space-y-4">
-      {/* Gradient Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      {/* Summary Cards */}
+      <StatCardGrid columns={4}>
         <StatCard
           icon={<AlertTriangle className="h-4 w-4" />}
           label="Active Anomalies"
           value={data?.total_anomalies || 0}
           subValue="Requiring attention"
-          gradient={hasAnomalies ? "bg-gradient-to-br from-orange-500 to-orange-600" : "bg-gradient-to-br from-slate-500 to-slate-600"}
-          highlight={hasAnomalies || false}
+          variant={hasAnomalies ? "warning" : "muted"}
+          highlight={hasAnomalies ?? false}
         />
         <StatCard
           icon={<Zap className="h-4 w-4" />}
           label="Critical"
           value={data?.by_severity?.critical || 0}
           subValue="High priority"
-          gradient="bg-gradient-to-br from-red-500 to-red-600"
+          variant="danger"
         />
         <StatCard
           icon={<TrendingUp className="h-4 w-4" />}
           label="High Severity"
           value={data?.by_severity?.high || 0}
           subValue="Needs review"
-          gradient="bg-gradient-to-br from-amber-500 to-amber-600"
+          variant="warning"
         />
         <StatCard
           icon={<Shield className="h-4 w-4" />}
           label="Affected Users"
           value={data?.affected_users || 0}
           subValue="Unique users"
-          gradient="bg-gradient-to-br from-violet-500 to-violet-600"
+          variant="info"
         />
-      </div>
+      </StatCardGrid>
 
       {/* Anomaly List */}
-      <Card className="border-0 shadow-md">
+      <Card className="border shadow-sm">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-orange-500" />
+                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
                 Recent Anomalies
               </CardTitle>
               <CardDescription className="text-xs">
@@ -279,10 +250,10 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
 
       {/* Type Distribution */}
       {hasAnomalies && data?.by_type && Object.keys(data.by_type).length > 0 && (
-        <Card className="border-0 shadow-md">
+        <Card className="border shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-violet-500" />
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
               Anomaly Types
             </CardTitle>
           </CardHeader>

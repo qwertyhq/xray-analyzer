@@ -41,6 +41,7 @@ import {
 } from "recharts";
 import { DNSAnalysisSummary, RiskLevel } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
+import { StatCard, StatCardGrid } from "./stat-card";
 
 interface DNSAnalysisPanelProps {
   data: DNSAnalysisSummary | null;
@@ -86,39 +87,10 @@ function getTrendIcon(direction: string) {
     case "up":
       return <TrendingUp className="h-4 w-4 text-red-500" />;
     case "down":
-      return <TrendingDown className="h-4 w-4 text-green-500" />;
+      return <TrendingDown className="h-4 w-4 text-emerald-500" />;
     default:
       return <Minus className="h-4 w-4 text-muted-foreground" />;
   }
-}
-
-// Gradient stat card component
-interface GradientStatCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  subValue?: string;
-  gradient: string;
-}
-
-function GradientStatCard({ icon, label, value, subValue, gradient }: GradientStatCardProps) {
-  return (
-    <div className={`relative overflow-hidden rounded-xl p-4 ${gradient}`}>
-      <div className="absolute top-0 right-0 w-20 h-20 opacity-10">
-        <div className="w-full h-full rounded-full bg-white transform translate-x-4 -translate-y-4" />
-      </div>
-      <div className="relative z-10">
-        <div className="flex items-center gap-2 text-white/90 mb-2">
-          {icon}
-          <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
-        </div>
-        <div className="text-2xl font-bold text-white">{value}</div>
-        {subValue && (
-          <div className="text-xs text-white/70 mt-1">{subValue}</div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalysisPanelProps) {
@@ -181,45 +153,45 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
 
   return (
     <div className="space-y-4">
-      {/* Gradient Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <GradientStatCard
+      {/* Stats Cards */}
+      <StatCardGrid columns={4}>
+        <StatCard
           icon={<Server className="h-4 w-4" />}
           label="Total Queries"
-          value={(stats?.total_queries || 0).toLocaleString()}
+          value={stats?.total_queries || 0}
           subValue="Last 30 days"
-          gradient="bg-gradient-to-br from-blue-500 to-blue-600"
+          variant="info"
         />
-        <GradientStatCard
+        <StatCard
           icon={<Ban className="h-4 w-4" />}
           label="Blocked Queries"
-          value={(stats?.blocked_queries || 0).toLocaleString()}
+          value={stats?.blocked_queries || 0}
           subValue="Threats blocked"
-          gradient="bg-gradient-to-br from-red-500 to-red-600"
+          variant="danger"
         />
-        <GradientStatCard
+        <StatCard
           icon={<Shield className="h-4 w-4" />}
           label="Block Rate"
           value={`${(stats?.block_rate || 0).toFixed(1)}%`}
           subValue="Blocked / Total"
-          gradient="bg-gradient-to-br from-amber-500 to-amber-600"
+          variant="warning"
         />
-        <GradientStatCard
+        <StatCard
           icon={<AlertTriangle className="h-4 w-4" />}
           label="Bad Domains"
           value={stats?.unique_domains_bad || 0}
           subValue="Unique threats"
-          gradient="bg-gradient-to-br from-violet-500 to-violet-600"
+          variant="muted"
         />
-      </div>
+      </StatCardGrid>
 
       {/* Main Card */}
-      <Card className="border-0 shadow-md">
+      <Card className="border shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <Globe className="h-5 w-5 text-blue-500" />
+                <Globe className="h-5 w-5 text-muted-foreground" />
                 DNS Analysis
                 <Badge variant="outline" className="ml-2 flex items-center gap-1">
                   {trendIcon}
@@ -262,7 +234,7 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
               {/* Charts */}
               <div className="grid gap-4 md:grid-cols-2">
               {/* Daily Trend */}
-              <Card>
+              <Card className="border">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">Daily Trend (30 days)</CardTitle>
                 </CardHeader>

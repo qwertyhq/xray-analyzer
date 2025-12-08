@@ -176,10 +176,10 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
     <div className="space-y-4">
       {/* Stats Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
+        <Card className="bg-blue-500/10 border-blue-500/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Clock className="h-4 w-4 text-blue-500" />
+              <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               Last 24 Hours
             </CardTitle>
           </CardHeader>
@@ -191,30 +191,30 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-500/20">
+        <Card className="bg-violet-500/10 border-violet-500/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-purple-500" />
+              <Calendar className="h-4 w-4 text-violet-600 dark:text-violet-400" />
               Daily Average
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+            <div className="text-2xl font-bold text-violet-600 dark:text-violet-400">
               {totals.dailyAvg.toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">Matches per day</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/20">
+        <Card className="bg-amber-500/10 border-amber-500/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-orange-500" />
+              <TrendingUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
               Peak Hour
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
               {totals.peakHour.label}
             </div>
             <p className="text-xs text-muted-foreground">
@@ -227,12 +227,12 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
       {/* Charts */}
       <div className="grid gap-4 md:grid-cols-2">
         {/* Hourly Chart */}
-        <Card>
+        <Card className="border">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
+                  <Clock className="h-4 w-4 text-muted-foreground" />
                   Hourly Activity
                 </CardTitle>
                 <CardDescription className="text-xs mt-1">
@@ -308,12 +308,12 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
         </Card>
 
         {/* Daily Chart */}
-        <Card>
+        <Card className="border">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
                   Daily Activity
                 </CardTitle>
                 <CardDescription className="text-xs mt-1">

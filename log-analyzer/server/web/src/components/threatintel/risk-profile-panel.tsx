@@ -5,14 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { 
   Shield, 
   ShieldAlert, 
@@ -30,6 +22,7 @@ import {
 } from "lucide-react";
 import { UserRiskSummary, UserRiskProfile, RiskLevel } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
+import { StatCard, StatCardGrid } from "./stat-card";
 
 interface RiskProfilePanelProps {
   data: UserRiskSummary | null;
@@ -75,37 +68,8 @@ const riskLevelConfig: Record<RiskLevel, {
 const trendIcons = {
   up: <TrendingUp className="h-4 w-4 text-red-500" />,
   down: <TrendingDown className="h-4 w-4 text-green-500" />,
-  stable: <Minus className="h-4 w-4 text-gray-500" />,
+  stable: <Minus className="h-4 w-4 text-muted-foreground" />,
 };
-
-// Gradient stat card component
-interface GradientStatCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  subValue?: string;
-  gradient: string;
-}
-
-function GradientStatCard({ icon, label, value, subValue, gradient }: GradientStatCardProps) {
-  return (
-    <div className={`relative overflow-hidden rounded-xl p-4 ${gradient}`}>
-      <div className="absolute top-0 right-0 w-20 h-20 opacity-10">
-        <div className="w-full h-full rounded-full bg-white transform translate-x-4 -translate-y-4" />
-      </div>
-      <div className="relative z-10">
-        <div className="flex items-center gap-2 text-white/90 mb-2">
-          {icon}
-          <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
-        </div>
-        <div className="text-2xl font-bold text-white">{value}</div>
-        {subValue && (
-          <div className="text-xs text-white/70 mt-1">{subValue}</div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function RiskScoreBar({ score }: { score: number }) {
   const getColor = () => {
@@ -310,45 +274,45 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
 
   return (
     <div className="space-y-4">
-      {/* Gradient Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <GradientStatCard
+      {/* Stats Cards */}
+      <StatCardGrid columns={4}>
+        <StatCard
           icon={<ShieldAlert className="h-4 w-4" />}
           label="High Risk Users"
           value={highRiskCount}
           subValue="Critical + High risk"
-          gradient="bg-gradient-to-br from-red-500 to-red-600"
+          variant="danger"
         />
-        <GradientStatCard
+        <StatCard
           icon={<Shield className="h-4 w-4" />}
           label="Medium Risk"
           value={data.by_risk_level?.medium || 0}
           subValue="Needs monitoring"
-          gradient="bg-gradient-to-br from-amber-500 to-amber-600"
+          variant="warning"
         />
-        <GradientStatCard
+        <StatCard
           icon={<ShieldCheck className="h-4 w-4" />}
           label="Low Risk"
           value={data.by_risk_level?.low || 0}
           subValue="Normal behavior"
-          gradient="bg-gradient-to-br from-emerald-500 to-emerald-600"
+          variant="success"
         />
-        <GradientStatCard
+        <StatCard
           icon={<TrendingUp className="h-4 w-4" />}
           label="Escalations (24h)"
           value={data.recent_escalations || 0}
           subValue="Increased risk"
-          gradient="bg-gradient-to-br from-violet-500 to-violet-600"
+          variant="info"
         />
-      </div>
+      </StatCardGrid>
 
       {/* Main Card */}
-      <Card className="border-0 shadow-md">
+      <Card className="border shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <ShieldAlert className="h-5 w-5 text-orange-500" />
+                <ShieldAlert className="h-5 w-5 text-muted-foreground" />
                 User Risk Profiles
               </CardTitle>
               <CardDescription>
@@ -362,7 +326,7 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
                   Refresh
                 </Button>
               )}
-              <Button size="sm" onClick={handleRecalculate} disabled={recalculating} className="gap-1">
+              <Button variant="outline" size="sm" onClick={handleRecalculate} disabled={recalculating} className="gap-1">
                 <RefreshCw className={`h-4 w-4 ${recalculating ? "animate-spin" : ""}`} />
                 Recalculate All
               </Button>
@@ -375,7 +339,7 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
           {data.high_risk_users && data.high_risk_users.length > 0 ? (
             <div>
               <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-red-500" />
+                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
                 High Risk Users
               </h3>
               {data.high_risk_users.map((profile) => (

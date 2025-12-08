@@ -48,7 +48,7 @@ export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
     <Card className={`${className} overflow-hidden`}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <ShieldAlert className="h-5 w-5 text-destructive" />
+          <ShieldAlert className="h-5 w-5 text-muted-foreground" />
           Threat Intelligence
         </CardTitle>
         <CardDescription>

@@ -118,7 +118,7 @@ export function ReportsPanel({ reports, onGenerate, onRefresh, onDelete, onExpor
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-purple-500" />
+            <FileText className="h-5 w-5 text-muted-foreground" />
             Reports & Exports
           </CardTitle>
           <CardDescription>Generate and export threat intelligence reports</CardDescription>
@@ -143,29 +143,29 @@ export function ReportsPanel({ reports, onGenerate, onRefresh, onDelete, onExpor
           <TabsContent value="reports" className="space-y-4">
             {/* Stats cards */}
             <div className="grid grid-cols-3 gap-4">
-              <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-4">
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Completed</p>
-                    <p className="text-2xl font-bold text-green-600">{reports?.completed_reports || 0}</p>
+                    <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{reports?.completed_reports || 0}</p>
                   </div>
-                  <CheckCircle className="h-8 w-8 text-green-500 opacity-50" />
+                  <CheckCircle className="h-8 w-8 text-emerald-500 opacity-50" />
                 </div>
               </div>
-              <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 rounded-lg p-4">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Pending</p>
-                    <p className="text-2xl font-bold text-yellow-600">{reports?.pending_reports || 0}</p>
+                    <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{reports?.pending_reports || 0}</p>
                   </div>
-                  <Clock className="h-8 w-8 text-yellow-500 opacity-50" />
+                  <Clock className="h-8 w-8 text-amber-500 opacity-50" />
                 </div>
               </div>
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-4">
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Total</p>
-                    <p className="text-2xl font-bold text-blue-600">{reports?.total_reports || 0}</p>
+                    <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{reports?.total_reports || 0}</p>
                   </div>
                   <FileText className="h-8 w-8 text-blue-500 opacity-50" />
                 </div>
@@ -182,7 +182,7 @@ export function ReportsPanel({ reports, onGenerate, onRefresh, onDelete, onExpor
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-3">
-                        <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                        <div className="p-2 rounded-lg bg-muted">
                           {reportTypeConfig[report.type]?.icon || <FileText className="h-4 w-4" />}
                         </div>
                         <div>
