@@ -293,6 +293,7 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                             contentStyle={tooltipStyle.contentStyle}
                             labelStyle={tooltipStyle.labelStyle}
                             itemStyle={tooltipStyle.itemStyle}
+                            cursor={{ stroke: "rgba(63, 63, 70, 0.5)", strokeWidth: 1 }}
                           />
                           <Legend wrapperStyle={{ fontSize: "10px" }} />
                           <Area
@@ -348,6 +349,7 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                             contentStyle={tooltipStyle.contentStyle}
                             labelStyle={tooltipStyle.labelStyle}
                             itemStyle={tooltipStyle.itemStyle}
+                            cursor={{ fill: "rgba(63, 63, 70, 0.3)" }}
                             formatter={(value: number, name: string) => [`${value.toLocaleString()} queries`, name]}
                           />
                           <Bar dataKey="value" radius={[4, 4, 0, 0]} name="Queries">
@@ -390,6 +392,7 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                           contentStyle={tooltipStyle.contentStyle}
                           labelStyle={tooltipStyle.labelStyle}
                           itemStyle={tooltipStyle.itemStyle}
+                          cursor={{ fill: "rgba(63, 63, 70, 0.3)" }}
                         />
                         <Legend wrapperStyle={{ fontSize: "10px" }} />
                         <Bar dataKey="total" fill="hsla(262, 50%, 60%, 0.7)" name="Total" radius={[2, 2, 0, 0]} />
