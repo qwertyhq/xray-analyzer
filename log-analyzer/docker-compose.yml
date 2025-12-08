@@ -2,8 +2,8 @@ services:
   # Main analyzer server with Web UI
   analyzer-server:
     # Use pre-built image from GitHub Container Registry
-    # Falls back to local build if image not available
-    image: ghcr.io/qwertyhq/xray/log-analyzer:latest
+    # Comment out 'image' line to force local build with MAPBOX_TOKEN
+    # image: ghcr.io/qwertyhq/xray/log-analyzer:latest
     build:
       context: ./server
       dockerfile: Dockerfile
