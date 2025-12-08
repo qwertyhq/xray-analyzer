@@ -12,8 +12,12 @@ import (
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/models"
+	"github.com/xray-log-analyzer/server/internal/remnawave"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
+
+// Ensure remnawave is used (for type reference in enrichAbusersWithHWID)
+var _ *remnawave.User
 
 // handleStats returns overall statistics
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -449,8 +453,105 @@ func (s *Server) handleSubscriptionAbuse(w http.ResponseWriter, r *http.Request)
 		abusers = []*models.SubscriptionAbuse{}
 	}
 
+	// Enrich with HWID data from Remnawave if client is available
+	if s.remnawave != nil {
+		s.enrichAbusersWithHWID(abusers)
+	}
+
+	// Calculate abuse score for each user
+	for _, abuser := range abusers {
+		abuser.AbuseScore = calculateAbuseScore(abuser)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(abusers)
+}
+
+// enrichAbusersWithHWID adds HWID information from Remnawave to abuse records
+func (s *Server) enrichAbusersWithHWID(abusers []*models.SubscriptionAbuse) {
+	// Get user mapping from Remnawave (email -> uuid)
+	users := s.remnawave.GetAllUsers()
+	if users == nil {
+		return
+	}
+
+	// Build email to user mapping (by username which is the email)
+	emailToUser := make(map[string]*remnawave.User)
+	for _, user := range users {
+		if user != nil && user.Username != "" {
+			emailToUser[user.Username] = user
+		}
+	}
+
+	// For each abuser, try to get HWID devices
+	for _, abuser := range abusers {
+		user, ok := emailToUser[abuser.UserEmail]
+		if !ok {
+			continue
+		}
+
+		abuser.UserUUID = user.UUID
+		abuser.Username = user.Username
+
+		// Get HWID devices for this user from cache
+		hwidDevices := s.remnawave.GetUserHwidDevices(user.UUID)
+		if len(hwidDevices) > 0 {
+			abuser.UniqueHWIDs = len(hwidDevices)
+			abuser.HWIDs = make([]models.HWIDInfo, 0, len(hwidDevices))
+			for _, device := range hwidDevices {
+				hwid := models.HWIDInfo{
+					HWID:      device.Hwid,
+					CreatedAt: device.CreatedAt,
+				}
+				if device.Platform != nil {
+					hwid.Platform = *device.Platform
+				}
+				if device.DeviceModel != nil {
+					hwid.DeviceModel = *device.DeviceModel
+				}
+				abuser.HWIDs = append(abuser.HWIDs, hwid)
+			}
+		}
+	}
+} // calculateAbuseScore computes a risk score (0-100) based on IP, node, and HWID diversity
+func calculateAbuseScore(abuser *models.SubscriptionAbuse) int {
+	score := 0
+
+	// IP score: more unique IPs = higher risk (max 40 points)
+	// 3 IPs = 10, 5 IPs = 20, 10+ IPs = 40
+	switch {
+	case abuser.UniqueIPs >= 10:
+		score += 40
+	case abuser.UniqueIPs >= 5:
+		score += 20
+	case abuser.UniqueIPs >= 3:
+		score += 10
+	}
+
+	// Node score: multiple nodes from different IPs = higher risk (max 30 points)
+	// 3+ nodes = 30, 2 nodes = 15
+	switch {
+	case abuser.UniqueNodes >= 3:
+		score += 30
+	case abuser.UniqueNodes >= 2:
+		score += 15
+	}
+
+	// HWID score: multiple devices = higher risk (max 30 points)
+	// 3+ devices = 30, 2 devices = 15
+	switch {
+	case abuser.UniqueHWIDs >= 3:
+		score += 30
+	case abuser.UniqueHWIDs >= 2:
+		score += 15
+	}
+
+	// Cap at 100
+	if score > 100 {
+		score = 100
+	}
+
+	return score
 }
 
 // handleUserDestinations returns paginated destinations for a user

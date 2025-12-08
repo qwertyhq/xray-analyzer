@@ -71,20 +71,35 @@ export interface UserIPHistory {
 
 export interface SubscriptionAbuse {
   user_email: string;
+  user_uuid?: string;
+  username?: string;
   unique_ips: number;
+  unique_nodes: number;
+  unique_hwids: number;
   unique_countries: number;
   countries: string[];
+  nodes: string[];
   total_requests: number;
   last_seen: string;
   ips: AbuseIPInfo[];
+  hwids?: HWIDInfo[];
+  abuse_score: number;
 }
 
 export interface AbuseIPInfo {
   ip: string;
   country_code: string;
   city: string;
+  node_id?: string;
   request_count: number;
   last_seen: string;
+}
+
+export interface HWIDInfo {
+  hwid: string;
+  platform?: string;
+  device_model?: string;
+  created_at: string;
 }
 
 export interface BlacklistMatchInfo {

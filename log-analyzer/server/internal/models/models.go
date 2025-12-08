@@ -213,13 +213,20 @@ type PaginatedBlacklistMatchesResponse struct {
 
 // SubscriptionAbuse represents a user suspected of sharing their subscription
 type SubscriptionAbuse struct {
-	UserEmail       string    `json:"user_email"`
-	UniqueIPs       int       `json:"unique_ips"`
-	UniqueCountries int       `json:"unique_countries"`
-	Countries       []string  `json:"countries"`
-	TotalRequests   int64     `json:"total_requests"`
-	LastSeen        time.Time `json:"last_seen"`
-	IPs             []IPInfo  `json:"ips"`
+	UserEmail       string     `json:"user_email"`
+	UserUUID        string     `json:"user_uuid,omitempty"`
+	Username        string     `json:"username,omitempty"`
+	UniqueIPs       int        `json:"unique_ips"`
+	UniqueNodes     int        `json:"unique_nodes"`
+	UniqueHWIDs     int        `json:"unique_hwids"`
+	UniqueCountries int        `json:"unique_countries"`
+	Countries       []string   `json:"countries"`
+	Nodes           []string   `json:"nodes"`
+	TotalRequests   int64      `json:"total_requests"`
+	LastSeen        time.Time  `json:"last_seen"`
+	IPs             []IPInfo   `json:"ips"`
+	HWIDs           []HWIDInfo `json:"hwids,omitempty"`
+	AbuseScore      int        `json:"abuse_score"` // Combined risk score 0-100
 }
 
 // IPInfo represents basic IP information for abuse detection
@@ -227,6 +234,15 @@ type IPInfo struct {
 	IP           string    `json:"ip"`
 	CountryCode  string    `json:"country_code"`
 	City         string    `json:"city"`
+	NodeID       string    `json:"node_id,omitempty"`
 	RequestCount int64     `json:"request_count"`
 	LastSeen     time.Time `json:"last_seen"`
+}
+
+// HWIDInfo represents HWID device information
+type HWIDInfo struct {
+	HWID        string    `json:"hwid"`
+	Platform    string    `json:"platform,omitempty"`
+	DeviceModel string    `json:"device_model,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }

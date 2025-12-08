@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useWsBlacklist } from "@/contexts/websocket-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import { TimeRangeSelector } from "@/components/dashboard/time-range-selector";
 import { IPInfoBadge } from "@/components/ui/ip-info-badge";
 import { SubscriptionAbuseTable } from "@/components/users/subscription-abuse-table";
+import { StatCard, StatCardGrid } from "@/components/threatintel/stat-card";
 import {
   Table,
   TableBody,
@@ -18,7 +20,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink, Wifi, WifiOff, UserX } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink, Wifi, WifiOff, UserX, Search } from "lucide-react";
 import { format } from "date-fns";
 import { TimeRange, BlacklistAnalytics } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
@@ -37,6 +46,9 @@ export default function BlacklistPage() {
   const { blacklist: wsBlacklist, loading: wsLoading, connected } = useWsBlacklist();
   const [httpAnalytics, setHttpAnalytics] = useState<BlacklistAnalytics | null>(null);
   const [httpLoading, setHttpLoading] = useState(false);
+  const [domainSearch, setDomainSearch] = useState("");
+  const [matchSearch, setMatchSearch] = useState("");
+  const [nodeFilter, setNodeFilter] = useState<string>("all");
 
   // For 24h, use WebSocket; for other ranges, fetch via HTTP
   const use24hWebSocket = timeRange === "24h";
@@ -95,6 +107,44 @@ export default function BlacklistPage() {
     hits: h.hit_count,
   })) || [];
 
+  // Get unique nodes from recent matches for filter
+  const uniqueNodes = useMemo(() => {
+    const nodes = new Set<string>();
+    analytics.recent_matches?.forEach(m => {
+      if (m.node_id) nodes.add(m.node_id);
+    });
+    return Array.from(nodes).sort();
+  }, [analytics.recent_matches]);
+
+  // Filter domains by search
+  const filteredDomains = useMemo(() => {
+    if (!domainSearch.trim()) return analytics.top_domains || [];
+    const search = domainSearch.toLowerCase();
+    return (analytics.top_domains || []).filter(d => 
+      d.domain.toLowerCase().includes(search)
+    );
+  }, [analytics.top_domains, domainSearch]);
+
+  // Filter recent matches
+  const filteredMatches = useMemo(() => {
+    let matches = analytics.recent_matches || [];
+    
+    if (matchSearch.trim()) {
+      const search = matchSearch.toLowerCase();
+      matches = matches.filter(m => 
+        m.destination.toLowerCase().includes(search) ||
+        m.source_ip?.toLowerCase().includes(search) ||
+        m.matched_rule?.toLowerCase().includes(search)
+      );
+    }
+    
+    if (nodeFilter !== "all") {
+      matches = matches.filter(m => m.node_id === nodeFilter);
+    }
+    
+    return matches;
+  }, [analytics.recent_matches, matchSearch, nodeFilter]);
+
   return (
     <div className="p-4 md:p-8 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -129,57 +179,38 @@ export default function BlacklistPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Hits</CardTitle>
-            <TrendingUp className="h-4 w-4 text-destructive" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">
-              {analytics.total_hits.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">{timeLabels[timeRange]}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Unique Users</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analytics.unique_users}</div>
-            <p className="text-xs text-muted-foreground">Accessed blocked resources</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Unique Domains</CardTitle>
-            <Globe className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analytics.unique_domains}</div>
-            <p className="text-xs text-muted-foreground">Blocked destinations</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg per User</CardTitle>
-            <ShieldAlert className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {analytics.unique_users > 0 
-                ? (analytics.total_hits / analytics.unique_users).toFixed(1) 
-                : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Hits per user</p>
-          </CardContent>
-        </Card>
-      </div>
+      <StatCardGrid columns={4}>
+        <StatCard
+          label="Total Hits"
+          value={analytics.total_hits.toLocaleString()}
+          subValue={timeLabels[timeRange]}
+          icon={<TrendingUp className="h-4 w-4" />}
+          variant="danger"
+        />
+        <StatCard
+          label="Unique Users"
+          value={analytics.unique_users}
+          subValue="Accessed blocked resources"
+          icon={<Users className="h-4 w-4" />}
+          variant="muted"
+        />
+        <StatCard
+          label="Unique Domains"
+          value={analytics.unique_domains}
+          subValue="Blocked destinations"
+          icon={<Globe className="h-4 w-4" />}
+          variant="muted"
+        />
+        <StatCard
+          label="Avg per User"
+          value={analytics.unique_users > 0 
+            ? (analytics.total_hits / analytics.unique_users).toFixed(1) 
+            : "0"}
+          subValue="Hits per user"
+          icon={<ShieldAlert className="h-4 w-4" />}
+          variant="muted"
+        />
+      </StatCardGrid>
 
       {/* Hourly Chart */}
       {chartData.length > 0 && (
@@ -193,8 +224,8 @@ export default function BlacklistPage() {
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorHits" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                    <stop offset="5%" stopColor="hsl(var(--muted-foreground))" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(var(--muted-foreground))" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -210,7 +241,7 @@ export default function BlacklistPage() {
                 <Area
                   type="monotone"
                   dataKey="hits"
-                  stroke="#ef4444"
+                  stroke="hsl(var(--muted-foreground))"
                   fillOpacity={1}
                   fill="url(#colorHits)"
                   name="Hits"
@@ -260,10 +291,23 @@ export default function BlacklistPage() {
         <TabsContent value="domains">
           <Card>
             <CardHeader>
-              <CardTitle>Most Accessed Blocked Domains</CardTitle>
-              <CardDescription>
-                Domains sorted by total hits across all users
-              </CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle>Most Accessed Blocked Domains</CardTitle>
+                  <CardDescription>
+                    Domains sorted by total hits across all users
+                  </CardDescription>
+                </div>
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search domains..."
+                    value={domainSearch}
+                    onChange={(e) => setDomainSearch(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="overflow-x-auto">
               <Table>
@@ -277,7 +321,7 @@ export default function BlacklistPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {analytics.top_domains?.map((domain, idx) => (
+                  {filteredDomains.map((domain, idx) => (
                     <TableRow key={domain.domain}>
                       <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
                       <TableCell className="font-mono text-xs sm:text-sm max-w-[150px] sm:max-w-[300px] truncate">
@@ -287,15 +331,15 @@ export default function BlacklistPage() {
                         {domain.matched_rule}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Badge variant="destructive">{domain.hit_count}</Badge>
+                        <Badge variant="secondary">{domain.hit_count}</Badge>
                       </TableCell>
                       <TableCell className="text-right hidden sm:table-cell">{domain.unique_users}</TableCell>
                     </TableRow>
                   ))}
-                  {(!analytics.top_domains || analytics.top_domains.length === 0) && (
+                  {filteredDomains.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground">
-                        No blocked domains in this period
+                        {domainSearch ? "No domains match your search" : "No blocked domains in this period"}
                       </TableCell>
                     </TableRow>
                   )}
@@ -401,10 +445,38 @@ export default function BlacklistPage() {
         <TabsContent value="recent">
           <Card>
             <CardHeader>
-              <CardTitle>Recent Blacklist Matches</CardTitle>
-              <CardDescription>
-                Last 100 blocked requests
-              </CardDescription>
+              <div className="flex flex-col gap-4">
+                <div>
+                  <CardTitle>Recent Blacklist Matches</CardTitle>
+                  <CardDescription>
+                    Last 100 blocked requests
+                  </CardDescription>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1 sm:max-w-xs">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search destination, IP, rule..."
+                      value={matchSearch}
+                      onChange={(e) => setMatchSearch(e.target.value)}
+                      className="pl-8"
+                    />
+                  </div>
+                  {uniqueNodes.length > 0 && (
+                    <Select value={nodeFilter} onValueChange={setNodeFilter}>
+                      <SelectTrigger className="w-full sm:w-[180px]">
+                        <SelectValue placeholder="Filter by node" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Nodes</SelectItem>
+                        {uniqueNodes.map(node => (
+                          <SelectItem key={node} value={node}>{node}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="overflow-x-auto">
               <Table>
@@ -418,7 +490,7 @@ export default function BlacklistPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {analytics.recent_matches?.map((match, idx) => (
+                  {filteredMatches.map((match, idx) => (
                     <TableRow key={idx}>
                       <TableCell className="text-muted-foreground text-xs sm:text-sm whitespace-nowrap">
                         {isValidDate(match.timestamp)
@@ -440,10 +512,12 @@ export default function BlacklistPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {(!analytics.recent_matches || analytics.recent_matches.length === 0) && (
+                  {filteredMatches.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground">
-                        No blacklist matches in this period
+                        {matchSearch || nodeFilter !== "all" 
+                          ? "No matches found with current filters" 
+                          : "No blacklist matches in this period"}
                       </TableCell>
                     </TableRow>
                   )}

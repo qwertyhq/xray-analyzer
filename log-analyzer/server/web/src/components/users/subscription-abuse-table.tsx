@@ -31,7 +31,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Users, Globe, ExternalLink, ChevronDown, AlertTriangle, RefreshCw } from "lucide-react";
+import { Users, Globe, ExternalLink, ChevronDown, AlertTriangle, RefreshCw, Server, Smartphone, Monitor } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { SubscriptionAbuse, TimeRange } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
@@ -42,6 +42,13 @@ function getFlagEmoji(countryCode: string): string {
   return String.fromCodePoint(
     ...[...countryCode.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0))
   );
+}
+
+// Get abuse score color
+function getScoreVariant(score: number): "destructive" | "secondary" | "outline" {
+  if (score >= 70) return "destructive";
+  if (score >= 40) return "secondary";
+  return "outline";
 }
 
 interface SubscriptionAbuseTableProps {
@@ -67,7 +74,11 @@ export function SubscriptionAbuseTable({
       const res = await fetch(`/api/blacklist/abuse?period=${period}&min_ips=${minIPs}`);
       if (!res.ok) throw new Error("Failed to fetch data");
       const data = await res.json();
-      setAbusers(data || []);
+      // Sort by abuse_score descending
+      const sorted = (data || []).sort((a: SubscriptionAbuse, b: SubscriptionAbuse) => 
+        (b.abuse_score || 0) - (a.abuse_score || 0)
+      );
+      setAbusers(sorted);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -167,9 +178,26 @@ export function SubscriptionAbuseTable({
                 <CollapsibleTrigger asChild>
                   <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50 transition-colors">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-destructive/10 text-destructive font-bold">
-                        {abuser.unique_ips}
-                      </div>
+                      {/* Abuse Score Circle */}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <div className={`flex items-center justify-center w-10 h-10 rounded-full font-bold text-sm ${
+                              abuser.abuse_score >= 70 
+                                ? "bg-destructive/20 text-destructive" 
+                                : abuser.abuse_score >= 40 
+                                  ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                                  : "bg-muted text-muted-foreground"
+                            }`}>
+                              {abuser.abuse_score || 0}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Abuse Score: {abuser.abuse_score || 0}/100</p>
+                            <p className="text-xs text-muted-foreground">Based on IP, Node, HWID diversity</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                       <div className="min-w-0">
                         <Link 
                           href={`/users/${encodeURIComponent(abuser.user_email)}`}
@@ -179,19 +207,58 @@ export function SubscriptionAbuseTable({
                           <span className="truncate">{abuser.user_email}</span>
                           <ExternalLink className="h-3 w-3 flex-shrink-0" />
                         </Link>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
                           <span>{abuser.total_requests.toLocaleString()} requests</span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
                             <Globe className="h-3 w-3" />
-                            {abuser.unique_countries} {abuser.unique_countries === 1 ? "country" : "countries"}
+                            {abuser.unique_countries} countries
                           </span>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="hidden sm:flex gap-1">
-                        {abuser.countries?.slice(0, 5).map((cc) => (
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      {/* Stat badges */}
+                      <div className="hidden sm:flex gap-1.5">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <Badge variant="outline" className="gap-1">
+                                <Monitor className="h-3 w-3" />
+                                {abuser.unique_ips}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>Unique IPs</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <Badge variant="outline" className="gap-1">
+                                <Server className="h-3 w-3" />
+                                {abuser.unique_nodes || 0}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>Unique Nodes</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        {(abuser.unique_hwids || 0) > 0 && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Badge variant="outline" className="gap-1">
+                                  <Smartphone className="h-3 w-3" />
+                                  {abuser.unique_hwids}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>HWID Devices</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                      {/* Country flags */}
+                      <div className="hidden md:flex gap-1">
+                        {abuser.countries?.slice(0, 3).map((cc) => (
                           <TooltipProvider key={cc}>
                             <Tooltip>
                               <TooltipTrigger>
@@ -201,15 +268,12 @@ export function SubscriptionAbuseTable({
                             </Tooltip>
                           </TooltipProvider>
                         ))}
-                        {abuser.countries?.length > 5 && (
+                        {(abuser.countries?.length || 0) > 3 && (
                           <Badge variant="secondary" className="text-xs">
-                            +{abuser.countries.length - 5}
+                            +{abuser.countries.length - 3}
                           </Badge>
                         )}
                       </div>
-                      <Badge variant="destructive" className="hidden sm:flex">
-                        {abuser.unique_ips} IPs
-                      </Badge>
                       <ChevronDown 
                         className={`h-4 w-4 text-muted-foreground transition-transform ${
                           expandedUsers.has(abuser.user_email) ? "rotate-180" : ""
@@ -219,14 +283,51 @@ export function SubscriptionAbuseTable({
                   </div>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <div className="px-4 pb-4 pt-0">
+                  <div className="px-4 pb-4 pt-0 space-y-4">
+                    {/* Nodes list */}
+                    {abuser.nodes && abuser.nodes.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="text-sm text-muted-foreground mr-1">Nodes:</span>
+                        {abuser.nodes.map((node) => (
+                          <Badge key={node} variant="secondary" className="text-xs">
+                            {node}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* HWID devices */}
+                    {abuser.hwids && abuser.hwids.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="text-sm text-muted-foreground mr-1">Devices:</span>
+                        {abuser.hwids.map((hwid) => (
+                          <TooltipProvider key={hwid.hwid}>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Badge variant="outline" className="text-xs gap-1">
+                                  <Smartphone className="h-3 w-3" />
+                                  {hwid.platform || "Unknown"}
+                                  {hwid.device_model && ` (${hwid.device_model})`}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="font-mono text-xs">{hwid.hwid.slice(0, 16)}...</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* IP table */}
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>IP Address</TableHead>
                           <TableHead>Location</TableHead>
+                          <TableHead className="hidden sm:table-cell">Node</TableHead>
                           <TableHead className="text-right">Requests</TableHead>
-                          <TableHead className="hidden sm:table-cell">Last Seen</TableHead>
+                          <TableHead className="hidden md:table-cell">Last Seen</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -242,10 +343,15 @@ export function SubscriptionAbuseTable({
                               {ip.country_code || "—"}
                               {ip.city && <span className="text-muted-foreground"> • {ip.city}</span>}
                             </TableCell>
+                            <TableCell className="hidden sm:table-cell">
+                              {ip.node_id ? (
+                                <Badge variant="outline" className="text-xs">{ip.node_id}</Badge>
+                              ) : "—"}
+                            </TableCell>
                             <TableCell className="text-right">
                               <Badge variant="secondary">{ip.request_count.toLocaleString()}</Badge>
                             </TableCell>
-                            <TableCell className="text-muted-foreground text-sm hidden sm:table-cell">
+                            <TableCell className="text-muted-foreground text-sm hidden md:table-cell">
                               {isValidDate(ip.last_seen)
                                 ? formatDistanceToNow(new Date(ip.last_seen), { addSuffix: true })
                                 : "—"}
