@@ -17,14 +17,15 @@ import (
 
 // Server handles WebSocket connections from agents and HTTP API
 type Server struct {
-	addr        string
-	analyzer    *analyzer.Analyzer
-	storage     *storage.Storage
-	blacklist   *blacklist.Blacklist
-	threatIntel *threatintel.Service
-	ipInfo      *ipinfo.Service
-	clients     map[string]*Client
-	clientsMu   sync.RWMutex
+	addr           string
+	allowedOrigins []string
+	analyzer       *analyzer.Analyzer
+	storage        *storage.Storage
+	blacklist      *blacklist.Blacklist
+	threatIntel    *threatintel.Service
+	ipInfo         *ipinfo.Service
+	clients        map[string]*Client
+	clientsMu      sync.RWMutex
 
 	// Dashboard WebSocket clients
 	dashboardClients   map[*DashboardClient]bool
@@ -61,9 +62,10 @@ type DashboardUpdate struct {
 }
 
 // New creates a new Server
-func New(addr string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl *blacklist.Blacklist) *Server {
+func New(addr string, allowedOrigins []string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl *blacklist.Blacklist) *Server {
 	s := &Server{
 		addr:             addr,
+		allowedOrigins:   allowedOrigins,
 		analyzer:         analyzer,
 		storage:          storage,
 		blacklist:        bl,
