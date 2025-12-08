@@ -31,6 +31,16 @@ type Storage interface {
 	// Geo stats
 	SaveGeoStats(ctx context.Context, countryCode, countryName, threatType, userEmail string) error
 	SaveUserLocation(ctx context.Context, userEmail, countryCode, countryName, city string, lat, lon float64) error
+	// Geo enrichment
+	GetLocationsWithoutCoords(ctx context.Context, limit int) ([]*LocationWithoutCoords, error)
+	UpdateLocationCoords(ctx context.Context, userEmail, countryCode, city string, lat, lon float64) error
+}
+
+// LocationWithoutCoords represents a user location missing coordinates
+type LocationWithoutCoords struct {
+	UserEmail   string
+	CountryCode string
+	City        string
 }
 
 // CategoryUserStats represents user stats for a content category
@@ -75,6 +85,9 @@ func (s *Service) Start(ctx context.Context) error {
 	// Start background update loop
 	go s.updateLoop(ctx)
 
+	// Start geo enrichment loop (backfill coordinates for existing records)
+	go s.geoEnrichmentLoop(ctx)
+
 	return nil
 }
 
@@ -110,6 +123,70 @@ func (s *Service) updateLoop(ctx context.Context) {
 			}
 			log.Printf("threatintel: updated, now have %d indicators", s.loader.GetIndicatorCount())
 		}
+	}
+}
+
+// geoEnrichmentLoop periodically enriches user locations with coordinates
+func (s *Service) geoEnrichmentLoop(ctx context.Context) {
+	// Start after a delay to let the system stabilize
+	time.Sleep(30 * time.Second)
+
+	// Run every 5 minutes
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	// Run immediately on start
+	s.enrichGeoCoordinates(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.stopChan:
+			return
+		case <-ticker.C:
+			s.enrichGeoCoordinates(ctx)
+		}
+	}
+}
+
+// enrichGeoCoordinates enriches user locations without coordinates
+func (s *Service) enrichGeoCoordinates(ctx context.Context) {
+	if s.storage == nil || s.ipInfo == nil {
+		return
+	}
+
+	locations, err := s.storage.GetLocationsWithoutCoords(ctx, 50)
+	if err != nil {
+		log.Printf("threatintel: geo enrichment error: %v", err)
+		return
+	}
+
+	if len(locations) == 0 {
+		return
+	}
+
+	log.Printf("threatintel: enriching %d locations without coordinates", len(locations))
+	enriched := 0
+
+	for _, loc := range locations {
+		// Try to get coordinates from IP lookup cache or by city/country
+		// We need an IP to lookup - try to find one from user_ip_history
+		ipData := s.ipInfo.GetCachedByLocation(loc.CountryCode, loc.City)
+		if ipData != nil && ipData.Lat != 0 && ipData.Lon != 0 {
+			if err := s.storage.UpdateLocationCoords(ctx, loc.UserEmail, loc.CountryCode, ipData.City, ipData.Lat, ipData.Lon); err != nil {
+				log.Printf("threatintel: failed to update coords for %s/%s: %v", loc.UserEmail, loc.CountryCode, err)
+				continue
+			}
+			enriched++
+		}
+
+		// Rate limit to avoid overwhelming IP-API
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if enriched > 0 {
+		log.Printf("threatintel: enriched %d/%d locations with coordinates", enriched, len(locations))
 	}
 }
 
