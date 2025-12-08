@@ -389,8 +389,16 @@ func (s *Server) broadcastToDashboards() {
 	// Threat intelligence
 	if s.threatIntel != nil {
 		tiStats := s.threatIntel.GetStats()
-		tiMatches, _ := s.storage.GetThreatMatches(ctx, 20) // Get all stored matches (max 20)
-		tiTopUsers, _ := s.threatIntel.GetTopUsersByAllCategories(ctx, 5)
+		tiMatches, err := s.storage.GetThreatMatches(ctx, 20)
+		if err != nil {
+			log.Printf("server: failed to get threat matches: %v", err)
+			tiMatches = nil
+		}
+		tiTopUsers, err := s.threatIntel.GetTopUsersByAllCategories(ctx, 5)
+		if err != nil {
+			log.Printf("server: failed to get top users by categories: %v", err)
+			tiTopUsers = nil
+		}
 		threatData := map[string]interface{}{
 			"stats":    tiStats,
 			"matches":  tiMatches,

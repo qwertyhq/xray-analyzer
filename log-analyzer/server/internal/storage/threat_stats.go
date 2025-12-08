@@ -149,7 +149,7 @@ func (s *Storage) GetHourlyThreatStats(ctx context.Context, hours int) ([]*threa
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT hour, threat_type, match_count
+		SELECT hour, threat_type, match_count, unique_users
 		FROM threat_hourly_stats
 		WHERE hour >= datetime('now', '-' || ? || ' hours')
 		ORDER BY hour DESC
@@ -163,8 +163,8 @@ func (s *Storage) GetHourlyThreatStats(ctx context.Context, hours int) ([]*threa
 	hourMap := make(map[string]*threatintel.HourlyThreatStats)
 	for rows.Next() {
 		var hour, threatType string
-		var count int64
-		if err := rows.Scan(&hour, &threatType, &count); err != nil {
+		var count, uniqueUsers int64
+		if err := rows.Scan(&hour, &threatType, &count, &uniqueUsers); err != nil {
 			continue
 		}
 
@@ -176,6 +176,7 @@ func (s *Storage) GetHourlyThreatStats(ctx context.Context, hours int) ([]*threa
 		}
 		hourMap[hour].ByType[threatType] = count
 		hourMap[hour].TotalCount += count
+		hourMap[hour].UniqueUsers += uniqueUsers
 	}
 
 	return sortHourlyStats(hourMap), nil
@@ -188,7 +189,7 @@ func (s *Storage) GetDailyThreatStats(ctx context.Context, days int) ([]*threati
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT day, threat_type, match_count
+		SELECT day, threat_type, match_count, unique_users
 		FROM threat_daily_stats
 		WHERE day >= date('now', '-' || ? || ' days')
 		ORDER BY day DESC
@@ -202,8 +203,8 @@ func (s *Storage) GetDailyThreatStats(ctx context.Context, days int) ([]*threati
 	dayMap := make(map[string]*threatintel.DailyThreatStats)
 	for rows.Next() {
 		var day, threatType string
-		var count int64
-		if err := rows.Scan(&day, &threatType, &count); err != nil {
+		var count, uniqueUsers int64
+		if err := rows.Scan(&day, &threatType, &count, &uniqueUsers); err != nil {
 			continue
 		}
 
@@ -215,6 +216,7 @@ func (s *Storage) GetDailyThreatStats(ctx context.Context, days int) ([]*threati
 		}
 		dayMap[day].ByType[threatType] = count
 		dayMap[day].TotalCount += count
+		dayMap[day].UniqueUsers += uniqueUsers
 	}
 
 	return sortDailyStats(dayMap), nil
