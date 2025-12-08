@@ -29,20 +29,22 @@ func (s *Storage) SaveGeoStats(ctx context.Context, countryCode, countryName, th
 	return err
 }
 
-// SaveUserLocation tracks user access from a specific location
-func (s *Storage) SaveUserLocation(ctx context.Context, userEmail, countryCode, countryName, city string) error {
+// SaveUserLocation tracks user access from a specific location with coordinates
+func (s *Storage) SaveUserLocation(ctx context.Context, userEmail, countryCode, countryName, city string, lat, lon float64) error {
 	if countryCode == "" || userEmail == "" {
 		return nil
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO user_locations (user_email, country_code, country_name, city, last_seen, request_count)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 1)
+		INSERT INTO user_locations (user_email, country_code, country_name, city, latitude, longitude, last_seen, request_count)
+		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1)
 		ON CONFLICT(user_email, country_code) DO UPDATE SET
 			city = COALESCE(?, city),
+			latitude = COALESCE(?, latitude),
+			longitude = COALESCE(?, longitude),
 			last_seen = CURRENT_TIMESTAMP,
 			request_count = request_count + 1
-	`, userEmail, countryCode, countryName, city, city)
+	`, userEmail, countryCode, countryName, city, lat, lon, city, lat, lon)
 
 	return err
 }
@@ -190,6 +192,94 @@ func (s *Storage) GetUserLocations(ctx context.Context, userEmail string, limit 
 			loc.City = city.String
 		}
 		result = append(result, loc)
+	}
+
+	return result, nil
+}
+
+// GetConnectionGeoStats returns geographic statistics for ALL connections (not just threats)
+func (s *Storage) GetConnectionGeoStats(ctx context.Context, limit int) ([]*threatintel.CountryStats, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT 
+			country_code,
+			country_name,
+			SUM(request_count) as total_connections,
+			COUNT(DISTINCT user_email) as unique_users
+		FROM user_locations
+		WHERE country_code != ''
+		GROUP BY country_code
+		ORDER BY total_connections DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*threatintel.CountryStats
+	for rows.Next() {
+		stat := &threatintel.CountryStats{}
+		if err := rows.Scan(&stat.CountryCode, &stat.CountryName, &stat.TotalMatches, &stat.UniqueUsers); err != nil {
+			continue
+		}
+		result = append(result, stat)
+	}
+
+	return result, nil
+}
+
+// CityGeoStats represents geo stats for a specific city with coordinates
+type CityGeoStats struct {
+	City        string  `json:"city"`
+	CountryCode string  `json:"country_code"`
+	CountryName string  `json:"country_name"`
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
+	Connections int64   `json:"connections"`
+	UniqueUsers int     `json:"unique_users"`
+}
+
+// GetCityGeoStats returns geographic statistics grouped by city with coordinates
+func (s *Storage) GetCityGeoStats(ctx context.Context, limit int) ([]*CityGeoStats, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT 
+			COALESCE(city, country_name) as city,
+			country_code,
+			country_name,
+			COALESCE(latitude, 0) as latitude,
+			COALESCE(longitude, 0) as longitude,
+			SUM(request_count) as total_connections,
+			COUNT(DISTINCT user_email) as unique_users
+		FROM user_locations
+		WHERE country_code != '' AND latitude IS NOT NULL AND longitude IS NOT NULL
+		GROUP BY country_code, city
+		ORDER BY total_connections DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*CityGeoStats
+	for rows.Next() {
+		stat := &CityGeoStats{}
+		if err := rows.Scan(&stat.City, &stat.CountryCode, &stat.CountryName, &stat.Latitude, &stat.Longitude, &stat.Connections, &stat.UniqueUsers); err != nil {
+			continue
+		}
+		// Skip entries without valid coordinates
+		if stat.Latitude == 0 && stat.Longitude == 0 {
+			continue
+		}
+		result = append(result, stat)
 	}
 
 	return result, nil

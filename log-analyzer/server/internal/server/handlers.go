@@ -888,6 +888,50 @@ func (s *Server) handleThreatIntelGeoStats(w http.ResponseWriter, r *http.Reques
 
 	ctx := r.Context()
 
+	// Check for cities mode (all connections by city with coordinates)
+	if r.URL.Query().Get("type") == "cities" {
+		limit := 100
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 500 {
+				limit = parsed
+			}
+		}
+		stats, err := s.storage.GetCityGeoStats(ctx, limit)
+		if err != nil {
+			log.Printf("Error getting city geo stats: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"type":   "cities",
+			"cities": stats,
+		})
+		return
+	}
+
+	// Check for connections mode (all connections, not just threats)
+	if r.URL.Query().Get("type") == "connections" {
+		limit := 50
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+				limit = parsed
+			}
+		}
+		stats, err := s.storage.GetConnectionGeoStats(ctx, limit)
+		if err != nil {
+			log.Printf("Error getting connection geo stats: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"type":          "connections",
+			"top_countries": stats,
+		})
+		return
+	}
+
 	// Check for summary request
 	if r.URL.Query().Get("summary") == "true" {
 		summary, err := s.storage.GetGeoSummary(ctx)

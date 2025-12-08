@@ -250,3 +250,28 @@
   border-left: 3px solid rgb(239, 68, 68);
   animation: pulse-border 0.5s ease-in-out 4;
 }
+
+/* Mapbox popup dark theme */
+.mapboxgl-popup-content {
+  background: transparent !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  border-radius: 8px !important;
+}
+
+.mapboxgl-popup-tip {
+  border-top-color: rgb(24 24 27) !important;
+}
+
+.mapboxgl-popup-close-button {
+  color: rgb(161 161 170) !important;
+  font-size: 18px !important;
+  padding: 4px 8px !important;
+  right: 2px !important;
+  top: 2px !important;
+}
+
+.mapboxgl-popup-close-button:hover {
+  color: white !important;
+  background: transparent !important;
+}

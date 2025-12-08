@@ -30,7 +30,7 @@ type Storage interface {
 	GetTopUsersByAllCategories(ctx context.Context, limit int) (map[string][]*CategoryUserStats, error)
 	// Geo stats
 	SaveGeoStats(ctx context.Context, countryCode, countryName, threatType, userEmail string) error
-	SaveUserLocation(ctx context.Context, userEmail, countryCode, countryName, city string) error
+	SaveUserLocation(ctx context.Context, userEmail, countryCode, countryName, city string, lat, lon float64) error
 }
 
 // CategoryUserStats represents user stats for a content category
@@ -158,8 +158,8 @@ func (s *Service) CheckAndRecord(ctx context.Context, userEmail, nodeID, sourceI
 				if ipData, err := s.ipInfo.Lookup(geoCtx, sourceIP); err == nil && ipData != nil {
 					// Save geo stats for threat
 					s.storage.SaveGeoStats(geoCtx, ipData.CountryCode, ipData.Country, string(indicator.ThreatType), userEmail)
-					// Save user location
-					s.storage.SaveUserLocation(geoCtx, userEmail, ipData.CountryCode, ipData.Country, ipData.City)
+					// Save user location with coordinates
+					s.storage.SaveUserLocation(geoCtx, userEmail, ipData.CountryCode, ipData.Country, ipData.City, ipData.Lat, ipData.Lon)
 				}
 			}()
 		}
