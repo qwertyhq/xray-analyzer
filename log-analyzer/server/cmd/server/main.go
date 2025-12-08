@@ -126,7 +126,7 @@ func main() {
 	}()
 
 	// Initialize and start server
-	srv := server.New(cfg.ListenAddr, anal, store, bl)
+	srv := server.New(cfg.ListenAddr, cfg.AllowedOrigins, anal, store, bl)
 	srv.SetThreatIntel(threatIntelSvc)
 	go func() {
 		if err := srv.Start(ctx); err != nil {

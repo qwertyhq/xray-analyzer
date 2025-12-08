@@ -5,7 +5,9 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/xray-log-analyzer/agent/internal/batcher"
 	"github.com/xray-log-analyzer/agent/internal/config"
@@ -38,8 +40,13 @@ func main() {
 	logBatcher := batcher.New(cfg.NodeID, cfg.BatchSize, cfg.BatchTimeout, entryCh, batchCh)
 	wsClient := websocket.New(cfg.ServerURL, cfg.NodeID, batchCh)
 
+	// WaitGroup for proper shutdown
+	var wg sync.WaitGroup
+
 	// Start tailer
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		if err := logTailer.Start(ctx); err != nil {
 			log.Printf("tailer error: %v", err)
 			cancel()
@@ -47,10 +54,18 @@ func main() {
 	}()
 
 	// Start batcher
-	go logBatcher.Start(ctx)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		logBatcher.Start(ctx)
+	}()
 
 	// Start WebSocket client
-	go wsClient.Start(ctx)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		wsClient.Start(ctx)
+	}()
 
 	log.Println("agent started, press Ctrl+C to stop")
 
@@ -62,8 +77,18 @@ func main() {
 	log.Println("shutting down...")
 	cancel()
 
-	// Give goroutines time to flush
+	// Wait for goroutines with timeout
 	log.Println("waiting for cleanup...")
-	// In production, use WaitGroup for proper cleanup
-	log.Println("agent stopped")
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("agent stopped gracefully")
+	case <-time.After(5 * time.Second):
+		log.Println("agent stopped (timeout waiting for goroutines)")
+	}
 }

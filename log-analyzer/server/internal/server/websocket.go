@@ -15,16 +15,34 @@ import (
 	"github.com/xray-log-analyzer/server/internal/models"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024 * 64,
-	WriteBufferSize: 1024 * 64,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+// createUpgrader creates a WebSocket upgrader with origin checking
+func (s *Server) createUpgrader(readBuf, writeBuf int) websocket.Upgrader {
+	return websocket.Upgrader{
+		ReadBufferSize:  readBuf,
+		WriteBufferSize: writeBuf,
+		CheckOrigin: func(r *http.Request) bool {
+			// If no allowed origins configured, allow all (for development)
+			if len(s.allowedOrigins) == 0 {
+				return true
+			}
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true // Allow requests without Origin header (non-browser clients)
+			}
+			for _, allowed := range s.allowedOrigins {
+				if origin == allowed {
+					return true
+				}
+			}
+			log.Printf("server: rejected WebSocket connection from origin: %s", origin)
+			return false
+		},
+	}
 }
 
 // handleWebSocket handles WebSocket connections from agents
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	upgrader := s.createUpgrader(1024*64, 1024*64)
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("server: upgrade error: %v", err)
@@ -80,17 +98,26 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleClient(client *Client) {
 	ctx := context.Background()
 
-	// Start ping ticker
+	// Start ping ticker with done channel for cleanup
 	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
+	pingDone := make(chan struct{})
+	defer func() {
+		pingTicker.Stop()
+		close(pingDone)
+	}()
 
 	go func() {
-		for range pingTicker.C {
-			client.mu.Lock()
-			err := client.Conn.WriteJSON(map[string]string{"type": "ping"})
-			client.mu.Unlock()
-			if err != nil {
+		for {
+			select {
+			case <-pingDone:
 				return
+			case <-pingTicker.C:
+				client.mu.Lock()
+				err := client.Conn.WriteJSON(map[string]string{"type": "ping"})
+				client.mu.Unlock()
+				if err != nil {
+					return
+				}
 			}
 		}
 	}()
@@ -162,18 +189,10 @@ func (s *Server) GetConnectedClients() []string {
 	return nodes
 }
 
-// Dashboard WebSocket upgrader
-var dashboardUpgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024 * 64,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
 // handleDashboardWebSocket handles WebSocket connections from dashboard
 func (s *Server) handleDashboardWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := dashboardUpgrader.Upgrade(w, r, nil)
+	upgrader := s.createUpgrader(1024, 1024*64)
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("server: dashboard upgrade error: %v", err)
 		return
@@ -185,9 +204,10 @@ func (s *Server) handleDashboardWebSocket(w http.ResponseWriter, r *http.Request
 	// Register client
 	s.dashboardClientsMu.Lock()
 	s.dashboardClients[client] = true
+	clientCount := len(s.dashboardClients)
 	s.dashboardClientsMu.Unlock()
 
-	log.Printf("server: dashboard client connected, total: %d", len(s.dashboardClients))
+	log.Printf("server: dashboard client connected, total: %d", clientCount)
 
 	// Send initial data
 	s.sendFullDashboardData(client)
@@ -196,9 +216,10 @@ func (s *Server) handleDashboardWebSocket(w http.ResponseWriter, r *http.Request
 	defer func() {
 		s.dashboardClientsMu.Lock()
 		delete(s.dashboardClients, client)
+		remainingCount := len(s.dashboardClients)
 		s.dashboardClientsMu.Unlock()
 		conn.Close()
-		log.Printf("server: dashboard client disconnected, total: %d", len(s.dashboardClients))
+		log.Printf("server: dashboard client disconnected, total: %d", remainingCount)
 	}()
 
 	// Keep connection alive

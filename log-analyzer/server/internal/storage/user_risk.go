@@ -58,45 +58,58 @@ func (s *Storage) CalculateUserRiskProfile(ctx context.Context, email string) (*
 	for rows.Next() {
 		var threatType string
 		var count int
-		if rows.Scan(&threatType, &count) == nil {
-			profile.ThreatsByType[threatType] = count
+		if err := rows.Scan(&threatType, &count); err != nil {
+			return nil, fmt.Errorf("scan threat type: %w", err)
 		}
+		profile.ThreatsByType[threatType] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate threat types: %w", err)
 	}
 
 	// Get unique countries
 	row = s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT country_code) 
-		FROM user_locations 
+		SELECT COUNT(DISTINCT country_code)
+		FROM user_locations
 		WHERE user_email = ?
 	`, email)
-	row.Scan(&profile.UniqueCountries)
+	if err := row.Scan(&profile.UniqueCountries); err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("scan unique countries: %w", err)
+	}
 
 	// Get anomaly count
 	row = s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) 
-		FROM anomalies 
+		SELECT COUNT(*)
+		FROM anomalies
 		WHERE user_email = ? AND resolved = 0
 	`, email)
-	row.Scan(&profile.AnomalyCount)
+	if err := row.Scan(&profile.AnomalyCount); err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("scan anomaly count: %w", err)
+	}
 
 	// Get top domains
 	domainRows, err := s.db.QueryContext(ctx, `
-		SELECT destination, COUNT(*) as cnt 
-		FROM threat_matches 
+		SELECT destination, COUNT(*) as cnt
+		FROM threat_matches
 		WHERE user_email = ?
-		GROUP BY destination 
-		ORDER BY cnt DESC 
+		GROUP BY destination
+		ORDER BY cnt DESC
 		LIMIT 5
 	`, email)
-	if err == nil {
-		defer domainRows.Close()
-		for domainRows.Next() {
-			var domain string
-			var cnt int
-			if domainRows.Scan(&domain, &cnt) == nil {
-				profile.TopDomains = append(profile.TopDomains, domain)
-			}
+	if err != nil {
+		return nil, fmt.Errorf("query top domains: %w", err)
+	}
+	defer domainRows.Close()
+	for domainRows.Next() {
+		var domain string
+		var cnt int
+		if err := domainRows.Scan(&domain, &cnt); err != nil {
+			return nil, fmt.Errorf("scan top domain: %w", err)
 		}
+		profile.TopDomains = append(profile.TopDomains, domain)
+	}
+	if err := domainRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate top domains: %w", err)
 	}
 
 	// Calculate risk score and factors
@@ -223,18 +236,24 @@ func (s *Storage) calculateRiskTrend(ctx context.Context, email string) string {
 	var recent, previous int
 
 	// Count matches in last 7 days
-	s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM threat_matches 
+	row := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM threat_matches
 		WHERE user_email = ? AND matched_at > datetime('now', '-7 days')
-	`, email).Scan(&recent)
+	`, email)
+	if err := row.Scan(&recent); err != nil {
+		return "stable" // Default on error
+	}
 
 	// Count matches in previous 7 days
-	s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM threat_matches 
-		WHERE user_email = ? 
-		AND matched_at > datetime('now', '-14 days') 
+	row = s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM threat_matches
+		WHERE user_email = ?
+		AND matched_at > datetime('now', '-14 days')
 		AND matched_at <= datetime('now', '-7 days')
-	`, email).Scan(&previous)
+	`, email)
+	if err := row.Scan(&previous); err != nil {
+		return "stable" // Default on error
+	}
 
 	if recent > previous+2 {
 		return "up"
@@ -314,19 +333,29 @@ func (s *Storage) GetUserRiskProfile(ctx context.Context, email string) (*threat
 	profile.RiskLevel = threatintel.RiskLevel(riskLevel)
 
 	if threatsByType.Valid {
-		json.Unmarshal([]byte(threatsByType.String), &profile.ThreatsByType)
+		if err := json.Unmarshal([]byte(threatsByType.String), &profile.ThreatsByType); err != nil {
+			return nil, fmt.Errorf("unmarshal threats_by_type: %w", err)
+		}
 	}
 	if topDomains.Valid {
-		json.Unmarshal([]byte(topDomains.String), &profile.TopDomains)
+		if err := json.Unmarshal([]byte(topDomains.String), &profile.TopDomains); err != nil {
+			return nil, fmt.Errorf("unmarshal top_domains: %w", err)
+		}
 	}
 	if riskFactors.Valid {
-		json.Unmarshal([]byte(riskFactors.String), &profile.RiskFactors)
+		if err := json.Unmarshal([]byte(riskFactors.String), &profile.RiskFactors); err != nil {
+			return nil, fmt.Errorf("unmarshal risk_factors: %w", err)
+		}
 	}
 	if firstSeen.Valid {
-		profile.FirstSeen, _ = time.Parse(time.RFC3339, firstSeen.String)
+		if t, err := time.Parse(time.RFC3339, firstSeen.String); err == nil {
+			profile.FirstSeen = t
+		}
 	}
 	if lastActivity.Valid {
-		profile.LastActivity, _ = time.Parse(time.RFC3339, lastActivity.String)
+		if t, err := time.Parse(time.RFC3339, lastActivity.String); err == nil {
+			profile.LastActivity = t
+		}
 	}
 
 	return profile, nil
@@ -344,12 +373,14 @@ func (s *Storage) GetUserRiskSummary(ctx context.Context) (*threatintel.UserRisk
 		SELECT COUNT(*), COALESCE(AVG(risk_score), 0)
 		FROM user_risk_profiles
 	`)
-	row.Scan(&summary.TotalUsers, &summary.AverageRiskScore)
+	if err := row.Scan(&summary.TotalUsers, &summary.AverageRiskScore); err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("scan user risk summary: %w", err)
+	}
 
 	// Get distribution by risk level
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT risk_level, COUNT(*) 
-		FROM user_risk_profiles 
+		SELECT risk_level, COUNT(*)
+		FROM user_risk_profiles
 		GROUP BY risk_level
 	`)
 	if err != nil {
@@ -360,9 +391,13 @@ func (s *Storage) GetUserRiskSummary(ctx context.Context) (*threatintel.UserRisk
 	for rows.Next() {
 		var level string
 		var count int
-		if rows.Scan(&level, &count) == nil {
-			summary.ByRiskLevel[level] = count
+		if err := rows.Scan(&level, &count); err != nil {
+			return nil, fmt.Errorf("scan risk level: %w", err)
 		}
+		summary.ByRiskLevel[level] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate risk levels: %w", err)
 	}
 
 	// Get high risk users (score >= 50)
@@ -390,37 +425,44 @@ func (s *Storage) GetUserRiskSummary(ctx context.Context) (*threatintel.UserRisk
 		var firstSeen, lastActivity sql.NullString
 		var riskLevel string
 
-		if highRiskRows.Scan(&profile.UserEmail, &riskLevel, &profile.RiskScore,
+		if err := highRiskRows.Scan(&profile.UserEmail, &riskLevel, &profile.RiskScore,
 			&profile.TotalMatches, &threatsByType, &profile.UniqueCountries,
 			&profile.AnomalyCount, &firstSeen, &lastActivity,
-			&profile.DaysActive, &topDomains, &riskFactors, &profile.TrendDirection) == nil {
-
-			profile.RiskLevel = threatintel.RiskLevel(riskLevel)
-			if threatsByType.Valid {
-				json.Unmarshal([]byte(threatsByType.String), &profile.ThreatsByType)
-			}
-			if topDomains.Valid {
-				json.Unmarshal([]byte(topDomains.String), &profile.TopDomains)
-			}
-			if riskFactors.Valid {
-				json.Unmarshal([]byte(riskFactors.String), &profile.RiskFactors)
-			}
-			if firstSeen.Valid {
-				profile.FirstSeen, _ = time.Parse(time.RFC3339, firstSeen.String)
-			}
-			if lastActivity.Valid {
-				profile.LastActivity, _ = time.Parse(time.RFC3339, lastActivity.String)
-			}
-
-			summary.HighRiskUsers = append(summary.HighRiskUsers, profile)
+			&profile.DaysActive, &topDomains, &riskFactors, &profile.TrendDirection); err != nil {
+			continue // Skip malformed rows
 		}
+
+		profile.RiskLevel = threatintel.RiskLevel(riskLevel)
+		if threatsByType.Valid {
+			json.Unmarshal([]byte(threatsByType.String), &profile.ThreatsByType) // Non-critical, use defaults on error
+		}
+		if topDomains.Valid {
+			json.Unmarshal([]byte(topDomains.String), &profile.TopDomains)
+		}
+		if riskFactors.Valid {
+			json.Unmarshal([]byte(riskFactors.String), &profile.RiskFactors)
+		}
+		if firstSeen.Valid {
+			profile.FirstSeen, _ = time.Parse(time.RFC3339, firstSeen.String)
+		}
+		if lastActivity.Valid {
+			profile.LastActivity, _ = time.Parse(time.RFC3339, lastActivity.String)
+		}
+
+		summary.HighRiskUsers = append(summary.HighRiskUsers, profile)
+	}
+	if err := highRiskRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate high risk users: %w", err)
 	}
 
 	// Count recent escalations (risk increased in last 24h)
-	s.db.QueryRowContext(ctx, `
+	row = s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM user_risk_profiles
 		WHERE trend_direction = 'up' AND updated_at > datetime('now', '-24 hours')
-	`).Scan(&summary.RecentEscalations)
+	`)
+	if err := row.Scan(&summary.RecentEscalations); err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("scan recent escalations: %w", err)
+	}
 
 	return summary, nil
 }
@@ -438,13 +480,19 @@ func (s *Storage) RecalculateAllUserRiskProfiles(ctx context.Context) error {
 	var emails []string
 	for rows.Next() {
 		var email string
-		if rows.Scan(&email) == nil {
-			emails = append(emails, email)
+		if err := rows.Scan(&email); err != nil {
+			return fmt.Errorf("scan email: %w", err)
 		}
+		emails = append(emails, email)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate emails: %w", err)
 	}
 
 	for _, email := range emails {
-		s.CalculateUserRiskProfile(ctx, email)
+		if _, err := s.CalculateUserRiskProfile(ctx, email); err != nil {
+			return fmt.Errorf("calculate risk profile for %s: %w", email, err)
+		}
 	}
 
 	return nil

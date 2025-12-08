@@ -3,14 +3,16 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // Config holds server configuration
 type Config struct {
 	// Server settings
-	ListenAddr string
-	DBPath     string
+	ListenAddr     string
+	DBPath         string
+	AllowedOrigins []string // Allowed origins for WebSocket CORS (empty = allow all for dev)
 
 	// Analysis settings
 	BlacklistPath      string
@@ -32,6 +34,7 @@ func Load() *Config {
 	return &Config{
 		ListenAddr:             getEnv("LISTEN_ADDR", ":8080"),
 		DBPath:                 getEnv("DB_PATH", "./data/analyzer.db"),
+		AllowedOrigins:         getStringSliceEnv("ALLOWED_ORIGINS", nil),
 		BlacklistPath:          getEnv("BLACKLIST_PATH", "./blacklist.txt"),
 		BlacklistReload:        getDurationEnv("BLACKLIST_RELOAD", 5*time.Minute),
 		BlacklistRemoteURL:     getEnv("BLACKLIST_REMOTE_URL", ""),
@@ -41,6 +44,20 @@ func Load() *Config {
 		SuspiciousRequestCount: getIntEnv("SUSPICIOUS_REQUEST_COUNT", 5),
 		SuspiciousTimeWindow:   getDurationEnv("SUSPICIOUS_TIME_WINDOW", 1*time.Hour),
 	}
+}
+
+func getStringSliceEnv(key string, defaultValue []string) []string {
+	if value := os.Getenv(key); value != "" {
+		parts := strings.Split(value, ",")
+		result := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				result = append(result, trimmed)
+			}
+		}
+		return result
+	}
+	return defaultValue
 }
 
 func getEnv(key, defaultValue string) string {

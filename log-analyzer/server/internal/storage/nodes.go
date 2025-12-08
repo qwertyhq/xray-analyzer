@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/models"
@@ -38,17 +39,24 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 	// Calculate 1 minute ago in RFC3339 format to match stored data
 	oneMinAgo := time.Now().UTC().Add(-1 * time.Minute).Format(time.RFC3339)
 
+	// Use LEFT JOIN instead of correlated subquery to avoid N+1 problem
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT 
-			n.node_id, 
-			n.total_requests, 
-			n.blacklist_hits, 
-			n.unique_users, 
-			COALESCE((SELECT COUNT(DISTINCT user_email) FROM user_stats WHERE node_id = n.node_id AND last_seen > ?), 0) as online_users,
-			COALESCE(n.last_seen, '') as last_seen, 
-			COALESCE(n.last_batch_time, '') as last_batch_time, 
+		SELECT
+			n.node_id,
+			n.total_requests,
+			n.blacklist_hits,
+			n.unique_users,
+			COALESCE(online.cnt, 0) as online_users,
+			COALESCE(n.last_seen, '') as last_seen,
+			COALESCE(n.last_batch_time, '') as last_batch_time,
 			n.last_batch_count
 		FROM node_stats n
+		LEFT JOIN (
+			SELECT node_id, COUNT(DISTINCT user_email) as cnt
+			FROM user_stats
+			WHERE last_seen > ?
+			GROUP BY node_id
+		) online ON online.node_id = n.node_id
 		ORDER BY n.total_requests DESC
 	`, oneMinAgo)
 	if err != nil {
@@ -77,14 +85,28 @@ func (s *Storage) DeleteNode(ctx context.Context, nodeID string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
 
 	// Delete from all related tables
-	tx.ExecContext(ctx, "DELETE FROM user_stats WHERE node_id = ?", nodeID)
-	tx.ExecContext(ctx, "DELETE FROM blacklist_matches WHERE node_id = ?", nodeID)
-	tx.ExecContext(ctx, "DELETE FROM alerts WHERE node_id = ?", nodeID)
-	tx.ExecContext(ctx, "DELETE FROM hourly_stats WHERE node_id = ?", nodeID)
-	tx.ExecContext(ctx, "DELETE FROM node_stats WHERE node_id = ?", nodeID)
+	if _, err := tx.ExecContext(ctx, "DELETE FROM user_stats WHERE node_id = ?", nodeID); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("delete user_stats: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM blacklist_matches WHERE node_id = ?", nodeID); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("delete blacklist_matches: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM alerts WHERE node_id = ?", nodeID); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("delete alerts: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM hourly_stats WHERE node_id = ?", nodeID); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("delete hourly_stats: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM node_stats WHERE node_id = ?", nodeID); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("delete node_stats: %w", err)
+	}
 
 	return tx.Commit()
 }

@@ -88,6 +88,7 @@ func (s *Storage) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_user_stats_node ON user_stats(node_id);
 	CREATE INDEX IF NOT EXISTS idx_user_stats_email ON user_stats(user_email);
 	CREATE INDEX IF NOT EXISTS idx_user_stats_blacklist ON user_stats(blacklist_hits DESC);
+	CREATE INDEX IF NOT EXISTS idx_user_stats_node_lastseen ON user_stats(node_id, last_seen DESC);
 
 	CREATE TABLE IF NOT EXISTS blacklist_matches (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,6 +102,7 @@ func (s *Storage) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_blacklist_node ON blacklist_matches(node_id);
 	CREATE INDEX IF NOT EXISTS idx_blacklist_user ON blacklist_matches(user_email);
 	CREATE INDEX IF NOT EXISTS idx_blacklist_time ON blacklist_matches(timestamp DESC);
+	CREATE INDEX IF NOT EXISTS idx_blacklist_user_time ON blacklist_matches(user_email, timestamp DESC);
 
 	CREATE TABLE IF NOT EXISTS alerts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
