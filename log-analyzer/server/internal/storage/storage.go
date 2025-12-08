@@ -254,6 +254,8 @@ func (s *Storage) migrate() error {
 		country_code TEXT NOT NULL,
 		country_name TEXT NOT NULL,
 		city TEXT,
+		latitude REAL,
+		longitude REAL,
 		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
 		request_count INTEGER DEFAULT 1,
 		PRIMARY KEY (user_email, country_code)
@@ -269,6 +271,8 @@ func (s *Storage) migrate() error {
 		country_code TEXT,
 		country_name TEXT,
 		city TEXT,
+		latitude REAL,
+		longitude REAL,
 		first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
 		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
 		request_count INTEGER DEFAULT 1,
@@ -513,6 +517,14 @@ func (s *Storage) migrate() error {
 
 	// Migration: add last_ip column if not exists
 	s.db.Exec("ALTER TABLE user_stats ADD COLUMN last_ip TEXT")
+
+	// Migration: add latitude/longitude columns to user_locations
+	s.db.Exec("ALTER TABLE user_locations ADD COLUMN latitude REAL")
+	s.db.Exec("ALTER TABLE user_locations ADD COLUMN longitude REAL")
+
+	// Migration: add latitude/longitude columns to user_ip_history
+	s.db.Exec("ALTER TABLE user_ip_history ADD COLUMN latitude REAL")
+	s.db.Exec("ALTER TABLE user_ip_history ADD COLUMN longitude REAL")
 
 	return nil
 }

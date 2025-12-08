@@ -77,16 +77,28 @@ const countryCentroids: Record<string, [number, number]> = {
   "TJ": [68.7738, 38.5598],
 };
 
-interface GeoData {
+export interface GeoData {
   country: string;
   country_code: string;
   count: number;
   users: number;
 }
 
+export interface CityData {
+  city: string;
+  country: string;
+  country_code: string;
+  count: number;
+  users: number;
+  latitude: number;
+  longitude: number;
+}
+
 interface GeoMapProps {
   data: GeoData[];
+  cityData?: CityData[];
   title?: string;
+  mode?: "countries" | "cities";
 }
 
 // Country flag emoji from country code
@@ -101,19 +113,43 @@ function getFlag(countryCode: string): string {
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-export function GeoMap({ data, title = "Geographic Distribution" }: GeoMapProps) {
+export function GeoMap({ data, cityData = [], title = "Geographic Distribution", mode = "cities" }: GeoMapProps) {
   const mapRef = useRef<MapRef>(null);
   const [popupInfo, setPopupInfo] = useState<{
     longitude: number;
     latitude: number;
     country: string;
     country_code: string;
+    city?: string;
     count: number;
     users: number;
   } | null>(null);
 
-  // Convert data to GeoJSON
-  const geojson = useMemo((): FeatureCollection<Point> => {
+  // Convert city data to GeoJSON (uses actual coordinates)
+  const cityGeojson = useMemo((): FeatureCollection<Point> => {
+    return {
+      type: "FeatureCollection",
+      features: cityData
+        .filter(item => item.latitude !== 0 && item.longitude !== 0)
+        .map(item => ({
+          type: "Feature" as const,
+          geometry: {
+            type: "Point" as const,
+            coordinates: [item.longitude, item.latitude],
+          },
+          properties: {
+            city: item.city,
+            country: item.country,
+            country_code: item.country_code,
+            count: item.count,
+            users: item.users,
+          },
+        })),
+    };
+  }, [cityData]);
+
+  // Convert country data to GeoJSON (uses country centroids)
+  const countryGeojson = useMemo((): FeatureCollection<Point> => {
     return {
       type: "FeatureCollection",
       features: data
@@ -137,8 +173,12 @@ export function GeoMap({ data, title = "Geographic Distribution" }: GeoMapProps)
     };
   }, [data]);
 
-  const totalCount = useMemo(() => data.reduce((sum, d) => sum + d.count, 0), [data]);
-  const maxCount = useMemo(() => Math.max(...data.map(d => d.count), 1), [data]);
+  // Choose which data to display based on mode
+  const geojson = mode === "cities" && cityData.length > 0 ? cityGeojson : countryGeojson;
+  const displayData = mode === "cities" && cityData.length > 0 ? cityData : data;
+
+  const totalCount = useMemo(() => displayData.reduce((sum, d) => sum + d.count, 0), [displayData]);
+  const maxCount = useMemo(() => Math.max(...displayData.map(d => d.count), 1), [displayData]);
 
   // Layer style for circles
   const layerStyle: LayerProps = useMemo(() => ({
@@ -176,6 +216,7 @@ export function GeoMap({ data, title = "Geographic Distribution" }: GeoMapProps)
         latitude: coords[1],
         country: feature.properties?.country || "",
         country_code: feature.properties?.country_code || "",
+        city: feature.properties?.city || undefined,
         count: feature.properties?.count || 0,
         users: feature.properties?.users || 0,
       });
@@ -241,7 +282,10 @@ export function GeoMap({ data, title = "Geographic Distribution" }: GeoMapProps)
           {title}
         </CardTitle>
         <CardDescription className="text-xs">
-          {data.length} countries • {totalCount.toLocaleString()} total connections
+          {mode === "cities" && cityData.length > 0 
+            ? `${cityData.length} cities • ${totalCount.toLocaleString()} connections`
+            : `${data.length} countries • ${totalCount.toLocaleString()} connections`
+          }
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
@@ -274,24 +318,32 @@ export function GeoMap({ data, title = "Geographic Distribution" }: GeoMapProps)
                 onClose={() => setPopupInfo(null)}
                 closeButton={true}
                 closeOnClick={false}
+                className="geo-popup"
               >
-                <div className="p-2 min-w-[120px]">
+                <div className="p-2 min-w-[140px] bg-zinc-900 text-white rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-lg">{getFlag(popupInfo.country_code)}</span>
-                    <span className="font-medium">{popupInfo.country}</span>
+                    <div className="flex flex-col">
+                      {popupInfo.city && (
+                        <span className="font-medium text-white">{popupInfo.city}</span>
+                      )}
+                      <span className={popupInfo.city ? "text-sm text-zinc-400" : "font-medium text-white"}>
+                        {popupInfo.country}
+                      </span>
+                    </div>
                   </div>
                   <div className="text-sm space-y-1">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Connections:</span>
-                      <span className="font-mono">{popupInfo.count.toLocaleString()}</span>
+                      <span className="text-zinc-400">Connections:</span>
+                      <span className="font-mono text-white">{popupInfo.count.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Users:</span>
-                      <span className="font-mono">{popupInfo.users.toLocaleString()}</span>
+                      <span className="text-zinc-400">Users:</span>
+                      <span className="font-mono text-white">{popupInfo.users.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Share:</span>
-                      <span className="font-mono">
+                      <span className="text-zinc-400">Share:</span>
+                      <span className="font-mono text-white">
                         {((popupInfo.count / totalCount) * 100).toFixed(1)}%
                       </span>
                     </div>
@@ -316,18 +368,29 @@ export function GeoMap({ data, title = "Geographic Distribution" }: GeoMapProps)
           </div>
         </div>
 
-        {/* Top countries list */}
+        {/* Top locations list */}
         <div className="p-3 border-t max-h-[150px] overflow-y-auto scrollbar-thin">
           <div className="grid grid-cols-2 gap-2">
-            {data.slice(0, 6).map((item) => (
-              <div key={item.country_code} className="flex items-center gap-2 text-sm">
-                <span>{getFlag(item.country_code)}</span>
-                <span className="truncate flex-1">{item.country}</span>
-                <Badge variant="secondary" className="text-xs">
-                  {item.count.toLocaleString()}
-                </Badge>
-              </div>
-            ))}
+            {mode === "cities" && cityData.length > 0
+              ? cityData.slice(0, 6).map((item, idx) => (
+                  <div key={`${item.city}-${item.country_code}-${idx}`} className="flex items-center gap-2 text-sm">
+                    <span>{getFlag(item.country_code)}</span>
+                    <span className="truncate flex-1">{item.city}</span>
+                    <Badge variant="secondary" className="text-xs">
+                      {item.count.toLocaleString()}
+                    </Badge>
+                  </div>
+                ))
+              : data.slice(0, 6).map((item) => (
+                  <div key={item.country_code} className="flex items-center gap-2 text-sm">
+                    <span>{getFlag(item.country_code)}</span>
+                    <span className="truncate flex-1">{item.country}</span>
+                    <Badge variant="secondary" className="text-xs">
+                      {item.count.toLocaleString()}
+                    </Badge>
+                  </div>
+                ))
+            }
           </div>
         </div>
       </CardContent>

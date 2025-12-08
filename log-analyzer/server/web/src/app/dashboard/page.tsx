@@ -11,7 +11,7 @@ import { ThreatIntelCard } from "@/components/threatintel/threat-intel-card";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { SystemHealth } from "@/components/dashboard/system-health";
 import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
-import { GeoMap } from "@/components/dashboard/geo-map";
+import { GeoMap, CityData } from "@/components/dashboard/geo-map";
 import { TopOffenders } from "@/components/dashboard/top-offenders";
 import { RealTimeFeed, FeedEvent, EventType } from "@/components/dashboard/real-time-feed";
 import { TrafficDistribution } from "@/components/dashboard/traffic-distribution";
@@ -29,6 +29,7 @@ export default function DashboardPage() {
   
   // State for additional data
   const [geoData, setGeoData] = useState<Array<{ country: string; country_code: string; count: number; users: number }>>([]);
+  const [cityData, setCityData] = useState<CityData[]>([]);
   const [topOffenders, setTopOffenders] = useState<Array<{ user_email: string; blacklist_hits: number; risk_score?: number }>>([]);
   const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -45,8 +46,8 @@ export default function DashboardPage() {
           headers["Authorization"] = `Bearer ${token}`;
         }
 
-        // Fetch geo stats (use summary=true to get GeoSummary with top_countries)
-        const geoRes = await fetch("/api/threatintel/geo-stats?summary=true", { headers });
+        // Fetch geo stats (use type=connections to get ALL connections, not just threats)
+        const geoRes = await fetch("/api/threatintel/geo-stats?type=connections&limit=50", { headers });
         if (geoRes.ok) {
           const data = await geoRes.json();
           // Transform top_countries to match GeoMap format
@@ -57,6 +58,22 @@ export default function DashboardPage() {
             users: c.unique_users,
           })) || [];
           setGeoData(countries);
+        }
+
+        // Fetch city-level geo stats with coordinates
+        const citiesRes = await fetch("/api/threatintel/geo-stats?type=cities&limit=200", { headers });
+        if (citiesRes.ok) {
+          const data = await citiesRes.json();
+          const cities: CityData[] = data.cities?.map((c: { city: string; country_code: string; country_name: string; latitude: number; longitude: number; connections: number; unique_users: number }) => ({
+            city: c.city,
+            country: c.country_name || c.country_code,
+            country_code: c.country_code,
+            count: c.connections,
+            users: c.unique_users,
+            latitude: c.latitude,
+            longitude: c.longitude,
+          })) || [];
+          setCityData(cities);
         }
 
         // Fetch top offenders (API returns array directly, sorted by blacklist_hits)
@@ -312,7 +329,7 @@ export default function DashboardPage() {
 
       {/* Row 5: Geo Distribution (larger) + Real-time Feed */}
       <div className="grid gap-6 md:grid-cols-2">
-        <GeoMap data={geoData} title="Geographic Distribution" />
+        <GeoMap data={geoData} cityData={cityData} title="Geographic Distribution" mode="cities" />
         <RealTimeFeed events={feedEvents} title="Real-time Feed" />
       </div>
 
