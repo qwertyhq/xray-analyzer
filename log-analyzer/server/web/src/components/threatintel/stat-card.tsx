@@ -92,13 +92,14 @@ export function StatCardGrid({
   className 
 }: { 
   children: React.ReactNode; 
-  columns?: 2 | 3 | 4;
+  columns?: 2 | 3 | 4 | 5;
   className?: string;
 }) {
   const colsClass = {
     2: "md:grid-cols-2",
     3: "md:grid-cols-3",
     4: "md:grid-cols-4",
+    5: "grid-cols-2 lg:grid-cols-5",
   };
 
   return (

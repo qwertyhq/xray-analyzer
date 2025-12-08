@@ -109,8 +109,9 @@ function RiskBadge({ score }: { score: number }) {
   return <span className="text-muted-foreground text-sm">—</span>;
 }
 
-type SortField = "requests" | "blacklist" | "risk" | "last_seen";
+type SortField = "requests" | "blacklist" | "risk" | "last_seen" | "destinations";
 type SortOrder = "asc" | "desc";
+type RiskFilter = "all" | "high" | "medium" | "low" | "none";
 
 interface UsersTableProps {
   users: UserStats[];
@@ -128,12 +129,20 @@ export function UsersTable({
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [nodeFilter, setNodeFilter] = useState<string>("all");
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [sortField, setSortField] = useState<SortField>("requests");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
-  // Get unique nodes for filter
+  // Get unique individual nodes for filter (node_id can be comma-separated list)
   const uniqueNodes = useMemo(() => {
-    const nodes = new Set(users.map(u => u.node_id));
+    const nodes = new Set<string>();
+    for (const u of users) {
+      // Split by comma and add each node
+      const nodeList = u.node_id.split(",").map(n => n.trim()).filter(Boolean);
+      for (const node of nodeList) {
+        nodes.add(node);
+      }
+    }
     return Array.from(nodes).sort();
   }, [users]);
 
@@ -152,8 +161,25 @@ export function UsersTable({
       result = result.filter(u => u.blacklist_hits > 0);
     }
     
+    // Node filter - check if selected node is in the comma-separated list
     if (nodeFilter !== "all") {
-      result = result.filter(u => u.node_id === nodeFilter);
+      result = result.filter(u => {
+        const userNodes = u.node_id.split(",").map(n => n.trim());
+        return userNodes.includes(nodeFilter);
+      });
+    }
+
+    // Risk filter
+    if (riskFilter !== "all") {
+      result = result.filter(u => {
+        switch (riskFilter) {
+          case "high": return u.riskScore >= 70;
+          case "medium": return u.riskScore >= 40 && u.riskScore < 70;
+          case "low": return u.riskScore > 0 && u.riskScore < 40;
+          case "none": return u.riskScore === 0;
+          default: return true;
+        }
+      });
     }
     
     if (search) {
@@ -178,6 +204,9 @@ export function UsersTable({
         case "risk":
           cmp = a.riskScore - b.riskScore;
           break;
+        case "destinations":
+          cmp = a.unique_destinations - b.unique_destinations;
+          break;
         case "last_seen":
           cmp = new Date(a.last_seen || 0).getTime() - new Date(b.last_seen || 0).getTime();
           break;
@@ -186,7 +215,7 @@ export function UsersTable({
     });
     
     return result;
-  }, [usersWithRisk, showBlacklistOnly, nodeFilter, search, sortField, sortOrder]);
+  }, [usersWithRisk, showBlacklistOnly, nodeFilter, riskFilter, search, sortField, sortOrder]);
 
   const paginatedUsers = useMemo(() => {
     const start = page * pageSize;
@@ -257,6 +286,38 @@ export function UsersTable({
               ))}
             </SelectContent>
           </Select>
+          <Select value={riskFilter} onValueChange={(v) => { setRiskFilter(v as RiskFilter); setPage(0); }}>
+            <SelectTrigger className="w-full sm:w-[150px]">
+              <SelectValue placeholder="Risk Level" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All risks</SelectItem>
+              <SelectItem value="high">
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-red-500" />
+                  High (≥70)
+                </span>
+              </SelectItem>
+              <SelectItem value="medium">
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                  Medium (40-69)
+                </span>
+              </SelectItem>
+              <SelectItem value="low">
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-gray-400" />
+                  Low (1-39)
+                </span>
+              </SelectItem>
+              <SelectItem value="none">
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                  None (0)
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <Button variant="outline" size="icon" onClick={handleExportCSV} title="Export CSV">
             <Download className="h-4 w-4" />
           </Button>
@@ -277,7 +338,7 @@ export function UsersTable({
                 >
                   <span className="inline-flex items-center gap-1">
                     Requests
-                    <ArrowUpDown className="h-3 w-3" />
+                    <ArrowUpDown className={`h-3 w-3 ${sortField === "requests" ? "text-primary" : ""}`} />
                   </span>
                 </TableHead>
                 <TableHead 
@@ -286,7 +347,7 @@ export function UsersTable({
                 >
                   <span className="inline-flex items-center gap-1">
                     Blacklist
-                    <ArrowUpDown className="h-3 w-3" />
+                    <ArrowUpDown className={`h-3 w-3 ${sortField === "blacklist" ? "text-primary" : ""}`} />
                   </span>
                 </TableHead>
                 <TableHead 
@@ -295,17 +356,25 @@ export function UsersTable({
                 >
                   <span className="inline-flex items-center gap-1">
                     Risk
-                    <ArrowUpDown className="h-3 w-3" />
+                    <ArrowUpDown className={`h-3 w-3 ${sortField === "risk" ? "text-primary" : ""}`} />
                   </span>
                 </TableHead>
-                <TableHead className="text-right whitespace-nowrap hidden lg:table-cell">Destinations</TableHead>
+                <TableHead 
+                  className="text-right whitespace-nowrap hidden lg:table-cell cursor-pointer hover:text-foreground"
+                  onClick={() => toggleSort("destinations")}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Destinations
+                    <ArrowUpDown className={`h-3 w-3 ${sortField === "destinations" ? "text-primary" : ""}`} />
+                  </span>
+                </TableHead>
                 <TableHead 
                   className="whitespace-nowrap hidden md:table-cell cursor-pointer hover:text-foreground"
                   onClick={() => toggleSort("last_seen")}
                 >
                   <span className="inline-flex items-center gap-1">
                     Last Seen
-                    <ArrowUpDown className="h-3 w-3" />
+                    <ArrowUpDown className={`h-3 w-3 ${sortField === "last_seen" ? "text-primary" : ""}`} />
                   </span>
                 </TableHead>
               </TableRow>
