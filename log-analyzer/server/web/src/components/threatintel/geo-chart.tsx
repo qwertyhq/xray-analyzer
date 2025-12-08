@@ -111,19 +111,6 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
     }));
   }, [data]);
 
-  // Transform data for pie chart
-  const pieData = useMemo(() => {
-    if (!data?.top_countries?.length) return [];
-    const total = data.top_countries.reduce((sum, c) => sum + c.total_matches, 0);
-    return data.top_countries.slice(0, 6).map((c, i) => ({
-      name: c.country_code,
-      fullName: c.country_name,
-      value: c.total_matches,
-      percent: ((c.total_matches / total) * 100).toFixed(1),
-      color: countryColors[i % countryColors.length],
-    }));
-  }, [data]);
-
   // Calculate total stats
   const stats = useMemo(() => {
     if (!data?.top_countries?.length) return null;
@@ -212,100 +199,53 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
       </div>
 
       {/* Charts */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Bar Chart */}
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Shield className="h-4 w-4 text-indigo-500" />
-              Matches by Country
-            </CardTitle>
-            <CardDescription className="text-xs">Top countries by threat detections</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="h-[280px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} layout="vertical" margin={{ top: 5, right: 30, left: 50, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" horizontal={false} />
-                  <XAxis 
-                    type="number" 
-                    tick={{ fontSize: 10 }}
-                    tickFormatter={(value) => value.toLocaleString()}
-                  />
-                  <YAxis 
-                    type="category" 
-                    dataKey="name" 
-                    tick={{ fontSize: 12 }} 
-                    width={40}
-                    tickFormatter={(value) => value}
-                  />
-                  <Tooltip
-                    contentStyle={tooltipStyle.contentStyle}
-                    labelStyle={tooltipStyle.labelStyle}
-                    itemStyle={tooltipStyle.itemStyle}
-                    cursor={{ fill: "rgba(63, 63, 70, 0.3)" }}
-                    formatter={(value: number) => [value.toLocaleString(), "Matches"]}
-                    labelFormatter={(label) => {
-                      const item = barData.find(d => d.name === label);
-                      return item?.fullName || label;
-                    }}
-                  />
-                  <Bar dataKey="matches" radius={[0, 6, 6, 0]}>
-                    {barData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Distribution Bar Chart */}
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Globe className="h-4 w-4 text-violet-500" />
-              Distribution
-            </CardTitle>
-            <CardDescription className="text-xs">Share of threats by country</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="h-[280px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={pieData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" vertical={false} />
-                  <XAxis 
-                    dataKey="name" 
-                    tick={{ fontSize: 11 }}
-                    tickFormatter={(value) => value}
-                  />
-                  <YAxis 
-                    tick={{ fontSize: 10 }}
-                    tickFormatter={(value) => value.toLocaleString()}
-                  />
-                  <Tooltip
-                    contentStyle={tooltipStyle.contentStyle}
-                    labelStyle={tooltipStyle.labelStyle}
-                    itemStyle={tooltipStyle.itemStyle}
-                    cursor={{ fill: "rgba(63, 63, 70, 0.3)" }}
-                    formatter={(value: number) => [value.toLocaleString(), "Matches"]}
-                    labelFormatter={(label) => {
-                      const item = pieData.find(d => d.name === label);
-                      return item?.fullName || label;
-                    }}
-                  />
-                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Matches by Country Chart */}
+      <Card className="border-0 shadow-md">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Shield className="h-4 w-4 text-indigo-500" />
+            Matches by Country
+          </CardTitle>
+          <CardDescription className="text-xs">Top countries by threat detections</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={barData} layout="vertical" margin={{ top: 5, right: 30, left: 50, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" horizontal={false} />
+                <XAxis 
+                  type="number" 
+                  tick={{ fontSize: 10 }}
+                  tickFormatter={(value) => value.toLocaleString()}
+                />
+                <YAxis 
+                  type="category" 
+                  dataKey="name" 
+                  tick={{ fontSize: 12 }} 
+                  width={40}
+                  tickFormatter={(value) => value}
+                />
+                <Tooltip
+                  contentStyle={tooltipStyle.contentStyle}
+                  labelStyle={tooltipStyle.labelStyle}
+                  itemStyle={tooltipStyle.itemStyle}
+                  cursor={{ fill: "rgba(63, 63, 70, 0.3)" }}
+                  formatter={(value: number) => [value.toLocaleString(), "Matches"]}
+                  labelFormatter={(label) => {
+                    const item = barData.find(d => d.name === label);
+                    return item?.fullName || label;
+                  }}
+                />
+                <Bar dataKey="matches" radius={[0, 6, 6, 0]}>
+                  {barData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
