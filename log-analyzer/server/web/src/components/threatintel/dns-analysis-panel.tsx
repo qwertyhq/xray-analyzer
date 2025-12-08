@@ -68,6 +68,20 @@ const CHART_COLORS = [
   "hsla(212, 55%, 55%, 0.75)",   // blue muted
 ];
 
+// Tooltip style for dark theme readability
+const tooltipStyle = {
+  contentStyle: {
+    backgroundColor: "rgb(24, 24, 27)",
+    border: "1px solid rgb(63, 63, 70)",
+    borderRadius: "8px",
+    fontSize: "12px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+    color: "rgb(250, 250, 250)",
+  },
+  labelStyle: { color: "rgb(250, 250, 250)", fontWeight: "bold" as const },
+  itemStyle: { color: "rgb(212, 212, 216)" },
+};
+
 // Return the appropriate icon component based on trend direction
 function getTrendIcon(direction: string) {
   switch (direction) {
@@ -278,13 +292,9 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                           />
                           <YAxis tick={{ fontSize: 10 }} width={40} className="text-muted-foreground" />
                           <Tooltip
-                            contentStyle={{
-                              backgroundColor: "hsl(var(--card))",
-                              border: "1px solid hsl(var(--border))",
-                              borderRadius: "8px",
-                              fontSize: "12px",
-                            }}
-                            labelStyle={{ color: "hsl(var(--foreground))" }}
+                            contentStyle={tooltipStyle.contentStyle}
+                            labelStyle={tooltipStyle.labelStyle}
+                            itemStyle={tooltipStyle.itemStyle}
                           />
                           <Legend wrapperStyle={{ fontSize: "10px" }} />
                           <Area
@@ -339,13 +349,9 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                             ))}
                           </Pie>
                           <Tooltip
-                            contentStyle={{
-                              backgroundColor: "hsl(var(--card))",
-                              border: "1px solid hsl(var(--border))",
-                              borderRadius: "8px",
-                              fontSize: "12px",
-                            }}
-                            labelStyle={{ color: "hsl(var(--foreground))" }}
+                            contentStyle={tooltipStyle.contentStyle}
+                            labelStyle={tooltipStyle.labelStyle}
+                            itemStyle={tooltipStyle.itemStyle}
                             formatter={(value: number, name: string) => [`${value.toLocaleString()} queries`, name]}
                           />
                           <Legend 
@@ -384,13 +390,9 @@ export function DNSAnalysisPanel({ data, loading = false, onRefresh }: DNSAnalys
                         />
                         <YAxis tick={{ fontSize: 10 }} width={40} className="text-muted-foreground" />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "hsl(var(--card))",
-                            border: "1px solid hsl(var(--border))",
-                            borderRadius: "8px",
-                            fontSize: "12px",
-                          }}
-                          labelStyle={{ color: "hsl(var(--foreground))" }}
+                          contentStyle={tooltipStyle.contentStyle}
+                          labelStyle={tooltipStyle.labelStyle}
+                          itemStyle={tooltipStyle.itemStyle}
                         />
                         <Legend wrapperStyle={{ fontSize: "10px" }} />
                         <Bar dataKey="total" fill="hsla(262, 50%, 60%, 0.7)" name="Total" radius={[2, 2, 0, 0]} />

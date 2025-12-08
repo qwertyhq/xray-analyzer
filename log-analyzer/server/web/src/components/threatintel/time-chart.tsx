@@ -53,6 +53,20 @@ const colors: Record<string, string> = {
 
 const getColor = (type: string) => colors[type] || colors.default;
 
+// Common tooltip style for dark theme
+const tooltipStyle = {
+  contentStyle: {
+    backgroundColor: "rgb(24, 24, 27)",
+    border: "1px solid rgb(63, 63, 70)",
+    borderRadius: "8px",
+    fontSize: "12px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+    color: "rgb(250, 250, 250)",
+  },
+  labelStyle: { color: "rgb(250, 250, 250)", fontWeight: "bold" as const },
+  itemStyle: { color: "rgb(212, 212, 216)" },
+};
+
 export function TimeChart({ data, loading = false }: TimeChartProps) {
   // Transform hourly data for chart
   const hourlyChartData = useMemo(() => {
@@ -269,14 +283,7 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
                     className="text-muted-foreground"
                   />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                    }}
-                    labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold" }}
+                    {...tooltipStyle}
                     formatter={(value: number, name: string) => [
                       value.toLocaleString(),
                       getTypeLabel(name)
@@ -335,14 +342,7 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
                     className="text-muted-foreground"
                   />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                    }}
-                    labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold" }}
+                    {...tooltipStyle}
                     formatter={(value: number, name: string) => [
                       value.toLocaleString(),
                       getTypeLabel(name)
