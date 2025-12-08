@@ -102,7 +102,8 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 				Timestamp:   entry.Timestamp,
 			}
 			if err := a.storage.RecordBlacklistMatch(ctx, match); err != nil {
-				log.Printf("analyzer: failed to record blacklist match: %v", err)
+				// log.Printf("analyzer: failed to record blacklist match: %v", err)
+				_ = err // suppress verbose logging
 			}
 
 			// Check if we need to generate an alert
@@ -123,7 +124,8 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 
 	// Update aggregated stats
 	if err := a.storage.UpdateNodeStats(ctx, batch.NodeID, processed, blacklistHits, batch.Count); err != nil {
-		log.Printf("analyzer: failed to update node stats: %v", err)
+		// log.Printf("analyzer: failed to update node stats: %v", err)
+		_ = err
 	}
 
 	for user, requests := range userRequests {
@@ -132,7 +134,8 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 		lastIP := userLastIP[user]
 		uniqueDests := len(userDestinations[user])
 		if err := a.storage.UpdateUserStats(ctx, batch.NodeID, user, requests, hits, domain, uniqueDests, lastIP); err != nil {
-			log.Printf("analyzer: failed to update user stats: %v", err)
+			// log.Printf("analyzer: failed to update user stats: %v", err)
+			_ = err
 		}
 
 		// Record user IP history with geo enrichment
@@ -149,7 +152,8 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 				cancel()
 			}
 			if err := a.storage.RecordUserIP(ctx, user, lastIP, batch.NodeID, countryCode, countryName, city); err != nil {
-				log.Printf("analyzer: failed to record user IP history: %v", err)
+				// log.Printf("analyzer: failed to record user IP history: %v", err)
+				_ = err
 			}
 		}
 
@@ -163,20 +167,23 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 		// Record user destinations for detailed tracking
 		for dest := range userDestinations[user] {
 			if err := a.storage.RecordUserDestination(ctx, user, batch.NodeID, dest); err != nil {
-				log.Printf("analyzer: failed to record user destination: %v", err)
+				// log.Printf("analyzer: failed to record user destination: %v", err)
+				_ = err
 			}
 		}
 	}
 
 	// Update unique users count for this node
 	if err := a.storage.UpdateNodeUniqueUsers(ctx, batch.NodeID); err != nil {
-		log.Printf("analyzer: failed to update unique users: %v", err)
+		// log.Printf("analyzer: failed to update unique users: %v", err)
+		_ = err
 	}
 
 	// Update hourly stats for charts
 	uniqueUsersInBatch := len(userRequests)
 	if err := a.storage.UpdateHourlyStats(ctx, batch.NodeID, processed, blacklistHits, uniqueUsersInBatch); err != nil {
-		log.Printf("analyzer: failed to update hourly stats: %v", err)
+		// log.Printf("analyzer: failed to update hourly stats: %v", err)
+		_ = err
 	}
 
 	return processed, blacklistHits, nil
