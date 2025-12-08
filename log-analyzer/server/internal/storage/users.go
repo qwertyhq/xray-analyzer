@@ -285,3 +285,87 @@ func (s *Storage) GetRecentAlerts(ctx context.Context, limit int) ([]*models.Ale
 	}
 	return alerts, nil
 }
+
+// UserIPHistory represents a user's IP address history entry
+type UserIPHistory struct {
+	IPAddress    string    `json:"ip_address"`
+	NodeID       string    `json:"node_id,omitempty"`
+	CountryCode  string    `json:"country_code,omitempty"`
+	CountryName  string    `json:"country_name,omitempty"`
+	City         string    `json:"city,omitempty"`
+	FirstSeen    time.Time `json:"first_seen"`
+	LastSeen     time.Time `json:"last_seen"`
+	RequestCount int64     `json:"request_count"`
+}
+
+// RecordUserIP records or updates a user's IP address in history
+func (s *Storage) RecordUserIP(ctx context.Context, userEmail, ipAddress, nodeID, countryCode, countryName, city string) error {
+	if ipAddress == "" {
+		return nil
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO user_ip_history (user_email, ip_address, node_id, country_code, country_name, city, first_seen, last_seen, request_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+		ON CONFLICT(user_email, ip_address) DO UPDATE SET
+			node_id = COALESCE(excluded.node_id, node_id),
+			country_code = COALESCE(excluded.country_code, country_code),
+			country_name = COALESCE(excluded.country_name, country_name),
+			city = COALESCE(excluded.city, city),
+			last_seen = excluded.last_seen,
+			request_count = request_count + 1
+	`, userEmail, ipAddress, nodeID, countryCode, countryName, city, now, now)
+
+	if err != nil {
+		return err
+	}
+
+	// Keep only last 20 IPs per user (delete oldest)
+	_, err = s.db.ExecContext(ctx, `
+		DELETE FROM user_ip_history 
+		WHERE user_email = ? AND id NOT IN (
+			SELECT id FROM user_ip_history 
+			WHERE user_email = ? 
+			ORDER BY last_seen DESC 
+			LIMIT 20
+		)
+	`, userEmail, userEmail)
+
+	return err
+}
+
+// GetUserIPHistory gets the IP history for a user (last 20 IPs)
+func (s *Storage) GetUserIPHistory(ctx context.Context, userEmail string) ([]*UserIPHistory, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ip_address, COALESCE(node_id, '') as node_id, 
+			   COALESCE(country_code, '') as country_code,
+			   COALESCE(country_name, '') as country_name,
+			   COALESCE(city, '') as city,
+			   COALESCE(first_seen, '') as first_seen,
+			   COALESCE(last_seen, '') as last_seen,
+			   request_count
+		FROM user_ip_history
+		WHERE user_email = ?
+		ORDER BY last_seen DESC
+		LIMIT 20
+	`, userEmail)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []*UserIPHistory
+	for rows.Next() {
+		h := &UserIPHistory{}
+		var firstSeenStr, lastSeenStr string
+		if err := rows.Scan(&h.IPAddress, &h.NodeID, &h.CountryCode, &h.CountryName, &h.City, &firstSeenStr, &lastSeenStr, &h.RequestCount); err != nil {
+			return nil, err
+		}
+		h.FirstSeen = parseDateTime(firstSeenStr)
+		h.LastSeen = parseDateTime(lastSeenStr)
+		history = append(history, h)
+	}
+	return history, nil
+}

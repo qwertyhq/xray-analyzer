@@ -15,11 +15,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, User, Activity, ShieldAlert, Globe } from "lucide-react";
+import { ArrowLeft, User, Activity, ShieldAlert, Globe, Wifi } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { isValidDate } from "@/lib/utils/date";
 import { UserDestinationsTable } from "@/components/users/user-destinations-table";
 import { UserBlacklistMatches } from "@/components/users/user-blacklist-matches";
+import { UserIPHistoryTable } from "@/components/users/user-ip-history";
 
 export default function UserDetailsPage() {
   const params = useParams();
@@ -164,6 +165,19 @@ export default function UserDetailsPage() {
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+            <Wifi className="h-4 w-4" />
+            IP Address History
+          </CardTitle>
+          <CardDescription className="text-xs sm:text-sm">Last 20 IP addresses used by this user</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <UserIPHistoryTable email={email} />
         </CardContent>
       </Card>
 

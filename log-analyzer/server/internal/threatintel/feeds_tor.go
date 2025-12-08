@@ -52,7 +52,7 @@ func (f *FeedLoader) loadTorExitNodes(ctx context.Context) (int, error) {
 
 // loadTorExitNodesFromURL loads Tor exit node IPs from a URL
 func (f *FeedLoader) loadTorExitNodesFromURL(ctx context.Context, torURL string) (int, error) {
-	resp, err := f.client.Get(torURL)
+	resp, err := f.doRequest(torURL)
 	if err != nil {
 		return 0, fmt.Errorf("fetch tor exit nodes: %w", err)
 	}

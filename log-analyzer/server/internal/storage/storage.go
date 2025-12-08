@@ -255,6 +255,23 @@ func (s *Storage) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_user_loc_email ON user_locations(user_email);
 
+	-- User IP history (last 20 IPs per user)
+	CREATE TABLE IF NOT EXISTS user_ip_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_email TEXT NOT NULL,
+		ip_address TEXT NOT NULL,
+		node_id TEXT,
+		country_code TEXT,
+		country_name TEXT,
+		city TEXT,
+		first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+		request_count INTEGER DEFAULT 1,
+		UNIQUE(user_email, ip_address)
+	);
+	CREATE INDEX IF NOT EXISTS idx_user_ip_email ON user_ip_history(user_email);
+	CREATE INDEX IF NOT EXISTS idx_user_ip_lastseen ON user_ip_history(user_email, last_seen DESC);
+
 	-- Anomaly detection table
 	CREATE TABLE IF NOT EXISTS anomalies (
 		id TEXT PRIMARY KEY,

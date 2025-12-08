@@ -55,7 +55,7 @@ func (f *FeedLoader) loadTorrentTrackers(ctx context.Context) (int, error) {
 
 // loadTorrentTrackersFromURL loads torrent trackers from a URL
 func (f *FeedLoader) loadTorrentTrackersFromURL(ctx context.Context, trackerURL string) (int, error) {
-	resp, err := f.client.Get(trackerURL)
+	resp, err := f.doRequest(trackerURL)
 	if err != nil {
 		return 0, fmt.Errorf("fetch torrent trackers: %w", err)
 	}

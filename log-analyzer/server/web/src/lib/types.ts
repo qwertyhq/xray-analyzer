@@ -58,6 +58,17 @@ export interface UserNodeStats {
   last_blacklist_domain?: string;
 }
 
+export interface UserIPHistory {
+  ip_address: string;
+  node_id?: string;
+  country_code?: string;
+  country_name?: string;
+  city?: string;
+  first_seen: string;
+  last_seen: string;
+  request_count: number;
+}
+
 export interface BlacklistMatchInfo {
   node_id: string;
   user_email?: string;

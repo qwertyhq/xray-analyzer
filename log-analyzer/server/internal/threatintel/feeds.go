@@ -18,6 +18,7 @@ import (
 const (
 	maxRetries    = 3
 	retryBaseWait = 5 * time.Second
+	userAgent     = "Mozilla/5.0 (compatible; ThreatIntelFeedLoader/1.0)"
 )
 
 // FeedLoader handles loading threat intelligence feeds
@@ -32,11 +33,28 @@ type FeedLoader struct {
 func NewFeedLoader() *FeedLoader {
 	return &FeedLoader{
 		client: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 120 * time.Second, // Increased timeout for large feeds
+			Transport: &http.Transport{
+				MaxIdleConns:       10,
+				IdleConnTimeout:    30 * time.Second,
+				DisableCompression: false,
+				DisableKeepAlives:  false,
+			},
 		},
 		indicators: make(map[string]*ThreatIndicator),
 		feedStatus: make(map[ThreatSource]*FeedStatus),
 	}
+}
+
+// doRequest performs an HTTP GET request with proper headers
+func (f *FeedLoader) doRequest(url string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "*/*")
+	return f.client.Do(req)
 }
 
 // loadWithRetry wraps a loader function with retry logic
@@ -77,12 +95,9 @@ func (f *FeedLoader) loadWithRetry(ctx context.Context, source ThreatSource, loa
 	return 0, fmt.Errorf("failed after %d attempts: %w", maxRetries, lastErr)
 }
 
-// LoadAllFeeds loads all threat intelligence feeds
+// LoadAllFeeds loads all threat intelligence feeds with controlled concurrency
 func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
-	var wg sync.WaitGroup
-	errChan := make(chan error, 30) // Enough buffer for all feeds
-
-	// Load feeds concurrently
+	// Define all feeds
 	feeds := []struct {
 		source ThreatSource
 		loader func(context.Context) (int, error)
@@ -118,38 +133,62 @@ func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 		{SourceBlockListRansomware, f.loadBlockListRansomware},
 	}
 
-	for _, feed := range feeds {
-		wg.Add(1)
-		go func(source ThreatSource, loader func(context.Context) (int, error)) {
-			defer wg.Done()
+	var errorCount int
+	const batchSize = 5
+	const batchDelay = 2 * time.Second
 
-			f.updateFeedStatus(source, "updating", "", 0)
-			start := time.Now()
+	// Process feeds in batches to avoid rate limiting
+	for i := 0; i < len(feeds); i += batchSize {
+		end := i + batchSize
+		if end > len(feeds) {
+			end = len(feeds)
+		}
+		batch := feeds[i:end]
 
-			// Use retry wrapper
-			count, err := f.loadWithRetry(ctx, source, loader)
-			if err != nil {
-				f.updateFeedStatus(source, "error", err.Error(), 0)
-				errChan <- fmt.Errorf("%s: %w", source, err)
-				return
+		var wg sync.WaitGroup
+		errChan := make(chan error, len(batch))
+
+		for _, feed := range batch {
+			wg.Add(1)
+			go func(source ThreatSource, loader func(context.Context) (int, error)) {
+				defer wg.Done()
+
+				f.updateFeedStatus(source, "updating", "", 0)
+				start := time.Now()
+
+				// Use retry wrapper
+				count, err := f.loadWithRetry(ctx, source, loader)
+				if err != nil {
+					f.updateFeedStatus(source, "error", err.Error(), 0)
+					errChan <- fmt.Errorf("%s: %w", source, err)
+					return
+				}
+
+				f.updateFeedStatus(source, "ok", "", int64(count))
+				log.Printf("threatintel: loaded %d indicators from %s in %v", count, source, time.Since(start))
+			}(feed.source, feed.loader)
+		}
+
+		wg.Wait()
+		close(errChan)
+
+		// Count errors in this batch
+		for range errChan {
+			errorCount++
+		}
+
+		// Delay between batches (except after last batch)
+		if end < len(feeds) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(batchDelay):
 			}
-
-			f.updateFeedStatus(source, "ok", "", int64(count))
-			log.Printf("threatintel: loaded %d indicators from %s in %v", count, source, time.Since(start))
-		}(feed.source, feed.loader)
+		}
 	}
 
-	wg.Wait()
-	close(errChan)
-
-	// Collect errors
-	var errors []error
-	for err := range errChan {
-		errors = append(errors, err)
-	}
-
-	if len(errors) > 0 {
-		log.Printf("threatintel: %d feeds failed to load", len(errors))
+	if errorCount > 0 {
+		log.Printf("threatintel: %d feeds failed to load", errorCount)
 	}
 
 	return nil
@@ -173,7 +212,7 @@ func (f *FeedLoader) updateFeedStatus(source ThreatSource, status, errMsg string
 // loadURLhaus loads malware URLs from URLhaus plain text feed (no API key required)
 func (f *FeedLoader) loadURLhaus(ctx context.Context) (int, error) {
 	// Use plain text feed instead of JSON API (no auth required)
-	resp, err := f.client.Get("https://urlhaus.abuse.ch/downloads/text_online/")
+	resp, err := f.doRequest("https://urlhaus.abuse.ch/downloads/text_online/")
 	if err != nil {
 		return 0, fmt.Errorf("fetch urlhaus: %w", err)
 	}
@@ -235,7 +274,7 @@ func (f *FeedLoader) loadURLhaus(ctx context.Context) (int, error) {
 
 // loadFeodoTracker loads C2 server IPs from Feodo Tracker
 func (f *FeedLoader) loadFeodoTracker(ctx context.Context) (int, error) {
-	resp, err := f.client.Get("https://feodotracker.abuse.ch/downloads/ipblocklist.json")
+	resp, err := f.doRequest("https://feodotracker.abuse.ch/downloads/ipblocklist.json")
 	if err != nil {
 		return 0, fmt.Errorf("fetch feodo: %w", err)
 	}
@@ -289,7 +328,7 @@ func (f *FeedLoader) loadFeodoTracker(ctx context.Context) (int, error) {
 // loadThreatFox loads IOCs from ThreatFox plain text feed (no API key required)
 func (f *FeedLoader) loadThreatFox(ctx context.Context) (int, error) {
 	// Use plain text CSV feed instead of JSON API (no auth required)
-	resp, err := f.client.Get("https://threatfox.abuse.ch/export/csv/recent/")
+	resp, err := f.doRequest("https://threatfox.abuse.ch/export/csv/recent/")
 	if err != nil {
 		return 0, fmt.Errorf("fetch threatfox: %w", err)
 	}
@@ -379,7 +418,7 @@ func (f *FeedLoader) loadThreatFox(ctx context.Context) (int, error) {
 
 // loadStevenBlack loads domains from StevenBlack hosts file
 func (f *FeedLoader) loadStevenBlack(ctx context.Context) (int, error) {
-	resp, err := f.client.Get("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts")
+	resp, err := f.doRequest("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts")
 	if err != nil {
 		return 0, fmt.Errorf("fetch stevenblack: %w", err)
 	}
@@ -648,7 +687,7 @@ func isIP(s string) bool {
 
 // loadCategoryHosts loads a StevenBlack category-specific hosts file
 func (f *FeedLoader) loadCategoryHosts(ctx context.Context, url string, source ThreatSource, threatType ThreatType, description string, confidence int) (int, error) {
-	resp, err := f.client.Get(url)
+	resp, err := f.doRequest(url)
 	if err != nil {
 		return 0, fmt.Errorf("fetch %s: %w", source, err)
 	}

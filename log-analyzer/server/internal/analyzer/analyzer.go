@@ -121,6 +121,13 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 			log.Printf("analyzer: failed to update user stats: %v", err)
 		}
 
+		// Record user IP history (geo info will be empty here, enriched later via API)
+		if lastIP != "" {
+			if err := a.storage.RecordUserIP(ctx, user, lastIP, batch.NodeID, "", "", ""); err != nil {
+				log.Printf("analyzer: failed to record user IP history: %v", err)
+			}
+		}
+
 		// Record user destinations for detailed tracking
 		for dest := range userDestinations[user] {
 			if err := a.storage.RecordUserDestination(ctx, user, batch.NodeID, dest); err != nil {

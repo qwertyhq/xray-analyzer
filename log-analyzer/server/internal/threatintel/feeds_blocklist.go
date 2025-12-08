@@ -24,7 +24,7 @@ const blockListProjectBaseURL = "https://blocklistproject.github.io/Lists/"
 func (f *FeedLoader) loadBlockListProjectHosts(ctx context.Context, listName string, source ThreatSource, threatType ThreatType, confidence int) (int, error) {
 	url := blockListProjectBaseURL + listName + ".txt"
 
-	resp, err := f.client.Get(url)
+	resp, err := f.doRequest(url)
 	if err != nil {
 		return 0, fmt.Errorf("fetch blocklist %s: %w", listName, err)
 	}

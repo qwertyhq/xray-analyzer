@@ -112,6 +112,12 @@ func (s *Server) handleUserRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for /api/users/{email}/ip-history
+	if strings.HasSuffix(path, "/ip-history") {
+		s.handleUserIPHistory(w, r)
+		return
+	}
+
 	// Default: user details
 	s.handleUserDetails(w, r)
 }
@@ -140,6 +146,34 @@ func (s *Server) handleUserDetails(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(details)
+}
+
+// handleUserIPHistory returns IP address history for a user
+func (s *Server) handleUserIPHistory(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	// Extract email from path like /api/users/{email}/ip-history
+	path = strings.TrimSuffix(path, "/ip-history")
+	prefix := "/api/users/"
+	if !strings.HasPrefix(path, prefix) || len(path) <= len(prefix) {
+		http.Error(w, "user email required", http.StatusBadRequest)
+		return
+	}
+	userEmail := strings.TrimPrefix(path, prefix)
+
+	userEmail, err := url.QueryUnescape(userEmail)
+	if err != nil {
+		http.Error(w, "invalid user email", http.StatusBadRequest)
+		return
+	}
+
+	history, err := s.storage.GetUserIPHistory(r.Context(), userEmail)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
 }
 
 // handleDeleteNode deletes a node and its data
