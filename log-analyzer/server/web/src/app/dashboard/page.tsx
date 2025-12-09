@@ -17,7 +17,6 @@ import { RealTimeFeed, FeedEvent, EventType } from "@/components/dashboard/real-
 import { TrafficDistribution } from "@/components/dashboard/traffic-distribution";
 import { PeriodComparison } from "@/components/dashboard/period-comparison";
 import { AlertsSummary, Alert } from "@/components/dashboard/alerts-summary";
-import { AIChat } from "@/components/dashboard/ai-chat";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -334,9 +333,8 @@ export default function DashboardPage() {
         <RealTimeFeed events={feedEvents} title="Real-time Feed" />
       </div>
 
-      {/* Row 6: AI Chat + Threat Intel */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <AIChat />
+      {/* Row 6: Threat Intel (full width) */}
+      <div className="grid gap-6">
         <ThreatIntelCard />
       </div>
 

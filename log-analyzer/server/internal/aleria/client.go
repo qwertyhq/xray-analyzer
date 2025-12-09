@@ -1,12 +1,14 @@
 package aleria
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -195,4 +197,118 @@ func (r *ChatResponse) GetContent() string {
 		return r.Choices[0].Message.Content
 	}
 	return ""
+}
+
+// StreamDelta represents a chunk from streaming response
+type StreamDelta struct {
+	Content      string     `json:"content,omitempty"`
+	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
+	FinishReason string     `json:"finish_reason,omitempty"`
+}
+
+// StreamChunk represents a single chunk from SSE stream
+type StreamChunk struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Choices []struct {
+		Index int `json:"index"`
+		Delta struct {
+			Role      string     `json:"role,omitempty"`
+			Content   string     `json:"content,omitempty"`
+			ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+		} `json:"delta"`
+		FinishReason *string `json:"finish_reason"`
+	} `json:"choices"`
+}
+
+// ChatStream sends a streaming chat request and returns chunks via channel
+func (c *Client) ChatStream(ctx context.Context, messages []map[string]interface{}, tools []map[string]interface{}, onChunk func(content string, done bool)) error {
+	if !c.IsConfigured() {
+		return fmt.Errorf("aleria: API key not configured")
+	}
+
+	req := map[string]interface{}{
+		"messages":    messages,
+		"temperature": 0.3,
+		"max_tokens":  4000,
+		"stream":      true,
+	}
+	if len(tools) > 0 {
+		req["tools"] = tools
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("aleria: marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("aleria: create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("aleria: send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("aleria: API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				onChunk("", true)
+				return nil
+			}
+			return fmt.Errorf("aleria: read stream: %w", err)
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			onChunk("", true)
+			return nil
+		}
+
+		var chunk StreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue // Skip malformed chunks
+		}
+
+		if len(chunk.Choices) > 0 {
+			delta := chunk.Choices[0].Delta
+			if delta.Content != "" {
+				onChunk(delta.Content, false)
+			}
+			if chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason == "stop" {
+				onChunk("", true)
+				return nil
+			}
+		}
+	}
 }

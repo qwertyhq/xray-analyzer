@@ -580,6 +580,29 @@ func (s *Storage) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_remna_nodes_connected ON remna_nodes(is_connected);
 	CREATE INDEX IF NOT EXISTS idx_remna_nodes_country ON remna_nodes(country_code);
+
+	-- AI Chat Sessions
+	CREATE TABLE IF NOT EXISTS ai_chat_sessions (
+		id TEXT PRIMARY KEY,
+		title TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		total_tokens INTEGER DEFAULT 0
+	);
+	CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON ai_chat_sessions(updated_at DESC);
+
+	-- AI Chat Messages
+	CREATE TABLE IF NOT EXISTS ai_chat_messages (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		tokens_used INTEGER DEFAULT 0,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (session_id) REFERENCES ai_chat_sessions(id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON ai_chat_messages(session_id);
+	CREATE INDEX IF NOT EXISTS idx_chat_messages_time ON ai_chat_messages(created_at);
 	`
 
 	_, err := s.db.Exec(schema)

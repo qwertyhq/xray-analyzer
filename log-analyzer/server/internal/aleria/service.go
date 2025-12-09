@@ -667,6 +667,93 @@ func (s *Service) AnalyzeUser(ctx context.Context, email string) (*ChatQueryResp
 	})
 }
 
+// QueryStream processes a user query with streaming response
+func (s *Service) QueryStream(ctx context.Context, req *ChatQueryRequest, onChunk func(content string, done bool)) error {
+	systemPrompt := `Ты - AI-аналитик безопасности VPN-системы. Ты анализируешь данные о пользователях, угрозах и активности.
+
+У тебя есть доступ к инструментам для получения данных из базы. Используй их умно:
+- Сначала определи, какие данные нужны для ответа на вопрос
+- Запрашивай только релевантные данные
+- Если нужна информация о конкретном пользователе - используй search_user или get_remnawave_user_profile
+- Для общей статистики - get_global_stats, get_threat_stats или get_remnawave_stats
+- Для анализа угроз - get_threat_stats, get_anomalies
+- Для географии - get_geo_stats
+- Для анализа абьюза подписок - get_remnawave_hwid_abusers, get_remnawave_shared_hwids
+- Для данных о подписках VPN - get_remnawave_users, get_remnawave_expiring_users
+- Для анализа трафика - get_remnawave_traffic_abusers
+
+Данные из Remnawave - это информация о VPN подписках пользователей (статус, трафик, устройства).
+Данные из локальной базы - это информация о безопасности (угрозы, риски, IP, геолокация).
+
+Отвечай на русском языке. Будь конкретным и приводи цифры из данных.
+Если данных недостаточно - запроси дополнительные через инструменты.`
+
+	messages := []map[string]interface{}{
+		{"role": "system", "content": systemPrompt},
+	}
+
+	// Add history if present
+	for _, h := range req.History {
+		messages = append(messages, map[string]interface{}{
+			"role":    h.Role,
+			"content": h.Content,
+		})
+	}
+
+	// Add current message
+	messages = append(messages, map[string]interface{}{
+		"role":    "user",
+		"content": req.Message,
+	})
+
+	maxIterations := 5
+
+	for i := 0; i < maxIterations; i++ {
+		// First, check if we need tool calls (non-streaming)
+		resp, err := s.client.ChatWithTools(ctx, messages, tools)
+		if err != nil {
+			return fmt.Errorf("chat request failed: %w", err)
+		}
+
+		if len(resp.Choices) == 0 {
+			return fmt.Errorf("no response from AI")
+		}
+
+		choice := resp.Choices[0]
+
+		// If there are tool calls, execute them
+		if len(choice.Message.ToolCalls) > 0 {
+			// Add assistant message with tool calls
+			messages = append(messages, map[string]interface{}{
+				"role":       "assistant",
+				"content":    choice.Message.Content,
+				"tool_calls": choice.Message.ToolCalls,
+			})
+
+			// Execute each tool call
+			for _, toolCall := range choice.Message.ToolCalls {
+				result, err := s.executeFunction(ctx, toolCall.Function.Name, toolCall.Function.Arguments)
+				if err != nil {
+					result = fmt.Sprintf(`{"error": "%s"}`, err.Error())
+				}
+
+				messages = append(messages, map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": toolCall.ID,
+					"content":      result,
+				})
+			}
+			continue
+		}
+
+		// No more tool calls - stream the final response
+		// Remove tools for final streaming response
+		return s.client.ChatStream(ctx, messages, nil, onChunk)
+	}
+
+	return fmt.Errorf("max iterations reached without final response")
+}
+
 // Helper functions
 func getIntArg(args map[string]interface{}, key string, defaultVal int) int {
 	if v, ok := args[key]; ok {

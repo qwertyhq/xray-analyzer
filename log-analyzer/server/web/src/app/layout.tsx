@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Header } from "@/components/layout/header";
+import { FloatingAIChat } from "@/components/layout/floating-ai-chat";
 import { WebSocketProvider } from "@/contexts/websocket-context";
 import { AuthProvider } from "@/contexts/auth-context";
 import { AuthGuard } from "@/components/auth/auth-guard";
@@ -38,6 +39,7 @@ export default function RootLayout({
               <main className="min-h-[calc(100vh-3.5rem)]">
                 {children}
               </main>
+              <FloatingAIChat />
             </WebSocketProvider>
           </AuthGuard>
         </AuthProvider>

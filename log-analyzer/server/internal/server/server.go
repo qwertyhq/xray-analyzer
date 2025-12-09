@@ -154,9 +154,11 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/correlation/shared-ips", s.handleCorrelationSharedIPs)
 	mux.HandleFunc("/api/correlation/shared-hwids", s.handleCorrelationSharedHWIDs)
 
-	// AI Chat endpoint
+	// AI Chat endpoints
 	mux.HandleFunc("/api/ai/chat", s.handleAIChat)
-	mux.HandleFunc("/api/ai/analyze-user/", s.handleAIAnalyzeUser)
+	mux.HandleFunc("/api/ai/chat/stream", s.handleAIChatStream)
+	mux.HandleFunc("/api/ai/sessions", s.handleAIChatSessions)
+	mux.HandleFunc("/api/ai/sessions/", s.handleAIChatSession)
 
 	// User-specific endpoints (must be registered before /api/users/)
 	mux.HandleFunc("/api/users/", s.handleUserRouter)
