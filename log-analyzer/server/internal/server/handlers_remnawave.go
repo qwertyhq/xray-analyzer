@@ -393,6 +393,7 @@ func (s *Server) handleRemnawaveHwid(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRemnawaveAbuse detects subscription abuse based on HWID device limits
+// Uses optimized GetTopUsersByHwid which works directly with cached data
 func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -406,7 +407,8 @@ func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	users := s.remnawave.GetAllUsers()
+	// Get all users with HWID devices, sorted by device count (limit 0 = all)
+	topUsers := s.remnawave.GetTopUsersByHwid(0)
 
 	type DeviceInfo struct {
 		Hwid        string  `json:"hwid"`
@@ -443,8 +445,8 @@ func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
 	// Default HWID limit if not set in Remnawave
 	const defaultHwidLimit = 5
 
-	for _, u := range users {
-		devices := s.remnawave.GetUserHwidDevices(u.UUID)
+	for _, uc := range topUsers {
+		u := uc.User
 
 		// Determine effective limit: use user's limit or default
 		effectiveLimit := defaultHwidLimit
@@ -453,15 +455,15 @@ func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Check if user is at or exceeds HWID limit (show both at limit and over limit)
-		if len(devices) >= effectiveLimit && effectiveLimit > 0 {
+		if uc.DeviceCount >= effectiveLimit && effectiveLimit > 0 {
 			record := AbuseUser{
 				UUID:          u.UUID,
 				Username:      u.Username,
 				Email:         u.Email,
 				Status:        u.Status,
-				DeviceCount:   len(devices),
+				DeviceCount:   uc.DeviceCount,
 				DeviceLimit:   effectiveLimit,
-				ExcessDevices: len(devices) - effectiveLimit,
+				ExcessDevices: uc.DeviceCount - effectiveLimit,
 			}
 
 			// Add last activity
@@ -472,7 +474,7 @@ func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
 
 			// Collect unique platforms and device info
 			platforms := make(map[string]bool)
-			for _, d := range devices {
+			for _, d := range uc.Devices {
 				di := DeviceInfo{
 					Hwid:        d.Hwid,
 					Platform:    d.Platform,
@@ -504,7 +506,6 @@ func (s *Server) handleRemnawaveAbuse(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"totalAbusers": len(abuseUsers),
 		"users":        abuseUsers,
