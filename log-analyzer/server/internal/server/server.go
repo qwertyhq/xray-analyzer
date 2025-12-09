@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/xray-log-analyzer/server/internal/aleria"
 	"github.com/xray-log-analyzer/server/internal/analyzer"
 	"github.com/xray-log-analyzer/server/internal/blacklist"
 	"github.com/xray-log-analyzer/server/internal/correlation"
@@ -28,6 +29,7 @@ type Server struct {
 	remnawave      *remnawave.SyncService
 	correlation    *correlation.Service
 	ipInfo         *ipinfo.Service
+	aleria         *aleria.Service
 	clients        map[string]*Client
 	clientsMu      sync.RWMutex
 
@@ -96,6 +98,11 @@ func (s *Server) SetCorrelation(c *correlation.Service) {
 	s.correlation = c
 }
 
+// SetAleria sets the Aleria AI service
+func (s *Server) SetAleria(a *aleria.Service) {
+	s.aleria = a
+}
+
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
@@ -146,6 +153,10 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/correlation/user/", s.handleCorrelationUser)
 	mux.HandleFunc("/api/correlation/shared-ips", s.handleCorrelationSharedIPs)
 	mux.HandleFunc("/api/correlation/shared-hwids", s.handleCorrelationSharedHWIDs)
+
+	// AI Chat endpoint
+	mux.HandleFunc("/api/ai/chat", s.handleAIChat)
+	mux.HandleFunc("/api/ai/analyze-user/", s.handleAIAnalyzeUser)
 
 	// User-specific endpoints (must be registered before /api/users/)
 	mux.HandleFunc("/api/users/", s.handleUserRouter)

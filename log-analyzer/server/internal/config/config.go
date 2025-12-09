@@ -33,6 +33,9 @@ type Config struct {
 	RemnawaveURL          string
 	RemnawaveAPIToken     string
 	RemnawaveSyncInterval time.Duration // Interval for syncing data from Remnawave
+
+	// Aleria AI settings
+	AleriaAPIKey string
 }
 
 // Load loads configuration from environment variables
@@ -53,6 +56,7 @@ func Load() *Config {
 		RemnawaveURL:           getEnv("REMNAWAVE_URL", ""),
 		RemnawaveAPIToken:      getEnv("REMNAWAVE_API_TOKEN", ""),
 		RemnawaveSyncInterval:  getDurationEnv("REMNAWAVE_SYNC_INTERVAL", 1*time.Minute), // More frequent for accurate online stats
+		AleriaAPIKey:           getEnv("ALERIA_API_KEY", ""),
 	}
 }
 

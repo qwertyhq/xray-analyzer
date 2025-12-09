@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/xray-log-analyzer/server/internal/aleria"
 	"github.com/xray-log-analyzer/server/internal/analyzer"
 	"github.com/xray-log-analyzer/server/internal/blacklist"
 	"github.com/xray-log-analyzer/server/internal/config"
@@ -149,6 +150,15 @@ func main() {
 	anal.SetCorrelation(correlationSvc)
 	srv.SetCorrelation(correlationSvc)
 	log.Println("correlation: service initialized")
+
+	// Initialize Aleria AI service
+	if cfg.AleriaAPIKey != "" {
+		aleriaSvc := aleria.NewService(cfg.AleriaAPIKey, store.DB())
+		srv.SetAleria(aleriaSvc)
+		log.Println("aleria: AI service initialized")
+	} else {
+		log.Println("aleria: disabled (no API key configured)")
+	}
 
 	// Start periodic profile refresh (every 6 hours)
 	go func() {

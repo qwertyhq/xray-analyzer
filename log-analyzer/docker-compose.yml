@@ -32,6 +32,7 @@ services:
       - REMNAWAVE_URL=${REMNAWAVE_URL:-}
       - REMNAWAVE_API_TOKEN=${REMNAWAVE_API_TOKEN:-}
       - REMNAWAVE_SYNC_INTERVAL=${REMNAWAVE_SYNC_INTERVAL:-5m}
+      - ALERIA_API_KEY=${ALERIA_API_KEY:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8237/health"]
       interval: 10s
