@@ -275,3 +275,14 @@
   color: white !important;
   background: transparent !important;
 }
+
+/* Custom grid for 24 columns */
+.grid-cols-24 {
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+}
+
+@media (min-width: 768px) {
+  .md\:grid-cols-24 {
+    grid-template-columns: repeat(24, minmax(0, 1fr));
+  }
+}

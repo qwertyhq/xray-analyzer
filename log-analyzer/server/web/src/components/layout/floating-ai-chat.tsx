@@ -24,9 +24,66 @@ import {
   Plus,
   History,
   ChevronLeft,
+  Database,
+  Search,
+  BarChart3,
+  Shield,
+  Users,
+  Globe,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
+
+// Thinking actions for the loading animation
+const thinkingActions = [
+  { icon: Database, text: "Подключаюсь к базе данных..." },
+  { icon: Search, text: "Анализирую запрос..." },
+  { icon: Users, text: "Ищу пользователей..." },
+  { icon: BarChart3, text: "Собираю статистику..." },
+  { icon: Shield, text: "Проверяю угрозы..." },
+  { icon: Globe, text: "Анализирую географию..." },
+  { icon: Database, text: "Обрабатываю данные..." },
+];
+
+// Thinking indicator component
+function ThinkingIndicator() {
+  const [actionIndex, setActionIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActionIndex((prev) => (prev + 1) % thinkingActions.length);
+    }, 1500);
+    return () => clearInterval(interval);
+  }, []);
+
+  const action = thinkingActions[actionIndex];
+  const Icon = action.icon;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <div className="relative">
+          <Icon className="h-4 w-4 animate-pulse" />
+          <div className="absolute inset-0 animate-ping opacity-30">
+            <Icon className="h-4 w-4" />
+          </div>
+        </div>
+        <span className="text-sm animate-in fade-in duration-300" key={actionIndex}>
+          {action.text}
+        </span>
+      </div>
+      <div className="flex gap-1">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="w-1.5 h-1.5 rounded-full bg-purple-500/60 animate-bounce"
+            style={{ animationDelay: `${i * 150}ms` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface Message {
   id?: number;
@@ -371,32 +428,36 @@ export function FloatingAIChat() {
     return (
       <Button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-50 bg-purple-600 hover:bg-purple-700"
+        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 h-12 w-12 sm:h-14 sm:w-14 rounded-full shadow-lg z-50 bg-purple-600 hover:bg-purple-700"
         size="icon"
       >
-        <MessageSquare className="h-6 w-6" />
+        <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
       </Button>
     );
   }
+
+  // On mobile, always fullscreen
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const effectiveFullscreen = isFullscreen || isMobile;
 
   return (
     <div
       className={cn(
         "fixed z-50 bg-background border rounded-lg shadow-2xl flex flex-col overflow-hidden",
-        isFullscreen
-          ? "inset-4"
+        effectiveFullscreen
+          ? "inset-0 sm:inset-4 rounded-none sm:rounded-lg"
           : "bottom-6 right-6"
       )}
       style={
-        isFullscreen
+        effectiveFullscreen
           ? undefined
           : { width: size.width, height: size.height }
       }
     >
-      {/* Resize handle */}
-      {!isFullscreen && (
+      {/* Resize handle - hidden on mobile */}
+      {!effectiveFullscreen && (
         <div
-          className="absolute top-0 left-0 w-4 h-4 cursor-nw-resize z-10"
+          className="absolute top-0 left-0 w-4 h-4 cursor-nw-resize z-10 hidden sm:block"
           onMouseDown={startResize}
         >
           <div className="absolute top-1 left-1 w-2 h-2 border-t-2 border-l-2 border-muted-foreground/30" />
@@ -444,10 +505,11 @@ export function FloatingAIChat() {
               </Button>
             </>
           )}
+          {/* Fullscreen toggle - hidden on mobile since always fullscreen */}
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-7 w-7 hidden sm:flex"
             onClick={() => setIsFullscreen(!isFullscreen)}
           >
             {isFullscreen ? (
@@ -582,7 +644,7 @@ export function FloatingAIChat() {
                       )}
                     >
                       {msg.role === "assistant" ? (
-                        <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                        <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-background/50 prose-pre:border prose-code:text-purple-500 prose-code:bg-purple-500/10 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-headings:text-foreground prose-strong:text-foreground prose-ul:my-2 prose-li:my-0.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                           <ReactMarkdown>{msg.content}</ReactMarkdown>
                         </div>
                       ) : (
@@ -605,15 +667,12 @@ export function FloatingAIChat() {
                     </div>
                     <div className="bg-muted rounded-lg px-3 py-2 text-sm max-w-[85%]">
                       {streamContent ? (
-                        <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                        <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-background/50 prose-pre:border prose-code:text-purple-500 prose-code:bg-purple-500/10 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-headings:text-foreground prose-strong:text-foreground prose-ul:my-2 prose-li:my-0.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                           <ReactMarkdown>{streamContent}</ReactMarkdown>
-                          <span className="inline-block w-1 h-4 bg-purple-500 animate-pulse ml-0.5" />
+                          <span className="inline-block w-1.5 h-4 bg-purple-500 animate-pulse ml-0.5 rounded-sm" />
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span className="text-muted-foreground">Думаю...</span>
-                        </div>
+                        <ThinkingIndicator />
                       )}
                     </div>
                   </div>

@@ -280,7 +280,7 @@ export default function DashboardPage() {
       <StatsCards stats={stats} />
 
       {/* Row 2: Quick Actions + System Health + Period Comparison + Alerts */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <QuickActions 
           onSyncRemnawave={handleSyncRemnawave}
           onRefreshBlacklist={handleRefreshBlacklist}
@@ -303,7 +303,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Row 3: Activity Chart + Anomalies */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <ActivityChart 
             data={hourly} 
@@ -317,7 +317,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Row 4: Heatmap + Traffic Distribution + Top Offenders */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         <ActivityHeatmap 
           data={hourly} 
           title="Activity Heatmap"
@@ -328,7 +328,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Row 5: Geo Distribution (larger) + Real-time Feed */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
         <GeoMap data={geoData} cityData={cityData} title="Geographic Distribution" mode="cities" />
         <RealTimeFeed events={feedEvents} title="Real-time Feed" />
       </div>
@@ -339,7 +339,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Row 7: Nodes + Blacklist Alerts */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
         <Card className="overflow-hidden">
           <CardHeader className="pb-3">
             <CardTitle>Active Nodes</CardTitle>

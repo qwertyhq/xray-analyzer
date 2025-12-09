@@ -94,7 +94,7 @@ export function ActivityHeatmap({ data, title = "Activity Heatmap", description 
               <span>High</span>
             </div>
           </div>
-          <div className="grid grid-cols-12 gap-1">
+          <div className="grid grid-cols-8 sm:grid-cols-12 md:grid-cols-24 gap-1">
             {hourlyData.map((item) => (
               <div
                 key={`req-${item.hour}`}
@@ -105,9 +105,9 @@ export function ActivityHeatmap({ data, title = "Activity Heatmap", description 
           </div>
           <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
             <span>00:00</span>
-            <span>06:00</span>
+            <span className="hidden sm:inline">06:00</span>
             <span>12:00</span>
-            <span>18:00</span>
+            <span className="hidden sm:inline">18:00</span>
             <span>23:00</span>
           </div>
         </div>
@@ -127,7 +127,7 @@ export function ActivityHeatmap({ data, title = "Activity Heatmap", description 
               <span>High</span>
             </div>
           </div>
-          <div className="grid grid-cols-12 gap-1">
+          <div className="grid grid-cols-8 sm:grid-cols-12 md:grid-cols-24 gap-1">
             {hourlyData.map((item) => (
               <div
                 key={`bl-${item.hour}`}
@@ -138,9 +138,9 @@ export function ActivityHeatmap({ data, title = "Activity Heatmap", description 
           </div>
           <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
             <span>00:00</span>
-            <span>06:00</span>
+            <span className="hidden sm:inline">06:00</span>
             <span>12:00</span>
-            <span>18:00</span>
+            <span className="hidden sm:inline">18:00</span>
             <span>23:00</span>
           </div>
         </div>
