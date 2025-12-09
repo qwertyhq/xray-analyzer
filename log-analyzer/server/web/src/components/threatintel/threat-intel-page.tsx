@@ -36,6 +36,9 @@ export function ThreatIntelPage() {
   const topUsers = threatIntel.topUsers;
   const loading = wsLoading && apiLoading;
 
+  // Debug: log threat types
+  console.log("[ThreatIntel] matches:", matches.length, "types:", [...new Set(matches.map(m => m.threat_type))]);
+
   // Filter matches by type for specific tabs
   const torrentMatches = matches.filter(m => m.threat_type === "torrent");
   const torMatches = matches.filter(m => m.threat_type === "tor");
