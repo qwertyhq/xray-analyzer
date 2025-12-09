@@ -274,6 +274,52 @@ func (s *SyncService) countHwidDevicesUnsafe() int {
 	return count
 }
 
+// UserHwidCount represents a user with their HWID device count
+type UserHwidCount struct {
+	User        *User
+	DeviceCount int
+	Devices     []HwidDevice
+}
+
+// GetTopUsersByHwid returns users sorted by HWID device count (descending)
+func (s *SyncService) GetTopUsersByHwid(limit int) []UserHwidCount {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Build list of users with their device counts
+	var result []UserHwidCount
+	for userUUID, devices := range s.hwidDevices {
+		if len(devices) == 0 {
+			continue
+		}
+		user := s.users[userUUID]
+		if user == nil {
+			continue
+		}
+		result = append(result, UserHwidCount{
+			User:        user,
+			DeviceCount: len(devices),
+			Devices:     devices,
+		})
+	}
+
+	// Sort by device count descending
+	for i := 0; i < len(result)-1; i++ {
+		for j := i + 1; j < len(result); j++ {
+			if result[j].DeviceCount > result[i].DeviceCount {
+				result[i], result[j] = result[j], result[i]
+			}
+		}
+	}
+
+	// Limit results
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+
+	return result
+}
+
 // SyncStats represents sync service statistics
 type SyncStats struct {
 	TotalUsers       int       `json:"total_users"`

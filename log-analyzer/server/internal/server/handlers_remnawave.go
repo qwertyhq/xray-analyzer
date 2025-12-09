@@ -622,6 +622,79 @@ func (s *Server) handleRemnawaveOnline(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stats)
 }
 
+// handleRemnawaveHwidTop returns top users by HWID device count
+func (s *Server) handleRemnawaveHwidTop(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if s.remnawave == nil {
+		http.Error(w, "remnawave not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Get top 50 users by HWID count
+	topUsers := s.remnawave.GetTopUsersByHwid(50)
+
+	type DeviceInfo struct {
+		Hwid        string  `json:"hwid"`
+		Platform    *string `json:"platform"`
+		DeviceModel *string `json:"device_model"`
+		CreatedAt   string  `json:"created_at"`
+	}
+
+	type UserHwidInfo struct {
+		UUID         string       `json:"uuid"`
+		Username     string       `json:"username"`
+		Email        *string      `json:"email"`
+		Status       string       `json:"status"`
+		HwidLimit    *int         `json:"hwid_limit"`
+		DeviceCount  int          `json:"device_count"`
+		OverLimit    bool         `json:"over_limit"`
+		Devices      []DeviceInfo `json:"devices"`
+		TelegramID   *int64       `json:"telegram_id"`
+		Tag          *string      `json:"tag"`
+	}
+
+	result := make([]UserHwidInfo, 0, len(topUsers))
+	for _, uc := range topUsers {
+		u := uc.User
+
+		// Check if over limit
+		overLimit := false
+		if u.HwidDeviceLimit != nil && *u.HwidDeviceLimit > 0 {
+			overLimit = uc.DeviceCount > *u.HwidDeviceLimit
+		}
+
+		// Build device list
+		devices := make([]DeviceInfo, 0, len(uc.Devices))
+		for _, d := range uc.Devices {
+			devices = append(devices, DeviceInfo{
+				Hwid:        d.Hwid,
+				Platform:    d.Platform,
+				DeviceModel: d.DeviceModel,
+				CreatedAt:   d.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			})
+		}
+
+		result = append(result, UserHwidInfo{
+			UUID:        u.UUID,
+			Username:    u.Username,
+			Email:       u.Email,
+			Status:      u.Status,
+			HwidLimit:   u.HwidDeviceLimit,
+			DeviceCount: uc.DeviceCount,
+			OverLimit:   overLimit,
+			Devices:     devices,
+			TelegramID:  u.TelegramID,
+			Tag:         u.Tag,
+		})
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"users": result,
+		"total": len(result),
+	})
+}
+
 // handleRemnawavelClearHwid clears all HWID devices for a specific user
 func (s *Server) handleRemnawavelClearHwid(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
