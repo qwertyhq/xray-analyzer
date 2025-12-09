@@ -28,7 +28,7 @@ func NewClient(apiKey string) *Client {
 		baseURL: DefaultBaseURL,
 		apiKey:  apiKey,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 120 * time.Second,
 		},
 	}
 }
@@ -44,11 +44,29 @@ type Message struct {
 	Content string `json:"content"`
 }
 
+// ToolCall represents a function call from the model
+type ToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
 // ChatRequest represents a chat completion request
 type ChatRequest struct {
 	Messages    []Message `json:"messages"`
 	Temperature float64   `json:"temperature,omitempty"`
 	MaxTokens   int       `json:"max_tokens,omitempty"`
+}
+
+// ChatRequestWithTools represents a chat request with function calling
+type ChatRequestWithTools struct {
+	Messages    []map[string]interface{} `json:"messages"`
+	Tools       []map[string]interface{} `json:"tools,omitempty"`
+	Temperature float64                  `json:"temperature,omitempty"`
+	MaxTokens   int                      `json:"max_tokens,omitempty"`
 }
 
 // ChatResponse represents a chat completion response
@@ -59,8 +77,9 @@ type ChatResponse struct {
 	Choices []struct {
 		Index   int `json:"index"`
 		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role      string     `json:"role"`
+			Content   string     `json:"content"`
+			ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -83,6 +102,55 @@ func (c *Client) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 	}
 	if req.MaxTokens == 0 {
 		req.MaxTokens = 2000
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("aleria: marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("aleria: create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("aleria: send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("aleria: read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("aleria: API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var chatResp ChatResponse
+	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+		return nil, fmt.Errorf("aleria: unmarshal response: %w", err)
+	}
+
+	return &chatResp, nil
+}
+
+// ChatWithTools sends a chat request with function calling support
+func (c *Client) ChatWithTools(ctx context.Context, messages []map[string]interface{}, tools []map[string]interface{}) (*ChatResponse, error) {
+	if !c.IsConfigured() {
+		return nil, fmt.Errorf("aleria: API key not configured")
+	}
+
+	req := ChatRequestWithTools{
+		Messages:    messages,
+		Tools:       tools,
+		Temperature: 0.3,
+		MaxTokens:   4000,
 	}
 
 	body, err := json.Marshal(req)

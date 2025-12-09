@@ -508,6 +508,78 @@ func (s *Storage) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_email);
 	CREATE INDEX IF NOT EXISTS idx_sessions_time ON user_sessions(started_at DESC);
+
+	-- Remnawave Users (synced from API)
+	CREATE TABLE IF NOT EXISTS remna_users (
+		uuid TEXT PRIMARY KEY,
+		short_uuid TEXT,
+		username TEXT NOT NULL,
+		email TEXT,
+		status TEXT NOT NULL,
+		traffic_limit_bytes INTEGER DEFAULT 0,
+		used_traffic_bytes INTEGER DEFAULT 0,
+		lifetime_traffic_bytes INTEGER DEFAULT 0,
+		traffic_limit_strategy TEXT,
+		expire_at DATETIME,
+		online_at DATETIME,
+		first_connected_at DATETIME,
+		hwid_device_limit INTEGER,
+		hwid_device_count INTEGER DEFAULT 0,
+		telegram_id INTEGER,
+		description TEXT,
+		tag TEXT,
+		created_at DATETIME,
+		updated_at DATETIME,
+		synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		real_name TEXT,
+		phone TEXT,
+		telegram_user TEXT,
+		payment_info TEXT,
+		plan TEXT
+	);
+	CREATE INDEX IF NOT EXISTS idx_remna_users_username ON remna_users(username);
+	CREATE INDEX IF NOT EXISTS idx_remna_users_email ON remna_users(email);
+	CREATE INDEX IF NOT EXISTS idx_remna_users_status ON remna_users(status);
+	CREATE INDEX IF NOT EXISTS idx_remna_users_online ON remna_users(online_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_remna_users_expire ON remna_users(expire_at);
+	CREATE INDEX IF NOT EXISTS idx_remna_users_tag ON remna_users(tag);
+
+	-- Remnawave HWID Devices (synced from API)
+	CREATE TABLE IF NOT EXISTS remna_hwid_devices (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		hwid TEXT NOT NULL,
+		user_uuid TEXT NOT NULL,
+		username TEXT,
+		platform TEXT,
+		os_version TEXT,
+		device_model TEXT,
+		app_version TEXT,
+		first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		last_active_at DATETIME,
+		synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(hwid, user_uuid)
+	);
+	CREATE INDEX IF NOT EXISTS idx_remna_hwid_hwid ON remna_hwid_devices(hwid);
+	CREATE INDEX IF NOT EXISTS idx_remna_hwid_user ON remna_hwid_devices(user_uuid);
+	CREATE INDEX IF NOT EXISTS idx_remna_hwid_active ON remna_hwid_devices(last_active_at DESC);
+
+	-- Remnawave Nodes (synced from API)
+	CREATE TABLE IF NOT EXISTS remna_nodes (
+		uuid TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		address TEXT,
+		port INTEGER,
+		is_connected INTEGER DEFAULT 0,
+		is_disabled INTEGER DEFAULT 0,
+		is_traffic_track INTEGER DEFAULT 0,
+		traffic_total INTEGER DEFAULT 0,
+		traffic_used INTEGER DEFAULT 0,
+		users_online INTEGER DEFAULT 0,
+		country_code TEXT,
+		synced_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_remna_nodes_connected ON remna_nodes(is_connected);
+	CREATE INDEX IF NOT EXISTS idx_remna_nodes_country ON remna_nodes(country_code);
 	`
 
 	_, err := s.db.Exec(schema)

@@ -138,9 +138,10 @@ func main() {
 	if cfg.RemnawaveEnabled && cfg.RemnawaveURL != "" && cfg.RemnawaveAPIToken != "" {
 		remnaClient := remnawave.NewClient(cfg.RemnawaveURL, cfg.RemnawaveAPIToken)
 		remnaSvc = remnawave.NewSyncService(remnaClient, cfg.RemnawaveSyncInterval)
+		remnaSvc.SetStorage(store) // Persist data to SQLite
 		srv.SetRemnawave(remnaSvc)
 		go remnaSvc.Start(ctx)
-		log.Printf("remnawave: enabled, sync interval: %v", cfg.RemnawaveSyncInterval)
+		log.Printf("remnawave: enabled, sync interval: %v, storage: enabled", cfg.RemnawaveSyncInterval)
 	} else {
 		log.Println("remnawave: disabled (no URL/token configured)")
 	}
@@ -153,7 +154,7 @@ func main() {
 
 	// Initialize Aleria AI service
 	if cfg.AleriaAPIKey != "" {
-		aleriaSvc := aleria.NewService(cfg.AleriaAPIKey, store.DB())
+		aleriaSvc := aleria.NewService(cfg.AleriaAPIKey, store)
 		srv.SetAleria(aleriaSvc)
 		log.Println("aleria: AI service initialized")
 	} else {

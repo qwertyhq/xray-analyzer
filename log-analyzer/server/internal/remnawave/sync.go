@@ -8,10 +8,77 @@ import (
 	"time"
 )
 
+// StorageWriter interface for writing Remnawave data to storage
+type StorageWriter interface {
+	UpsertRemnaUser(ctx context.Context, user *RemnaUserData) error
+	UpsertRemnaHwidDevice(ctx context.Context, device *RemnaHwidData) error
+	UpsertRemnaNode(ctx context.Context, node *RemnaNodeData) error
+}
+
+// RemnaUserData represents user data for storage
+type RemnaUserData struct {
+	UUID                 string
+	ShortUUID            string
+	Username             string
+	Email                *string
+	Status               string
+	TrafficLimitBytes    int64
+	UsedTrafficBytes     int64
+	LifetimeTrafficBytes int64
+	TrafficLimitStrategy string
+	ExpireAt             *time.Time
+	OnlineAt             *time.Time
+	FirstConnectedAt     *time.Time
+	HwidDeviceLimit      *int
+	HwidDeviceCount      int
+	TelegramID           *int64
+	Description          *string
+	Tag                  *string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	SyncedAt             time.Time
+	RealName             *string
+	Phone                *string
+	TelegramUser         *string
+	PaymentInfo          *string
+	Plan                 *string
+}
+
+// RemnaHwidData represents HWID device data for storage
+type RemnaHwidData struct {
+	Hwid         string
+	UserUUID     string
+	Username     string
+	Platform     *string
+	OSVersion    *string
+	DeviceModel  *string
+	AppVersion   *string
+	FirstSeenAt  time.Time
+	LastActiveAt *time.Time
+	SyncedAt     time.Time
+}
+
+// RemnaNodeData represents node data for storage
+type RemnaNodeData struct {
+	UUID           string
+	Name           string
+	Address        string
+	Port           int
+	IsConnected    bool
+	IsDisabled     bool
+	IsTrafficTrack bool
+	TrafficTotal   int64
+	TrafficUsed    int64
+	UsersOnline    int
+	CountryCode    string
+	SyncedAt       time.Time
+}
+
 // SyncService handles periodic synchronization with Remnawave API
 type SyncService struct {
 	client       *Client
 	syncInterval time.Duration
+	storage      StorageWriter
 
 	// Cached data
 	mu              sync.RWMutex
@@ -35,6 +102,11 @@ func NewSyncService(client *Client, syncInterval time.Duration) *SyncService {
 		usersByUsername: make(map[string]*User),
 		hwidDevices:     make(map[string][]HwidDevice),
 	}
+}
+
+// SetStorage sets the storage writer for persisting data
+func (s *SyncService) SetStorage(storage StorageWriter) {
+	s.storage = storage
 }
 
 // OnSyncComplete sets a callback to be called when sync completes
@@ -90,6 +162,11 @@ func (s *SyncService) sync(ctx context.Context) {
 		log.Printf("[remnawave] failed to sync HWID devices: %v", err)
 	}
 
+	// Sync nodes
+	if err := s.syncNodes(ctx); err != nil {
+		log.Printf("[remnawave] failed to sync nodes: %v", err)
+	}
+
 	s.mu.Lock()
 	s.lastSync = time.Now()
 	s.mu.Unlock()
@@ -112,6 +189,7 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 	users := make(map[string]*User)
 	usersByEmail := make(map[string]*User)
 	usersByUsername := make(map[string]*User)
+	now := time.Now()
 
 	for i := range resp.Users {
 		user := &resp.Users[i]
@@ -132,6 +210,55 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 		if user.Username != "" {
 			usersByUsername[user.Username] = user
 		}
+
+		// Persist to storage if configured
+		if s.storage != nil {
+			userData := &RemnaUserData{
+				UUID:                 user.UUID,
+				ShortUUID:            user.ShortUUID,
+				Username:             user.Username,
+				Email:                user.Email,
+				Status:               user.Status,
+				TrafficLimitBytes:    user.TrafficLimitBytes,
+				UsedTrafficBytes:     user.UsedTrafficBytes,
+				LifetimeTrafficBytes: user.LifetimeUsedTraffic,
+				TrafficLimitStrategy: user.TrafficLimitStrategy,
+				ExpireAt:             &user.ExpireAt,
+				OnlineAt:             user.OnlineAt,
+				FirstConnectedAt:     user.FirstConnectedAt,
+				HwidDeviceLimit:      user.HwidDeviceLimit,
+				HwidDeviceCount:      0, // Updated after HWID sync
+				TelegramID:           user.TelegramID,
+				Description:          user.Description,
+				Tag:                  user.Tag,
+				CreatedAt:            user.CreatedAt,
+				UpdatedAt:            user.UpdatedAt,
+				SyncedAt:             now,
+			}
+
+			// Add parsed note fields
+			if user.ParsedNote != nil {
+				if user.ParsedNote.RealName != "" {
+					userData.RealName = &user.ParsedNote.RealName
+				}
+				if user.ParsedNote.Phone != "" {
+					userData.Phone = &user.ParsedNote.Phone
+				}
+				if user.ParsedNote.TelegramUser != "" {
+					userData.TelegramUser = &user.ParsedNote.TelegramUser
+				}
+				if user.ParsedNote.PaymentInfo != "" {
+					userData.PaymentInfo = &user.ParsedNote.PaymentInfo
+				}
+				if user.ParsedNote.Plan != "" {
+					userData.Plan = &user.ParsedNote.Plan
+				}
+			}
+
+			if err := s.storage.UpsertRemnaUser(ctx, userData); err != nil {
+				log.Printf("[remnawave] failed to persist user %s: %v", user.Username, err)
+			}
+		}
 	}
 
 	s.mu.Lock()
@@ -148,6 +275,10 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 	devices := make(map[string][]HwidDevice)
 	start := 0
 	pageSize := 1000
+	now := time.Now()
+
+	// Track device count per user for updating user records
+	userDeviceCounts := make(map[string]int)
 
 	for {
 		resp, err := s.client.GetAllHwidDevices(ctx, start, pageSize)
@@ -157,6 +288,35 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 
 		for _, d := range resp.Devices {
 			devices[d.UserUUID] = append(devices[d.UserUUID], d)
+			userDeviceCounts[d.UserUUID]++
+
+			// Persist to storage if configured
+			if s.storage != nil {
+				// Get username from cached users
+				username := ""
+				s.mu.RLock()
+				if user, ok := s.users[d.UserUUID]; ok {
+					username = user.Username
+				}
+				s.mu.RUnlock()
+
+				hwidData := &RemnaHwidData{
+					Hwid:         d.Hwid,
+					UserUUID:     d.UserUUID,
+					Username:     username,
+					Platform:     d.Platform,
+					OSVersion:    d.OSVersion,
+					DeviceModel:  d.DeviceModel,
+					AppVersion:   nil, // Not in API response
+					FirstSeenAt:  d.CreatedAt,
+					LastActiveAt: &d.UpdatedAt,
+					SyncedAt:     now,
+				}
+
+				if err := s.storage.UpsertRemnaHwidDevice(ctx, hwidData); err != nil {
+					log.Printf("[remnawave] failed to persist hwid device: %v", err)
+				}
+			}
 		}
 
 		if len(resp.Devices) < pageSize {
@@ -168,6 +328,58 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 	s.mu.Lock()
 	s.hwidDevices = devices
 	s.mu.Unlock()
+
+	return nil
+}
+
+// syncNodes fetches and persists node data
+func (s *SyncService) syncNodes(ctx context.Context) error {
+	if s.storage == nil {
+		return nil // Skip if no storage configured
+	}
+
+	nodes, err := s.client.GetNodes(ctx)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	for _, node := range nodes {
+		var port int
+		var trafficTotal, trafficUsed int64
+		var usersOnline int
+		if node.Port != nil {
+			port = *node.Port
+		}
+		if node.TrafficLimitBytes != nil {
+			trafficTotal = *node.TrafficLimitBytes
+		}
+		if node.TrafficUsedBytes != nil {
+			trafficUsed = *node.TrafficUsedBytes
+		}
+		if node.UsersOnline != nil {
+			usersOnline = *node.UsersOnline
+		}
+
+		nodeData := &RemnaNodeData{
+			UUID:           node.UUID,
+			Name:           node.Name,
+			Address:        node.Address,
+			Port:           port,
+			IsConnected:    node.IsConnected,
+			IsDisabled:     node.IsDisabled,
+			IsTrafficTrack: false, // Поля нет в API
+			TrafficTotal:   trafficTotal,
+			TrafficUsed:    trafficUsed,
+			UsersOnline:    usersOnline,
+			CountryCode:    node.CountryCode,
+			SyncedAt:       now,
+		}
+
+		if err := s.storage.UpsertRemnaNode(ctx, nodeData); err != nil {
+			log.Printf("[remnawave] failed to persist node %s: %v", node.Name, err)
+		}
+	}
 
 	return nil
 }
