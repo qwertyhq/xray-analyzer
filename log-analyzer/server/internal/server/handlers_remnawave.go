@@ -642,16 +642,16 @@ func (s *Server) handleRemnawaveHwidTop(w http.ResponseWriter, r *http.Request) 
 	}
 
 	type UserHwidInfo struct {
-		UUID         string       `json:"uuid"`
-		Username     string       `json:"username"`
-		Email        *string      `json:"email"`
-		Status       string       `json:"status"`
-		HwidLimit    *int         `json:"hwid_limit"`
-		DeviceCount  int          `json:"device_count"`
-		OverLimit    bool         `json:"over_limit"`
-		Devices      []DeviceInfo `json:"devices"`
-		TelegramID   *int64       `json:"telegram_id"`
-		Tag          *string      `json:"tag"`
+		UUID        string       `json:"uuid"`
+		Username    string       `json:"username"`
+		Email       *string      `json:"email"`
+		Status      string       `json:"status"`
+		HwidLimit   *int         `json:"hwid_limit"`
+		DeviceCount int          `json:"device_count"`
+		OverLimit   bool         `json:"over_limit"`
+		Devices     []DeviceInfo `json:"devices"`
+		TelegramID  *int64       `json:"telegram_id"`
+		Tag         *string      `json:"tag"`
 	}
 
 	result := make([]UserHwidInfo, 0, len(topUsers))
