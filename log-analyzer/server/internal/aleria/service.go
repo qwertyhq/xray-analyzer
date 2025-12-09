@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/storage"
@@ -387,26 +389,26 @@ var tools = []map[string]interface{}{
 	},
 }
 
-// Query processes a user query using function calling
+// Query processes a user query using text-based function calling
 func (s *Service) Query(ctx context.Context, req *ChatQueryRequest) (*ChatQueryResponse, error) {
-	systemPrompt := `Ты - AI-аналитик безопасности VPN-системы. Ты анализируешь данные о пользователях, угрозах и активности.
+	// Build available functions list for the prompt
+	functionsHelp := s.buildFunctionsHelp()
 
-У тебя есть доступ к инструментам для получения данных из базы. Используй их умно:
-- Сначала определи, какие данные нужны для ответа на вопрос
-- Запрашивай только релевантные данные
-- Если нужна информация о конкретном пользователе - используй search_user или get_remnawave_user_profile
-- Для общей статистики - get_global_stats, get_threat_stats или get_remnawave_stats
-- Для анализа угроз - get_threat_stats, get_anomalies
-- Для географии - get_geo_stats
-- Для анализа абьюза подписок - get_remnawave_hwid_abusers, get_remnawave_shared_hwids
-- Для данных о подписках VPN - get_remnawave_users, get_remnawave_expiring_users
-- Для анализа трафика - get_remnawave_traffic_abusers
+	systemPrompt := fmt.Sprintf(`Ты - AI-аналитик безопасности VPN-системы. Ты анализируешь данные о пользователях, угрозах и активности.
 
-Данные из Remnawave - это информация о VPN подписках пользователей (статус, трафик, устройства).
-Данные из локальной базы - это информация о безопасности (угрозы, риски, IP, геолокация).
+ВАЖНО: Чтобы получить данные, ты ДОЛЖЕН использовать функции в ТОЧНОМ формате:
+<function_call>имя_функции({"параметр": "значение"})</function_call>
 
-Отвечай на русском языке. Будь конкретным и приводи цифры из данных.
-Если данных недостаточно - запроси дополнительные через инструменты.`
+Доступные функции:
+%s
+
+ПРАВИЛА:
+1. Когда нужны данные - СРАЗУ вызывай функцию в формате <function_call>...</function_call>
+2. Не пиши "я запрошу" или "подожди" - просто вызови функцию
+3. После получения данных - анализируй их и отвечай конкретно с цифрами
+4. Если данных нет - так и скажи
+
+Отвечай на русском языке. Будь конкретным.`, functionsHelp)
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
@@ -430,7 +432,8 @@ func (s *Service) Query(ctx context.Context, req *ChatQueryRequest) (*ChatQueryR
 	maxIterations := 5
 
 	for i := 0; i < maxIterations; i++ {
-		resp, err := s.client.ChatWithTools(ctx, messages, tools)
+		// Don't send tools - use text-based function calling
+		resp, err := s.client.ChatWithTools(ctx, messages, nil)
 		if err != nil {
 			return nil, fmt.Errorf("chat request failed: %w", err)
 		}
@@ -441,41 +444,132 @@ func (s *Service) Query(ctx context.Context, req *ChatQueryRequest) (*ChatQueryR
 			return nil, fmt.Errorf("no response from AI")
 		}
 
-		choice := resp.Choices[0]
+		content := resp.Choices[0].Message.Content
 
-		// If there are tool calls, execute them
-		if len(choice.Message.ToolCalls) > 0 {
-			// Add assistant message with tool calls
+		// Parse function calls from text
+		functionCalls := s.parseFunctionCalls(content)
+
+		if len(functionCalls) > 0 {
+			// Execute function calls and add results
 			messages = append(messages, map[string]interface{}{
-				"role":       "assistant",
-				"content":    choice.Message.Content,
-				"tool_calls": choice.Message.ToolCalls,
+				"role":    "assistant",
+				"content": content,
 			})
 
-			// Execute each tool call
-			for _, toolCall := range choice.Message.ToolCalls {
-				result, err := s.executeFunction(ctx, toolCall.Function.Name, toolCall.Function.Arguments)
+			var results []string
+			for _, fc := range functionCalls {
+				log.Printf("[aleria] Executing parsed function: %s with args: %s", fc.Name, fc.Args)
+				result, err := s.executeFunction(ctx, fc.Name, fc.Args)
 				if err != nil {
-					result = fmt.Sprintf(`{"error": "%s"}`, err.Error())
+					log.Printf("[aleria] Function %s error: %v", fc.Name, err)
+					results = append(results, fmt.Sprintf("Функция %s вернула ошибку: %s", fc.Name, err.Error()))
+				} else {
+					log.Printf("[aleria] Function %s returned %d bytes", fc.Name, len(result))
+					results = append(results, fmt.Sprintf("Результат %s:\n%s", fc.Name, result))
 				}
-
-				messages = append(messages, map[string]interface{}{
-					"role":         "tool",
-					"tool_call_id": toolCall.ID,
-					"content":      result,
-				})
 			}
+
+			// Add function results as user message
+			messages = append(messages, map[string]interface{}{
+				"role":    "user",
+				"content": "Вот данные из базы:\n\n" + strings.Join(results, "\n\n") + "\n\nТеперь проанализируй эти данные и дай ответ.",
+			})
 			continue
 		}
 
-		// No more tool calls - we have the final response
+		// No function calls - return the response
 		return &ChatQueryResponse{
-			Response:   choice.Message.Content,
+			Response:   content,
 			TokensUsed: totalTokens,
 		}, nil
 	}
 
 	return nil, fmt.Errorf("max iterations reached without final response")
+}
+
+// FunctionCall represents a parsed function call from text
+type FunctionCall struct {
+	Name string
+	Args string
+}
+
+// parseFunctionCalls extracts function calls from AI response text
+func (s *Service) parseFunctionCalls(text string) []FunctionCall {
+	var calls []FunctionCall
+
+	// Pattern: <function_call>name(args)</function_call>
+	re := regexp.MustCompile(`<function_call>(\w+)\((.*?)\)</function_call>`)
+	matches := re.FindAllStringSubmatch(text, -1)
+
+	for _, match := range matches {
+		if len(match) >= 3 {
+			args := match[2]
+			if args == "" {
+				args = "{}"
+			}
+			calls = append(calls, FunctionCall{
+				Name: match[1],
+				Args: args,
+			})
+		}
+	}
+
+	// Also try simpler pattern without tags: function_name() or function_name({})
+	if len(calls) == 0 {
+		re2 := regexp.MustCompile(`\b(get_\w+|search_\w+)\s*\(\s*(\{[^}]*\})?\s*\)`)
+		matches2 := re2.FindAllStringSubmatch(text, -1)
+		for _, match := range matches2 {
+			if len(match) >= 2 {
+				args := "{}"
+				if len(match) >= 3 && match[2] != "" {
+					args = match[2]
+				}
+				calls = append(calls, FunctionCall{
+					Name: match[1],
+					Args: args,
+				})
+			}
+		}
+	}
+
+	return calls
+}
+
+// buildFunctionsHelp generates help text for available functions
+func (s *Service) buildFunctionsHelp() string {
+	functions := []struct {
+		name string
+		desc string
+		args string
+	}{
+		{"get_global_stats", "Общая статистика: пользователи, запросы, блокировки", "нет аргументов"},
+		{"get_threat_stats", "Статистика угроз: tor, torrent, malware и др.", "нет аргументов"},
+		{"get_top_risky_users", "Топ пользователей по риску", `{"limit": число, "min_risk_score": число}`},
+		{"search_user", "Поиск пользователя по email", `{"email": "адрес"}`},
+		{"get_geo_stats", "Географическая статистика", `{"limit": число}`},
+		{"get_anomalies", "Обнаруженные аномалии", `{"include_resolved": true/false}`},
+		{"get_shared_hwid_analysis", "Анализ общих HWID", `{"limit": число}`},
+		{"get_node_stats", "Статистика нод", "нет аргументов"},
+		{"get_hourly_activity", "Почасовая активность", `{"hours": число}`},
+		{"get_blacklist_analytics", "Аналитика блокировок", `{"hours": число}`},
+		{"get_correlation_stats", "Статистика корреляций", "нет аргументов"},
+		{"get_dns_stats", "Статистика DNS", "нет аргументов"},
+		{"get_remnawave_stats", "Статистика VPN подписок", "нет аргументов"},
+		{"get_remnawave_users", "Список VPN пользователей", `{"limit": число, "status": "ACTIVE/DISABLED/EXPIRED", "search": "текст"}`},
+		{"get_remnawave_user_profile", "Полный профиль пользователя", `{"email": "адрес"}`},
+		{"get_remnawave_hwid_abusers", "Пользователи с множеством устройств", `{"limit": число}`},
+		{"get_remnawave_shared_hwids", "HWID используемые несколькими пользователями", `{"limit": число}`},
+		{"get_remnawave_expiring_users", "Пользователи с истекающей подпиской", `{"days": число}`},
+		{"get_remnawave_traffic_abusers", "Пользователи превышающие лимит трафика", `{"threshold_percent": число}`},
+		{"get_remnawave_nodes", "Статус VPN нод", "нет аргументов"},
+		{"search_remnawave_users", "Поиск VPN пользователей", `{"query": "текст", "limit": число}`},
+	}
+
+	var sb strings.Builder
+	for _, f := range functions {
+		sb.WriteString(fmt.Sprintf("- %s: %s. Аргументы: %s\n", f.name, f.desc, f.args))
+	}
+	return sb.String()
 }
 
 // executeFunction executes a function call and returns the result as JSON
@@ -674,24 +768,24 @@ func (s *Service) AnalyzeUser(ctx context.Context, email string) (*ChatQueryResp
 
 // QueryStream processes a user query with streaming response
 func (s *Service) QueryStream(ctx context.Context, req *ChatQueryRequest, onChunk func(content string, done bool)) error {
-	systemPrompt := `Ты - AI-аналитик безопасности VPN-системы. Ты анализируешь данные о пользователях, угрозах и активности.
+	// Build available functions list for the prompt
+	functionsHelp := s.buildFunctionsHelp()
 
-У тебя есть доступ к инструментам для получения данных из базы. Используй их умно:
-- Сначала определи, какие данные нужны для ответа на вопрос
-- Запрашивай только релевантные данные
-- Если нужна информация о конкретном пользователе - используй search_user или get_remnawave_user_profile
-- Для общей статистики - get_global_stats, get_threat_stats или get_remnawave_stats
-- Для анализа угроз - get_threat_stats, get_anomalies
-- Для географии - get_geo_stats
-- Для анализа абьюза подписок - get_remnawave_hwid_abusers, get_remnawave_shared_hwids
-- Для данных о подписках VPN - get_remnawave_users, get_remnawave_expiring_users
-- Для анализа трафика - get_remnawave_traffic_abusers
+	systemPrompt := fmt.Sprintf(`Ты - AI-аналитик безопасности VPN-системы. Ты анализируешь данные о пользователях, угрозах и активности.
 
-Данные из Remnawave - это информация о VPN подписках пользователей (статус, трафик, устройства).
-Данные из локальной базы - это информация о безопасности (угрозы, риски, IP, геолокация).
+ВАЖНО: Чтобы получить данные, ты ДОЛЖЕН использовать функции в ТОЧНОМ формате:
+<function_call>имя_функции({"параметр": "значение"})</function_call>
 
-Отвечай на русском языке. Будь конкретным и приводи цифры из данных.
-Если данных недостаточно - запроси дополнительные через инструменты.`
+Доступные функции:
+%s
+
+ПРАВИЛА:
+1. Когда нужны данные - СРАЗУ вызывай функцию в формате <function_call>...</function_call>
+2. Не пиши "я запрошу" или "подожди" - просто вызови функцию
+3. После получения данных - анализируй их и отвечай конкретно с цифрами
+4. Если данных нет - так и скажи
+
+Отвечай на русском языке. Будь конкретным.`, functionsHelp)
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
@@ -714,8 +808,8 @@ func (s *Service) QueryStream(ctx context.Context, req *ChatQueryRequest, onChun
 	maxIterations := 5
 
 	for i := 0; i < maxIterations; i++ {
-		// First, check if we need tool calls (non-streaming)
-		resp, err := s.client.ChatWithTools(ctx, messages, tools)
+		// First, check if we need to execute functions (non-streaming)
+		resp, err := s.client.ChatWithTools(ctx, messages, nil)
 		if err != nil {
 			return fmt.Errorf("chat request failed: %w", err)
 		}
@@ -724,35 +818,40 @@ func (s *Service) QueryStream(ctx context.Context, req *ChatQueryRequest, onChun
 			return fmt.Errorf("no response from AI")
 		}
 
-		choice := resp.Choices[0]
+		content := resp.Choices[0].Message.Content
 
-		// If there are tool calls, execute them
-		if len(choice.Message.ToolCalls) > 0 {
-			// Add assistant message with tool calls
+		// Parse function calls from text
+		functionCalls := s.parseFunctionCalls(content)
+
+		if len(functionCalls) > 0 {
+			// Execute function calls and add results
 			messages = append(messages, map[string]interface{}{
-				"role":       "assistant",
-				"content":    choice.Message.Content,
-				"tool_calls": choice.Message.ToolCalls,
+				"role":    "assistant",
+				"content": content,
 			})
 
-			// Execute each tool call
-			for _, toolCall := range choice.Message.ToolCalls {
-				result, err := s.executeFunction(ctx, toolCall.Function.Name, toolCall.Function.Arguments)
+			var results []string
+			for _, fc := range functionCalls {
+				log.Printf("[aleria] Stream: Executing parsed function: %s with args: %s", fc.Name, fc.Args)
+				result, err := s.executeFunction(ctx, fc.Name, fc.Args)
 				if err != nil {
-					result = fmt.Sprintf(`{"error": "%s"}`, err.Error())
+					log.Printf("[aleria] Stream: Function %s error: %v", fc.Name, err)
+					results = append(results, fmt.Sprintf("Функция %s вернула ошибку: %s", fc.Name, err.Error()))
+				} else {
+					log.Printf("[aleria] Stream: Function %s returned %d bytes", fc.Name, len(result))
+					results = append(results, fmt.Sprintf("Результат %s:\n%s", fc.Name, result))
 				}
-
-				messages = append(messages, map[string]interface{}{
-					"role":         "tool",
-					"tool_call_id": toolCall.ID,
-					"content":      result,
-				})
 			}
+
+			// Add function results as user message
+			messages = append(messages, map[string]interface{}{
+				"role":    "user",
+				"content": "Вот данные из базы:\n\n" + strings.Join(results, "\n\n") + "\n\nТеперь проанализируй эти данные и дай ответ.",
+			})
 			continue
 		}
 
-		// No more tool calls - stream the final response
-		// Remove tools for final streaming response
+		// No function calls - stream the final response
 		return s.client.ChatStream(ctx, messages, nil, onChunk)
 	}
 

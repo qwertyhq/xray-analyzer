@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -160,6 +161,8 @@ func (c *Client) ChatWithTools(ctx context.Context, messages []map[string]interf
 		return nil, fmt.Errorf("aleria: marshal request: %w", err)
 	}
 
+	log.Printf("[aleria] API request (truncated): %s", truncateString(string(body), 2000))
+
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("aleria: create request: %w", err)
@@ -182,6 +185,8 @@ func (c *Client) ChatWithTools(ctx context.Context, messages []map[string]interf
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("aleria: API error %d: %s", resp.StatusCode, string(respBody))
 	}
+
+	log.Printf("[aleria] API response: %s", string(respBody))
 
 	var chatResp ChatResponse
 	if err := json.Unmarshal(respBody, &chatResp); err != nil {
@@ -311,4 +316,12 @@ func (c *Client) ChatStream(ctx context.Context, messages []map[string]interface
 			}
 		}
 	}
+}
+
+// truncateString truncates a string to maxLen characters
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
