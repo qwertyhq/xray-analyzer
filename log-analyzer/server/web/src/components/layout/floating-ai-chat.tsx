@@ -197,6 +197,14 @@ export function FloatingAIChat() {
     }
   }, [isOpen, loadSessions]);
 
+  // Auto-load last session when opening chat
+  useEffect(() => {
+    if (isOpen && sessions.length > 0 && !currentSessionId && messages.length === 0) {
+      // Load the most recent session
+      loadSession(sessions[0].id);
+    }
+  }, [isOpen, sessions, currentSessionId, messages.length, loadSession]);
+
   // Send message with streaming
   const sendMessage = async () => {
     if (!input.trim() || loading || streaming) return;
@@ -524,7 +532,10 @@ export function FloatingAIChat() {
       ) : (
         <>
           {/* Messages */}
-          <ScrollArea className="flex-1 px-4" ref={scrollRef}>
+          <div 
+            ref={scrollRef}
+            className="flex-1 px-4 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent"
+          >
             {messages.length === 0 && !streamContent ? (
               <div className="text-center py-8 space-y-4">
                 <Bot className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
@@ -609,7 +620,7 @@ export function FloatingAIChat() {
                 )}
               </div>
             )}
-          </ScrollArea>
+          </div>
 
           {/* Input */}
           <div className="p-3 border-t">

@@ -81,6 +81,17 @@ func (s *Storage) UpsertRemnaHwidDevice(ctx context.Context, device *remnawave.R
 	return err
 }
 
+// UpdateRemnaUserHwidCounts updates hwid_device_count for all users based on actual HWID data
+func (s *Storage) UpdateRemnaUserHwidCounts(ctx context.Context) error {
+	query := `
+		UPDATE remna_users SET hwid_device_count = (
+			SELECT COUNT(*) FROM remna_hwid_devices WHERE remna_hwid_devices.user_uuid = remna_users.uuid
+		)
+	`
+	_, err := s.db.ExecContext(ctx, query)
+	return err
+}
+
 // UpsertRemnaNode adapts remnawave.RemnaNodeData to storage
 func (s *Storage) UpsertRemnaNode(ctx context.Context, node *remnawave.RemnaNodeData) error {
 	query := `

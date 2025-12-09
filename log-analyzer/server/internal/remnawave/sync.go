@@ -13,6 +13,7 @@ type StorageWriter interface {
 	UpsertRemnaUser(ctx context.Context, user *RemnaUserData) error
 	UpsertRemnaHwidDevice(ctx context.Context, device *RemnaHwidData) error
 	UpsertRemnaNode(ctx context.Context, node *RemnaNodeData) error
+	UpdateRemnaUserHwidCounts(ctx context.Context) error
 }
 
 // RemnaUserData represents user data for storage
@@ -160,6 +161,13 @@ func (s *SyncService) sync(ctx context.Context) {
 	// Sync HWID devices
 	if err := s.syncHwidDevices(ctx); err != nil {
 		log.Printf("[remnawave] failed to sync HWID devices: %v", err)
+	}
+
+	// Update HWID counts in user table after syncing devices
+	if s.storage != nil {
+		if err := s.storage.UpdateRemnaUserHwidCounts(ctx); err != nil {
+			log.Printf("[remnawave] failed to update HWID counts: %v", err)
+		}
 	}
 
 	// Sync nodes

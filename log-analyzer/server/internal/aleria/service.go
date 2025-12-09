@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/storage"
@@ -479,6 +480,8 @@ func (s *Service) Query(ctx context.Context, req *ChatQueryRequest) (*ChatQueryR
 
 // executeFunction executes a function call and returns the result as JSON
 func (s *Service) executeFunction(ctx context.Context, name string, argsJSON string) (string, error) {
+	log.Printf("[aleria] executing function: %s with args: %s", name, argsJSON)
+
 	var args map[string]interface{}
 	if argsJSON != "" && argsJSON != "{}" {
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
@@ -593,6 +596,7 @@ func (s *Service) executeFunction(ctx context.Context, name string, argsJSON str
 	}
 
 	if err != nil {
+		log.Printf("[aleria] function %s error: %v", name, err)
 		return "", err
 	}
 
@@ -601,6 +605,7 @@ func (s *Service) executeFunction(ctx context.Context, name string, argsJSON str
 		return "", fmt.Errorf("marshal result: %w", err)
 	}
 
+	log.Printf("[aleria] function %s returned %d bytes", name, len(jsonBytes))
 	return string(jsonBytes), nil
 }
 

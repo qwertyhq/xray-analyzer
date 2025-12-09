@@ -97,6 +97,16 @@ func (s *Server) handleAIChatStream(w http.ResponseWriter, r *http.Request) {
 	// Save user message to DB if session provided
 	if req.SessionID != "" {
 		s.storage.AddChatMessage(r.Context(), req.SessionID, "user", req.Message, 0)
+
+		// Update session title with first user message (truncated)
+		session, _ := s.storage.GetChatSession(r.Context(), req.SessionID)
+		if session != nil && session.Title == "Новый чат" {
+			title := req.Message
+			if len(title) > 50 {
+				title = title[:50] + "..."
+			}
+			s.storage.UpdateChatSessionTitle(r.Context(), req.SessionID, title)
+		}
 	}
 
 	// Build history for AI
