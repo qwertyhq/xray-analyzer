@@ -141,17 +141,47 @@ type HourlyStatEntry struct {
 
 // Node represents a Remnawave node
 type Node struct {
-	UUID        string    `json:"uuid"`
-	Name        string    `json:"name"`
-	Address     string    `json:"address"`
-	Port        int       `json:"port"`
-	CountryCode string    `json:"countryCode"`
-	IsEnabled   bool      `json:"isEnabled"`
-	IsConnected bool      `json:"isConnected"`
-	TrafficUsed int64     `json:"trafficUsedBytes"`
-	OnlineUsers int       `json:"onlineUsers"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	UUID              string     `json:"uuid"`
+	Name              string     `json:"name"`
+	Address           string     `json:"address"`
+	Port              *int       `json:"port"`
+	CountryCode       string     `json:"countryCode"`
+	IsDisabled        bool       `json:"isDisabled"`
+	IsConnected       bool       `json:"isConnected"`
+	IsConnecting      bool       `json:"isConnecting"`
+	TrafficUsedBytes  *int64     `json:"trafficUsedBytes"`
+	TrafficLimitBytes *int64     `json:"trafficLimitBytes"`
+	UsersOnline       *int       `json:"usersOnline"`
+	XrayVersion       *string    `json:"xrayVersion"`
+	NodeVersion       *string    `json:"nodeVersion"`
+	XrayUptime        string     `json:"xrayUptime"`
+	LastStatusChange  *time.Time `json:"lastStatusChange"`
+	LastStatusMessage *string    `json:"lastStatusMessage"`
+	ViewPosition      int        `json:"viewPosition"`
+	Tags              []string   `json:"tags"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
+}
+
+// IsEnabled returns true if node is enabled (inverse of IsDisabled)
+func (n *Node) IsEnabled() bool {
+	return !n.IsDisabled
+}
+
+// GetOnlineUsers returns online users count, defaulting to 0 if nil
+func (n *Node) GetOnlineUsers() int {
+	if n.UsersOnline == nil {
+		return 0
+	}
+	return *n.UsersOnline
+}
+
+// GetTrafficUsed returns traffic used, defaulting to 0 if nil
+func (n *Node) GetTrafficUsed() int64 {
+	if n.TrafficUsedBytes == nil {
+		return 0
+	}
+	return *n.TrafficUsedBytes
 }
 
 // NodesResponse represents the response from GET /api/nodes
@@ -201,9 +231,8 @@ type MemoryInfo struct {
 
 // UserStatsInfo represents user statistics
 type UserStatsInfo struct {
-	StatusCounts      map[string]int `json:"statusCounts"`
-	TotalUsers        int            `json:"totalUsers"`
-	TotalTrafficBytes string         `json:"totalTrafficBytes"`
+	StatusCounts map[string]int `json:"statusCounts"`
+	TotalUsers   int            `json:"totalUsers"`
 }
 
 // OnlineStatsInfo represents online user statistics
@@ -216,5 +245,6 @@ type OnlineStatsInfo struct {
 
 // NodesInfo represents nodes information
 type NodesInfo struct {
-	TotalOnline int `json:"totalOnline"`
+	TotalOnline        int    `json:"totalOnline"`
+	TotalBytesLifetime string `json:"totalBytesLifetime"`
 }
