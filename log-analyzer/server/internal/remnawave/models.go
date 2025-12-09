@@ -8,14 +8,11 @@ type User struct {
 	ShortUUID              string          `json:"shortUuid"`
 	Username               string          `json:"username"`
 	Status                 string          `json:"status"` // ACTIVE, DISABLED, LIMITED, EXPIRED
-	UsedTrafficBytes       int64           `json:"usedTrafficBytes"`
-	LifetimeUsedTraffic    int64           `json:"lifetimeUsedTrafficBytes"`
 	TrafficLimitBytes      int64           `json:"trafficLimitBytes"`
 	TrafficLimitStrategy   string          `json:"trafficLimitStrategy"` // NO_RESET, DAY, WEEK, MONTH
 	SubLastUserAgent       *string         `json:"subLastUserAgent"`
 	SubLastOpenedAt        *time.Time      `json:"subLastOpenedAt"`
 	ExpireAt               time.Time       `json:"expireAt"`
-	OnlineAt               *time.Time      `json:"onlineAt"`
 	SubRevokedAt           *time.Time      `json:"subRevokedAt"`
 	LastTrafficResetAt     *time.Time      `json:"lastTrafficResetAt"`
 	Description            *string         `json:"description"` // Note field with user metadata
@@ -23,17 +20,44 @@ type User struct {
 	TelegramID             *int64          `json:"telegramId"`
 	Email                  *string         `json:"email"`
 	HwidDeviceLimit        *int            `json:"hwidDeviceLimit"`
-	FirstConnectedAt       *time.Time      `json:"firstConnectedAt"`
 	LastTriggeredThreshold int             `json:"lastTriggeredThreshold"`
 	CreatedAt              time.Time       `json:"createdAt"`
 	UpdatedAt              time.Time       `json:"updatedAt"`
 	ActiveInternalSquads   []InternalSquad `json:"activeInternalSquads"`
 	ExternalSquadUUID      *string         `json:"externalSquadUuid"`
 	SubscriptionURL        string          `json:"subscriptionUrl"`
-	LastConnectedNode      *ConnectedNode  `json:"lastConnectedNode"`
+
+	// Nested userTraffic object (new in API v2.3.x)
+	UserTraffic *UserTraffic `json:"userTraffic"`
+
+	// Legacy fields - for backwards compatibility, populated from UserTraffic
+	UsedTrafficBytes    int64          `json:"-"`
+	LifetimeUsedTraffic int64          `json:"-"`
+	OnlineAt            *time.Time     `json:"-"`
+	FirstConnectedAt    *time.Time     `json:"-"`
+	LastConnectedNode   *ConnectedNode `json:"-"`
 
 	// Parsed metadata from Description/Note field
 	ParsedNote *ParsedNote `json:"-"`
+}
+
+// UserTraffic represents the nested traffic data in user response
+type UserTraffic struct {
+	UsedTrafficBytes         int64      `json:"usedTrafficBytes"`
+	LifetimeUsedTrafficBytes int64      `json:"lifetimeUsedTrafficBytes"`
+	OnlineAt                 *time.Time `json:"onlineAt"`
+	FirstConnectedAt         *time.Time `json:"firstConnectedAt"`
+	LastConnectedNodeUUID    *string    `json:"lastConnectedNodeUuid"`
+}
+
+// PopulateFromTraffic copies data from UserTraffic to legacy fields for compatibility
+func (u *User) PopulateFromTraffic() {
+	if u.UserTraffic != nil {
+		u.UsedTrafficBytes = u.UserTraffic.UsedTrafficBytes
+		u.LifetimeUsedTraffic = u.UserTraffic.LifetimeUsedTrafficBytes
+		u.OnlineAt = u.UserTraffic.OnlineAt
+		u.FirstConnectedAt = u.UserTraffic.FirstConnectedAt
+	}
 }
 
 // ParsedNote represents parsed metadata from user's Description/Note field

@@ -116,6 +116,9 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 	for i := range resp.Users {
 		user := &resp.Users[i]
 
+		// Populate legacy fields from nested UserTraffic (API v2.3.x)
+		user.PopulateFromTraffic()
+
 		// Parse Note/Description field
 		if user.Description != nil && *user.Description != "" {
 			user.ParsedNote = ParseNote(*user.Description)
