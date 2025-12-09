@@ -16,6 +16,9 @@ interface TorTabProps {
 export function TorTab({ matches, topUsers, feeds }: TorTabProps) {
   // Sum indicators from all Tor-related feeds
   const totalIndicators = feeds.reduce((sum, f) => sum + (f.indicators || 0), 0);
+  // Calculate total detections from topUsers (aggregated stats)
+  const totalDetections = topUsers?.reduce((sum, u) => sum + u.match_count, 0) || 0;
+  const uniqueUsers = topUsers?.length || 0;
   
   return (
     <div className="space-y-6">
@@ -30,7 +33,7 @@ export function TorTab({ matches, topUsers, feeds }: TorTabProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-violet-600">
-              {matches.length}
+              {totalDetections.toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">All time</p>
           </CardContent>
@@ -41,7 +44,7 @@ export function TorTab({ matches, topUsers, feeds }: TorTabProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {new Set(matches.map(m => m.user_email)).size}
+              {uniqueUsers}
             </div>
             <p className="text-xs text-muted-foreground">Using Tor</p>
           </CardContent>
