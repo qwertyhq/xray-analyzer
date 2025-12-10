@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -168,6 +169,7 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 		limit = 20
 	}
 
+	// First try to get from recent matches table
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, user_email, node_id, source_ip, destination,
 			   threat_type, source, confidence, description, matched_at
@@ -181,7 +183,53 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 	}
 	defer rows.Close()
 
-	return scanThreatMatches(rows)
+	matches, err := scanThreatMatches(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	// If we have matches from recent table, return them
+	if len(matches) > 0 {
+		return matches, nil
+	}
+
+	// Fallback: construct matches from aggregated user_threat_domains table
+	// This preserves historical data even after cleanup
+	domainRows, err := s.db.QueryContext(ctx, `
+		SELECT d.user_email, d.domain, d.hit_count, d.last_seen
+		FROM user_threat_domains d
+		WHERE d.threat_type = ?
+		ORDER BY d.last_seen DESC
+		LIMIT ?
+	`, threatType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer domainRows.Close()
+
+	for domainRows.Next() {
+		var m threatintel.ThreatMatch
+		var lastSeen string
+		var hitCount int
+
+		if err := domainRows.Scan(&m.UserEmail, &m.Destination, &hitCount, &lastSeen); err != nil {
+			continue
+		}
+
+		m.ThreatType = threatintel.ThreatType(threatType)
+		m.Source = threatintel.ThreatSource("historical")
+		m.Confidence = 85
+		m.Description = fmt.Sprintf("Historical: %d hits", hitCount)
+		if t, err := time.Parse(time.RFC3339, lastSeen); err == nil {
+			m.MatchedAt = t
+		} else if t, err := time.Parse("2006-01-02 15:04:05", lastSeen); err == nil {
+			m.MatchedAt = t
+		}
+
+		matches = append(matches, &m)
+	}
+
+	return matches, nil
 }
 
 // CleanupOldThreatMatches removes threat matches older than the retention period
