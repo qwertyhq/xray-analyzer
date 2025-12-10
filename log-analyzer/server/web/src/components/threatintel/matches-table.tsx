@@ -39,36 +39,14 @@ export function MatchesTable({ matches, title, description }: MatchesTableProps)
   const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
   const pageSize = 20;
 
-  // If no matches at all, show empty state
-  if (matches.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
-          <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-12 text-muted-foreground">
-            <div className="text-4xl mb-4">🔍</div>
-            <p className="text-sm">Нет недавней активности для этой категории</p>
-            <p className="text-xs mt-2 max-w-md mx-auto">
-              Статистика выше показывает общее число детекций за всё время. 
-              Детальные записи хранятся 30 дней — возможно, активность этого типа была давно.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Get unique threat types from matches
+  // Get unique threat types from matches - must be before any conditional returns
   const threatTypes = useMemo(() => {
     const types = new Set<ThreatType>();
     matches.forEach(m => types.add(m.threat_type));
     return Array.from(types).sort();
   }, [matches]);
 
-  // Filter matches
+  // Filter matches - must be before any conditional returns
   const filteredMatches = useMemo(() => {
     let result = [...matches];
     
@@ -98,10 +76,32 @@ export function MatchesTable({ matches, title, description }: MatchesTableProps)
   const totalPages = Math.ceil(filteredMatches.length / pageSize);
   const paginatedMatches = filteredMatches.slice((page - 1) * pageSize, page * pageSize);
 
-  // Reset page when filters change
+  // Reset page when filters change - must be before any conditional returns
   useEffect(() => {
     setPage(1);
   }, [search, typeFilter, confidenceFilter]);
+
+  // If no matches at all, show empty state - AFTER all hooks
+  if (matches.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
+          <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-12 text-muted-foreground">
+            <div className="text-4xl mb-4">🔍</div>
+            <p className="text-sm">Нет недавней активности для этой категории</p>
+            <p className="text-xs mt-2 max-w-md mx-auto">
+              Статистика выше показывает общее число детекций за всё время. 
+              Детальные записи хранятся 30 дней — возможно, активность этого типа была давно.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
