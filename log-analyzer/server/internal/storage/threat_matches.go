@@ -162,6 +162,28 @@ func (s *Storage) GetThreatMatchesByUser(ctx context.Context, userEmail string, 
 	return scanThreatMatches(rows)
 }
 
+// GetThreatMatchesByType returns threat matches for a specific threat type
+func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string, limit int) ([]*threatintel.ThreatMatch, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_email, node_id, source_ip, destination,
+			   threat_type, source, confidence, description, matched_at
+		FROM threat_matches
+		WHERE threat_type = ?
+		ORDER BY matched_at DESC
+		LIMIT ?
+	`, threatType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanThreatMatches(rows)
+}
+
 // CleanupOldThreatMatches removes threat matches older than the retention period
 func (s *Storage) CleanupOldThreatMatches(ctx context.Context, retention time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-retention).Format(time.RFC3339)

@@ -25,6 +25,7 @@ type Storage interface {
 	SaveThreatMatch(ctx context.Context, match *ThreatMatch) error
 	GetThreatMatches(ctx context.Context, limit int) ([]*ThreatMatch, error)
 	GetThreatMatchesByUser(ctx context.Context, userEmail string, limit int) ([]*ThreatMatch, error)
+	GetThreatMatchesByType(ctx context.Context, threatType string, limit int) ([]*ThreatMatch, error)
 	GetThreatStats(ctx context.Context) (*ThreatStats, error)
 	GetTopUsersByCategory(ctx context.Context, category string, limit int) ([]*CategoryUserStats, error)
 	GetTopUsersByAllCategories(ctx context.Context, limit int) (map[string][]*CategoryUserStats, error)
@@ -285,6 +286,14 @@ func (s *Service) GetUserMatches(ctx context.Context, userEmail string, limit in
 		return nil, nil
 	}
 	return s.storage.GetThreatMatchesByUser(ctx, userEmail, limit)
+}
+
+// GetMatchesByType returns threat matches for a specific threat type
+func (s *Service) GetMatchesByType(ctx context.Context, threatType string, limit int) ([]*ThreatMatch, error) {
+	if s.storage == nil {
+		return nil, nil
+	}
+	return s.storage.GetThreatMatchesByType(ctx, threatType, limit)
 }
 
 // ForceUpdate forces an immediate update of all feeds

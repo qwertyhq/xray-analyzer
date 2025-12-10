@@ -36,14 +36,6 @@ export function ThreatIntelPage() {
   const topUsers = threatIntel.topUsers;
   const loading = wsLoading && apiLoading;
 
-  // matches содержит только последние 20 записей, для статистики используем topUsers
-
-  // Filter matches by type for specific tabs
-  const torrentMatches = matches.filter(m => m.threat_type === "torrent");
-  const torMatches = matches.filter(m => m.threat_type === "tor");
-  // Show ALL matches in the overview (no filtering)
-  const allMatches = matches;
-
   if (loading) {
     return (
       <div className="p-4 md:p-8 space-y-6">
@@ -92,16 +84,10 @@ export function ThreatIntelPage() {
           <TabsTrigger value="torrent" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
             <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             <span className="hidden xs:inline">Торренты</span>
-            {torrentMatches.length > 0 && (
-              <Badge variant="secondary" className="ml-1 text-xs h-5 px-1.5">{torrentMatches.length}</Badge>
-            )}
           </TabsTrigger>
           <TabsTrigger value="tor" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
             <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             Tor
-            {torMatches.length > 0 && (
-              <Badge variant="secondary" className="ml-1 text-xs h-5 px-1.5">{torMatches.length}</Badge>
-            )}
           </TabsTrigger>
         </TabsList>
 
@@ -110,7 +96,7 @@ export function ThreatIntelPage() {
             stats={stats}
             feeds={feeds}
             topUsers={topUsers}
-            threatMatches={allMatches}
+            threatMatches={matches}
             timeStats={timeStats}
             geoStats={geoStats}
             anomalies={anomalies}
@@ -127,7 +113,6 @@ export function ThreatIntelPage() {
 
         <TabsContent value="torrent" className="mt-6">
           <TorrentTab 
-            matches={torrentMatches}
             topUsers={topUsers?.torrent || []}
             feeds={feeds.filter(f => 
               f.source === "torrent-trackers" || 
@@ -139,7 +124,6 @@ export function ThreatIntelPage() {
 
         <TabsContent value="tor" className="mt-6">
           <TorTab 
-            matches={torMatches}
             topUsers={topUsers?.tor || []}
             feeds={feeds.filter(f => f.source === "tor-exit-nodes")}
           />

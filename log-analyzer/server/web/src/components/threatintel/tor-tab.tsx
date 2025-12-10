@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Globe } from "lucide-react";
@@ -8,20 +9,43 @@ import Link from "next/link";
 import { MatchesTable } from "./matches-table";
 
 interface TorTabProps {
-  matches: ThreatMatch[];
   topUsers: CategoryUserStats[];
   feeds: FeedStatus[];
 }
 
-export function TorTab({ matches, topUsers, feeds }: TorTabProps) {
+export function TorTab({ topUsers, feeds }: TorTabProps) {
+  const [matches, setMatches] = useState<ThreatMatch[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch tor matches on mount
+  const fetchMatches = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("auth_token");
+      const headers: HeadersInit = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      const res = await fetch("/api/threatintel/matches?type=tor&limit=20", { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setMatches(data || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch tor matches:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMatches();
+  }, [fetchMatches]);
+
   // Sum indicators from all Tor-related feeds
   const totalIndicators = feeds.reduce((sum, f) => sum + (f.indicators || 0), 0);
   // Calculate total detections from topUsers (aggregated stats)
   const totalDetections = topUsers?.reduce((sum, u) => sum + u.match_count, 0) || 0;
   const uniqueUsers = topUsers?.length || 0;
-
-  // Check if we have any data at all
-  const hasData = totalDetections > 0 || uniqueUsers > 0 || matches.length > 0;
   
   return (
     <div className="space-y-6">
@@ -65,24 +89,10 @@ export function TorTab({ matches, topUsers, feeds }: TorTabProps) {
         </Card>
       </div>
 
-      {/* No Data State */}
-      {!hasData && (
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center text-muted-foreground">
-              <Globe className="h-12 w-12 mx-auto mb-4 opacity-30" />
-              <h3 className="text-lg font-medium mb-2">Нет данных о Tor-активности</h3>
-              <p className="text-sm max-w-md mx-auto">
-                Пользователи не обращались к exit-нодам Tor сети. 
-                Мониторинг активен с {totalIndicators.toLocaleString()} индикаторами.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+
 
       {/* Top Tor Users */}
-      {hasData && topUsers && topUsers.length > 0 && (
+      {topUsers && topUsers.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -131,14 +141,12 @@ export function TorTab({ matches, topUsers, feeds }: TorTabProps) {
         </Card>
       )}
 
-      {/* Tor Matches Table - only show if we have recent matches */}
-      {matches.length > 0 && (
-        <MatchesTable 
-          matches={matches} 
-          title="Recent Tor Activity"
-          description={`Последние обнаружения Tor-активности (${matches.length} записей)`}
-        />
-      )}
+      {/* Tor Matches Table */}
+      <MatchesTable 
+        matches={matches} 
+        title="Recent Tor Activity"
+        description={`Последние обнаружения Tor-активности`}
+      />
     </div>
   );
 }

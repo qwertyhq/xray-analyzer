@@ -758,14 +758,17 @@ func (s *Server) handleThreatIntelMatches(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// Check if user-specific query
+	// Check query parameters
 	userEmail := r.URL.Query().Get("user")
+	threatType := r.URL.Query().Get("type")
 
 	var matches interface{}
 	var err error
 
 	if userEmail != "" {
 		matches, err = s.threatIntel.GetUserMatches(ctx, userEmail, limit)
+	} else if threatType != "" {
+		matches, err = s.threatIntel.GetMatchesByType(ctx, threatType, limit)
 	} else {
 		matches, err = s.threatIntel.GetRecentMatches(ctx, limit)
 	}
