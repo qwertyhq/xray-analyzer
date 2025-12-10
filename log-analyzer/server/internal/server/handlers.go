@@ -22,16 +22,15 @@ var _ *remnawave.User
 
 // resolveUserDisplayNames resolves numeric IDs to usernames via Remnawave API
 func (s *Server) resolveUserDisplayNames(ctx context.Context, users []*models.UserStats) {
-	if s.remnawave == nil {
-		return
-	}
-
 	for _, u := range users {
-		// If display_name is same as user_email (not resolved), try to resolve
+		// If display_name is empty or same as user_email (not resolved), try to resolve
 		if u.DisplayName == "" || u.DisplayName == u.UserEmail {
-			resolved := s.remnawave.ResolveUsername(ctx, u.UserEmail)
-			if resolved != u.UserEmail {
+			if s.remnawave != nil {
+				resolved := s.remnawave.ResolveUsername(ctx, u.UserEmail)
 				u.DisplayName = resolved
+			} else {
+				// Fallback to user_email if remnawave not configured
+				u.DisplayName = u.UserEmail
 			}
 		}
 	}
@@ -786,7 +785,7 @@ func (s *Server) handleThreatIntelMatches(w http.ResponseWriter, r *http.Request
 	userEmail := r.URL.Query().Get("user")
 	threatType := r.URL.Query().Get("type")
 
-	var matches interface{}
+	var matches []*threatintel.ThreatMatch
 	var err error
 
 	if userEmail != "" {
@@ -801,6 +800,15 @@ func (s *Server) handleThreatIntelMatches(w http.ResponseWriter, r *http.Request
 		log.Printf("Error getting threat matches: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Resolve usernames via Remnawave API
+	if s.remnawave != nil && matches != nil {
+		for _, m := range matches {
+			if m.DisplayName == "" || m.DisplayName == m.UserEmail {
+				m.DisplayName = s.remnawave.ResolveUsername(ctx, m.UserEmail)
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -839,23 +847,42 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 	// Check if category-specific query
 	category := r.URL.Query().Get("category")
 
-	var result interface{}
-	var err error
+	// Helper to resolve usernames in CategoryUserStats
+	resolveUserStats := func(stats []*threatintel.CategoryUserStats) {
+		if s.remnawave == nil {
+			return
+		}
+		for _, stat := range stats {
+			if stat.DisplayName == "" || stat.DisplayName == stat.UserEmail {
+				stat.DisplayName = s.remnawave.ResolveUsername(ctx, stat.UserEmail)
+			}
+		}
+	}
 
 	if category != "" {
-		result, err = s.threatIntel.GetTopUsersByCategory(ctx, category, limit)
+		result, err := s.threatIntel.GetTopUsersByCategory(ctx, category, limit)
+		if err != nil {
+			log.Printf("Error getting top users: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resolveUserStats(result)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
 	} else {
-		result, err = s.threatIntel.GetTopUsersByAllCategories(ctx, limit)
+		result, err := s.threatIntel.GetTopUsersByAllCategories(ctx, limit)
+		if err != nil {
+			log.Printf("Error getting top users: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Resolve usernames for all categories
+		for _, stats := range result {
+			resolveUserStats(stats)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
 	}
-
-	if err != nil {
-		log.Printf("Error getting top users: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
 }
 
 // handleThreatIntelTimeStats returns hourly and daily threat statistics

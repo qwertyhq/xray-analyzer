@@ -154,11 +154,15 @@ func (s *Server) handleCorrelationSharedIPs(w http.ResponseWriter, r *http.Reque
 			TotalRequests: ip.TotalRequests,
 		}
 
-		// Get users for this IP
+		// Get users for this IP and resolve their usernames
 		users, err := s.storage.GetUsersForIP(r.Context(), ip.IPAddress)
 		if err == nil {
 			for _, u := range users {
-				eip.Users = append(eip.Users, u.UserEmail)
+				username := u.UserEmail
+				if s.remnawave != nil {
+					username = s.remnawave.ResolveUsername(r.Context(), u.UserEmail)
+				}
+				eip.Users = append(eip.Users, username)
 			}
 		}
 
@@ -218,11 +222,15 @@ func (s *Server) handleCorrelationSharedHWIDs(w http.ResponseWriter, r *http.Req
 			TotalRequests: hwid.TotalRequests,
 		}
 
-		// Get users for this HWID
+		// Get users for this HWID and resolve their usernames
 		users, err := s.storage.GetUsersForHWID(r.Context(), hwid.HWID)
 		if err == nil {
 			for _, u := range users {
-				ehwid.Users = append(ehwid.Users, u.UserEmail)
+				username := u.UserEmail
+				if s.remnawave != nil {
+					username = s.remnawave.ResolveUsername(r.Context(), u.UserEmail)
+				}
+				ehwid.Users = append(ehwid.Users, username)
 			}
 		}
 

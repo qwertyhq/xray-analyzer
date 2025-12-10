@@ -89,8 +89,8 @@ type ThreatIndicator struct {
 // ThreatMatch represents a match between user traffic and threat intel
 type ThreatMatch struct {
 	ID          int64        `json:"id"`
-	UserEmail   string       `json:"user_email"`
-	DisplayName string       `json:"display_name,omitempty"`
+	UserEmail   string       `json:"-"` // internal use only
+	DisplayName string       `json:"username"`
 	NodeID      string       `json:"node_id"`
 	SourceIP    string       `json:"source_ip"`
 	Destination string       `json:"destination"`

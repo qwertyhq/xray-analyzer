@@ -47,8 +47,8 @@ type Alert struct {
 // UserStats represents aggregated stats for a user
 type UserStats struct {
 	NodeID              string    `json:"node_id"`
-	UserEmail           string    `json:"user_email"`
-	DisplayName         string    `json:"display_name,omitempty"`
+	UserEmail           string    `json:"-"` // internal use only, not exposed in JSON
+	DisplayName         string    `json:"username"`
 	TotalRequests       int64     `json:"total_requests"`
 	BlacklistHits       int64     `json:"blacklist_hits"`
 	UniqueDestinations  int       `json:"unique_destinations"`

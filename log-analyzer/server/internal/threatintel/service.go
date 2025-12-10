@@ -46,10 +46,11 @@ type LocationWithoutCoords struct {
 
 // CategoryUserStats represents user stats for a content category
 type CategoryUserStats struct {
-	UserEmail  string   `json:"user_email"`
-	Category   string   `json:"category"`
-	MatchCount int64    `json:"match_count"`
-	Domains    []string `json:"domains"` // Top visited domains in this category
+	UserEmail   string   `json:"-"` // internal use only
+	DisplayName string   `json:"username"`
+	Category    string   `json:"category"`
+	MatchCount  int64    `json:"match_count"`
+	Domains     []string `json:"domains"` // Top visited domains in this category
 }
 
 // NewService creates a new threat intelligence service
