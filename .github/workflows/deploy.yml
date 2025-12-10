@@ -34,8 +34,8 @@ jobs:
             # Save current image as backup before building new one
             docker tag xray-log-analyzer:latest xray-log-analyzer:backup 2>/dev/null || true
             
-            # Build new image
-            docker compose build analyzer-server
+            # Build new image (--no-cache ensures fresh build with latest source)
+            docker compose build --no-cache analyzer-server
             
             # Tag new image
             docker tag log-analyzer-analyzer-server:latest xray-log-analyzer:latest 2>/dev/null || true
