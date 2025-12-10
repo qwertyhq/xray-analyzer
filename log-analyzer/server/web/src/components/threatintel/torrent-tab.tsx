@@ -143,12 +143,14 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
         </Card>
       )}
 
-      {/* Torrent Matches Table */}
-      <MatchesTable 
-        matches={matches} 
-        title="Recent Torrent Activity"
-        description={`Последние обнаружения торрент-активности`}
-      />
+      {/* Torrent Matches Table - only show if there are recent matches */}
+      {matches.length > 0 && (
+        <MatchesTable 
+          matches={matches} 
+          title="Recent Torrent Activity"
+          description={`Последние обнаружения торрент-активности`}
+        />
+      )}
     </div>
   );
 }
