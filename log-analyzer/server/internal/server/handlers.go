@@ -896,6 +896,9 @@ func (s *Server) handleThreatIntelClear(w http.ResponseWriter, r *http.Request) 
 
 	ctx := r.Context()
 
+	// Check if we should clear all user data too
+	clearAll := r.URL.Query().Get("all") == "true"
+
 	err := s.storage.ClearThreatIntelData(ctx)
 	if err != nil {
 		log.Printf("Error clearing ThreatIntel data: %v", err)
@@ -903,12 +906,23 @@ func (s *Server) handleThreatIntelClear(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	log.Println("ThreatIntel data cleared successfully")
+	if clearAll {
+		err = s.storage.ClearAllUserData(ctx)
+		if err != nil {
+			log.Printf("Error clearing user data: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Println("All data cleared successfully (ThreatIntel + Users)")
+	} else {
+		log.Println("ThreatIntel data cleared successfully")
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": "ThreatIntel data cleared successfully",
+		"success":    true,
+		"message":    "Data cleared successfully",
+		"cleared_all": clearAll,
 	})
 }
 

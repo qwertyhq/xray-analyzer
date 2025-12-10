@@ -312,3 +312,26 @@ func (s *Storage) ClearThreatIntelData(ctx context.Context) error {
 
 	return nil
 }
+
+// ClearAllUserData clears all user-related tables including IP history, stats, and correlation data
+func (s *Storage) ClearAllUserData(ctx context.Context) error {
+	tables := []string{
+		"user_stats",
+		"user_ip_history",
+		"user_locations",
+		"user_destinations",
+		"user_ai_profiles",
+		"ip_hwid_correlation",
+		"blacklist_matches",
+	}
+
+	for _, table := range tables {
+		_, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s", table))
+		if err != nil {
+			// Table might not exist, skip
+			continue
+		}
+	}
+
+	return nil
+}
