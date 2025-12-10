@@ -398,7 +398,7 @@ func (s *Server) broadcastToDashboards() {
 			log.Printf("server: failed to get threat matches: %v", err)
 			tiMatches = nil
 		}
-		tiRecentUsers, err := s.threatIntel.GetRecentUsersByAllCategories(ctx, 20)
+		tiRecentUsers, err := s.threatIntel.GetRecentUsersByAllCategories(ctx, 10)
 		if err != nil {
 			log.Printf("server: failed to get recent users by categories: %v", err)
 			tiRecentUsers = nil
@@ -492,7 +492,7 @@ func (s *Server) sendThreatIntelUpdate(client *DashboardClient) {
 	ctx := context.Background()
 	tiStats := s.threatIntel.GetStats()
 	tiMatches, _ := s.storage.GetThreatMatches(ctx, 20) // Get all stored matches (max 20)
-	tiRecentUsers, _ := s.threatIntel.GetRecentUsersByAllCategories(ctx, 20)
+	tiRecentUsers, _ := s.threatIntel.GetRecentUsersByAllCategories(ctx, 10)
 
 	// Resolve usernames for matches and recent users
 	if tiMatches != nil {

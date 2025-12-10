@@ -877,7 +877,7 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 
 	ctx := r.Context()
 
-	limit := 20
+	limit := 10
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 50 {
 			limit = parsed

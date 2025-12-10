@@ -161,7 +161,7 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
                       <span className="text-xl font-bold">{totalCount}</span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">Последние {users.length} пользователей</p>
+                  <p className="text-xs text-muted-foreground mt-1">Последние {users.length > 0 ? users.length : 10} пользователей</p>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <UserList users={users} maxHeight="350px" />

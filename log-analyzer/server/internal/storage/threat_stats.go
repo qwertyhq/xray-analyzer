@@ -146,7 +146,7 @@ func (s *Storage) GetTopUsersByAllCategories(ctx context.Context, limit int) (ma
 // with their latest accessed domains
 func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string, limit int) ([]*threatintel.CategoryUserStats, error) {
 	if limit <= 0 || limit > 50 {
-		limit = 20
+		limit = 10
 	}
 
 	// Get recent unique users with their most recent destination

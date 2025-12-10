@@ -164,19 +164,55 @@ export default function DashboardPage() {
     setFeedEvents(newEvents.slice(0, 50));
   }, [blacklist?.recent_matches, threatIntel.matches, anomalies]);
 
-  // Generate alerts from anomalies
+  // Generate alerts from threat intel categories (tor, torrent, porn, gambling, malware)
   useEffect(() => {
-    const newAlerts: Alert[] = anomalies?.slice(0, 10).map((anomaly: StatsAnomaly, index: number) => ({
-      id: `alert-${anomaly.hour}-${anomaly.type}-${index}`,
-      title: anomaly.message,
-      description: anomaly.user_email,
-      severity: anomaly.deviation > 10 ? "critical" : anomaly.deviation > 5 ? "high" : "medium",
-      timestamp: anomaly.hour,
-      read: false,
-    } as Alert)) || [];
+    const newAlerts: Alert[] = [];
+    const topUsers = threatIntel.topUsers;
     
-    setAlerts(newAlerts);
-  }, [anomalies]);
+    if (!topUsers) {
+      setAlerts([]);
+      return;
+    }
+
+    // Category labels and severity config
+    const categoryConfig: Record<string, { label: string; severity: "critical" | "high" | "medium"; icon: string }> = {
+      tor: { label: "🌐 Tor", severity: "critical", icon: "🌐" },
+      torrent: { label: "📥 Torrent", severity: "high", icon: "📥" },
+      porn: { label: "🔞 Порно", severity: "high", icon: "🔞" },
+      gambling: { label: "🎰 Казино", severity: "high", icon: "🎰" },
+      malware: { label: "🦠 Malware", severity: "critical", icon: "🦠" },
+    };
+
+    // Generate alerts for recent users in each category
+    const categories = ["tor", "torrent", "porn", "gambling", "malware"] as const;
+    
+    categories.forEach(category => {
+      const users = topUsers[category] || [];
+      const config = categoryConfig[category];
+      
+      // Take last 3 users from each category
+      users.slice(0, 3).forEach((user, idx) => {
+        const displayName = user.username || user.user_email;
+        const domains = user.domains?.slice(0, 2).join(", ") || "";
+        
+        newAlerts.push({
+          id: `threat-${category}-${user.user_email}-${idx}`,
+          title: `${config.label}: ${displayName}`,
+          description: domains ? `→ ${domains}` : `${user.match_count} обращений`,
+          severity: config.severity,
+          timestamp: new Date().toISOString(), // Recent activity
+          read: false,
+          link: `/users/${encodeURIComponent(user.user_email)}`,
+        });
+      });
+    });
+    
+    // Sort by severity (critical first, then high)
+    const severityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+    newAlerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+    
+    setAlerts(newAlerts.slice(0, 15));
+  }, [threatIntel.topUsers]);
 
   // Quick action handlers
   const handleSyncRemnawave = useCallback(async () => {

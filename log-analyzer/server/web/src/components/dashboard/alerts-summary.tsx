@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Bell, AlertTriangle, ShieldAlert, Info, X, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import Link from "next/link";
 
 export type AlertSeverity = "critical" | "high" | "medium" | "low" | "info";
 
@@ -116,13 +117,12 @@ export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSumma
           <div className="space-y-2 max-h-[280px] overflow-y-auto scrollbar-thin pr-1">
             {displayAlerts.map((alert) => {
               const config = severityConfig[alert.severity];
-              return (
-                <div
-                  key={alert.id}
-                  className={`flex items-start gap-2 p-2 rounded-lg border transition-all ${
-                    config.color
-                  } ${!alert.read ? "ring-1 ring-primary/20" : "opacity-70"}`}
-                >
+              const baseClassName = `flex items-start gap-2 p-2 rounded-lg border transition-all ${
+                config.color
+              } ${!alert.read ? "ring-1 ring-primary/20" : "opacity-70"}`;
+              
+              const content = (
+                <>
                   <div className="mt-0.5">{config.icon}</div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-xs font-medium ${!alert.read ? "" : "text-muted-foreground"}`}>
@@ -139,11 +139,33 @@ export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSumma
                       variant="ghost"
                       size="icon"
                       className="h-5 w-5 shrink-0"
-                      onClick={() => onMarkRead(alert.id)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onMarkRead(alert.id);
+                      }}
                     >
                       <X className="h-3 w-3" />
                     </Button>
                   )}
+                </>
+              );
+              
+              if (alert.link) {
+                return (
+                  <Link
+                    key={alert.id}
+                    href={alert.link}
+                    className={`${baseClassName} hover:opacity-80 cursor-pointer block`}
+                  >
+                    {content}
+                  </Link>
+                );
+              }
+              
+              return (
+                <div key={alert.id} className={baseClassName}>
+                  {content}
                 </div>
               );
             })}
