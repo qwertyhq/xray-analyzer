@@ -9,7 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { TimeRangeSelector } from "@/components/dashboard/time-range-selector";
 import { IPInfoBadge } from "@/components/ui/ip-info-badge";
-import { SubscriptionAbuseTable } from "@/components/users/subscription-abuse-table";
 import { StatCard, StatCardGrid } from "@/components/threatintel/stat-card";
 import { PaginationControls, usePagination } from "@/components/ui/data-table";
 import {
@@ -435,7 +434,7 @@ export default function BlacklistPage() {
           </Card>
         </TabsContent>
 
-        {/* Subscription Abuse Tab */}
+        {/* Subscription Abuse Tab - Redirect to Remnawave */}
         <TabsContent value="abuse">
           <Card>
             <CardHeader>
@@ -444,11 +443,25 @@ export default function BlacklistPage() {
                 Subscription Abuse Detection
               </CardTitle>
               <CardDescription>
-                Users with multiple unique IP addresses - potential account sharing
+                Комплексный анализ злоупотреблений теперь доступен в Remnawave Analytics
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <SubscriptionAbuseTable defaultPeriod={timeRange} />
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <UserX className="h-16 w-16 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Перенесено в Remnawave</h3>
+                <p className="text-muted-foreground mb-6 max-w-md">
+                  Функционал обнаружения злоупотреблений подписками был значительно расширен 
+                  и перенесен в раздел Remnawave Analytics, где объединены IP и HWID данные 
+                  для более точного анализа.
+                </p>
+                <Link href="/remnawave">
+                  <Badge variant="default" className="cursor-pointer hover:bg-primary/90 px-4 py-2 text-sm">
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Открыть Remnawave Analytics
+                  </Badge>
+                </Link>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

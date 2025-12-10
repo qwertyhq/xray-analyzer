@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table";
 import { PaginationControls, usePagination } from "@/components/ui/data-table";
 import { RemnawaveUsersTable } from "@/components/remnawave/remnawave-users-table";
-import { RemnawaveAbuseTable } from "@/components/remnawave/remnawave-abuse-table";
+import { SubscriptionAbuseAnalytics } from "@/components/remnawave/subscription-abuse-analytics";
 import { 
   Users, 
   Smartphone, 
@@ -30,12 +30,13 @@ import {
   Clock,
   Globe
 } from "lucide-react";
-import { RemnawaveStats, RemnawaveAbuseUser, RemnawaveOnlineStats } from "@/lib/types";
+import { RemnawaveStats, RemnawaveAbuseUser, RemnawaveOnlineStats, SubscriptionAbuse } from "@/lib/types";
 
 export default function RemnavewavePage() {
   const [stats, setStats] = useState<RemnawaveStats | null>(null);
   const [onlineStats, setOnlineStats] = useState<RemnawaveOnlineStats | null>(null);
   const [abuseUsers, setAbuseUsers] = useState<RemnawaveAbuseUser[]>([]);
+  const [ipAbuseUsers, setIpAbuseUsers] = useState<SubscriptionAbuse[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,22 +55,25 @@ export default function RemnavewavePage() {
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const [statsRes, abuseRes, onlineRes] = await Promise.all([
+      const [statsRes, abuseRes, onlineRes, ipAbuseRes] = await Promise.all([
         fetch("/api/remnawave/stats", { headers }),
         fetch("/api/remnawave/abuse", { headers }),
-        fetch("/api/remnawave/online", { headers })
+        fetch("/api/remnawave/online", { headers }),
+        fetch("/api/blacklist/abuse", { headers })
       ]);
 
       // All endpoints now return JSON even when Remnawave is not configured
-      const [statsData, abuseData, onlineData] = await Promise.all([
+      const [statsData, abuseData, onlineData, ipAbuseData] = await Promise.all([
         statsRes.ok ? statsRes.json() : { enabled: false },
         abuseRes.ok ? abuseRes.json() : { enabled: false, users: [] },
-        onlineRes.ok ? onlineRes.json() : { enabled: false, onlineUsers: [] }
+        onlineRes.ok ? onlineRes.json() : { enabled: false, onlineUsers: [] },
+        ipAbuseRes.ok ? ipAbuseRes.json() : []
       ]);
 
       setStats(statsData);
       setAbuseUsers(abuseData.users || []);
       setOnlineStats(onlineData);
+      setIpAbuseUsers(ipAbuseData || []);
       setLastUpdate(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch data");
@@ -439,25 +443,11 @@ export default function RemnavewavePage() {
         </TabsContent>
 
         <TabsContent value="abuse" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-orange-500" />
-                HWID Abuse Detection
-              </CardTitle>
-              <CardDescription>
-                Пользователи с превышением лимита устройств по HWID. 
-                Данные основаны на реальных идентификаторах устройств, 
-                а не IP-адресах.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <RemnawaveAbuseTable 
-                users={abuseUsers} 
-                onHwidCleared={() => fetchData(true)}
-              />
-            </CardContent>
-          </Card>
+          <SubscriptionAbuseAnalytics
+            ipAbuseData={ipAbuseUsers}
+            hwidAbuseData={abuseUsers}
+            onHwidCleared={() => fetchData(true)}
+          />
         </TabsContent>
 
         <TabsContent value="users" className="space-y-4">
