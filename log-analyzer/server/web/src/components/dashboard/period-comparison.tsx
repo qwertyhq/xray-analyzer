@@ -69,6 +69,7 @@ function TrendBadge({ trend, value, inverted = false }: { trend: "up" | "down" |
 export function PeriodComparison({ stats, periodLabel = "vs yesterday" }: PeriodComparisonProps) {
   const comparisons: Array<{
     label: string;
+    shortLabel: string;
     icon: React.ReactNode;
     current: number;
     previous: number;
@@ -76,12 +77,14 @@ export function PeriodComparison({ stats, periodLabel = "vs yesterday" }: Period
   }> = [
     {
       label: "Requests",
+      shortLabel: "Req",
       icon: <Activity className="h-4 w-4 text-blue-500" />,
       current: stats.requests.current,
       previous: stats.requests.previous,
     },
     {
       label: "Blacklist Hits",
+      shortLabel: "Blackli...",
       icon: <ShieldAlert className="h-4 w-4 text-red-500" />,
       current: stats.blacklistHits.current,
       previous: stats.blacklistHits.previous,
@@ -89,12 +92,14 @@ export function PeriodComparison({ stats, periodLabel = "vs yesterday" }: Period
     },
     {
       label: "Unique Users",
+      shortLabel: "Uniq...",
       icon: <Users className="h-4 w-4 text-green-500" />,
       current: stats.uniqueUsers.current,
       previous: stats.uniqueUsers.previous,
     },
     {
       label: "Online Now",
+      shortLabel: "Onli...",
       icon: <Server className="h-4 w-4 text-purple-500" />,
       current: stats.onlineUsers.current,
       previous: stats.onlineUsers.previous,
@@ -111,18 +116,21 @@ export function PeriodComparison({ stats, periodLabel = "vs yesterday" }: Period
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 gap-3">
+      <CardContent className="pb-4">
+        <div className="grid grid-cols-2 gap-2">
           {comparisons.map((item) => {
             const { value, trend } = formatChange(item.current, item.previous);
             return (
               <div 
                 key={item.label}
-                className="flex items-center gap-2 p-2 rounded-lg bg-muted/50"
+                className="flex items-center gap-1.5 p-2 rounded-lg bg-muted/50"
               >
                 {item.icon}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-muted-foreground truncate">{item.label}</p>
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate" title={item.label}>
+                    <span className="sm:hidden">{item.shortLabel}</span>
+                    <span className="hidden sm:inline">{item.label}</span>
+                  </p>
                   <p className="text-sm font-semibold">{item.current.toLocaleString()}</p>
                 </div>
                 <TrendBadge trend={trend} value={value} inverted={item.inverted} />

@@ -25,6 +25,7 @@ interface ServiceStatus {
 
 interface SystemHealthProps {
   remnawaveStatus?: "online" | "offline" | "unknown";
+  remnawaveEnabled?: boolean;
   remnawaveLastSync?: string;
   threatIntelLastUpdate?: string;
   threatIntelIndicators?: number;
@@ -34,12 +35,23 @@ interface SystemHealthProps {
 
 export function SystemHealth({
   remnawaveStatus = "unknown",
+  remnawaveEnabled = true,
   remnawaveLastSync,
   threatIntelLastUpdate,
   threatIntelIndicators = 0,
   databaseStatus = "online",
   websocketConnected = true,
 }: SystemHealthProps) {
+  // Remnawave not configured is not a system problem
+  const remnawaveEffectiveStatus = !remnawaveEnabled ? "warning" : remnawaveStatus === "unknown" ? "loading" : remnawaveStatus;
+  const remnawaveDetails = !remnawaveEnabled 
+    ? "Not configured" 
+    : remnawaveStatus === "online" 
+      ? "Connected" 
+      : remnawaveStatus === "offline" 
+        ? "Not available" 
+        : "Checking...";
+
   const services: ServiceStatus[] = [
     {
       name: "WebSocket",
@@ -48,13 +60,9 @@ export function SystemHealth({
     },
     {
       name: "Remnawave API",
-      status: remnawaveStatus === "unknown" ? "loading" : remnawaveStatus,
+      status: remnawaveEffectiveStatus,
       lastUpdate: remnawaveLastSync,
-      details: remnawaveStatus === "online" 
-        ? "Connected" 
-        : remnawaveStatus === "offline" 
-          ? "Not available" 
-          : "Checking...",
+      details: remnawaveDetails,
     },
     {
       name: "Threat Intel",

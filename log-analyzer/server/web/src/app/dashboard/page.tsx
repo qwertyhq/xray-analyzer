@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [remnawaveStatus, setRemnawaveStatus] = useState<"online" | "offline" | "unknown">("unknown");
+  const [remnawaveEnabled, setRemnawaveEnabled] = useState<boolean>(true);
   const [remnawaveLastSync, setRemnawaveLastSync] = useState<string | undefined>();
   
   // Fetch additional dashboard data
@@ -95,9 +96,16 @@ export default function DashboardPage() {
         const remnawaveRes = await fetch("/api/remnawave/stats", { headers });
         if (remnawaveRes.ok) {
           const data = await remnawaveRes.json();
-          setRemnawaveStatus(data.total_users > 0 ? "online" : "offline");
-          setRemnawaveLastSync(data.last_sync);
+          setRemnawaveEnabled(data.enabled ?? false);
+          // Check if enabled and has users, or just enabled
+          if (data.enabled) {
+            setRemnawaveStatus(data.totalUsers > 0 ? "online" : "offline");
+            setRemnawaveLastSync(data.lastSync);
+          } else {
+            setRemnawaveStatus("offline");
+          }
         } else {
+          setRemnawaveEnabled(false);
           setRemnawaveStatus("offline");
         }
       } catch (error) {
@@ -289,6 +297,7 @@ export default function DashboardPage() {
         />
         <SystemHealth 
           remnawaveStatus={remnawaveStatus}
+          remnawaveEnabled={remnawaveEnabled}
           remnawaveLastSync={remnawaveLastSync}
           threatIntelIndicators={threatIntel.stats?.total_indicators || 0}
           threatIntelLastUpdate={threatIntel.stats?.last_updated}
