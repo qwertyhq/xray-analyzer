@@ -23,8 +23,7 @@ export interface NodeStats {
 
 export interface UserStats {
   node_id: string;
-  user_email: string;
-  display_name?: string;
+  username: string;
   total_requests: number;
   blacklist_hits: number;
   unique_destinations: number;

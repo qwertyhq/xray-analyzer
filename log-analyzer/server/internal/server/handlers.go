@@ -481,6 +481,15 @@ func (s *Server) handleSubscriptionAbuse(w http.ResponseWriter, r *http.Request)
 		s.enrichAbusersWithHWID(abusers)
 	}
 
+	// Resolve usernames via Remnawave API for users not found in cache
+	if s.remnawave != nil {
+		for _, abuser := range abusers {
+			if abuser.Username == "" {
+				abuser.Username = s.remnawave.ResolveUsername(ctx, abuser.UserEmail)
+			}
+		}
+	}
+
 	// Calculate abuse score for each user
 	for _, abuser := range abusers {
 		abuser.AbuseScore = calculateAbuseScore(abuser)

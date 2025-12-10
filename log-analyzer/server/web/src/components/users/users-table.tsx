@@ -185,8 +185,7 @@ export function UsersTable({
     if (search) {
       const lower = search.toLowerCase();
       result = result.filter(u => 
-        u.user_email.toLowerCase().includes(lower) ||
-        (u.display_name && u.display_name.toLowerCase().includes(lower)) ||
+        u.username.toLowerCase().includes(lower) ||
         u.node_id.toLowerCase().includes(lower) ||
         (u.last_ip && u.last_ip.includes(lower))
       );
@@ -227,9 +226,9 @@ export function UsersTable({
 
   // Export to CSV
   const handleExportCSV = () => {
-    const headers = ["Email", "Node", "Requests", "Blacklist Hits", "Risk Score", "Destinations", "Last IP", "Last Seen", "Last Blocked Domain"];
+    const headers = ["Username", "Node", "Requests", "Blacklist Hits", "Risk Score", "Destinations", "Last IP", "Last Seen", "Last Blocked Domain"];
     const rows = filteredUsers.map(u => [
-      u.user_email,
+      u.username,
       u.node_id,
       u.total_requests,
       u.blacklist_hits,
@@ -382,13 +381,13 @@ export function UsersTable({
             </TableHeader>
             <TableBody>
               {paginatedUsers.map((user) => (
-                <TableRow key={`${user.node_id}-${user.user_email}`}>
+                <TableRow key={`${user.node_id}-${user.username}`}>
                   <TableCell className="font-medium max-w-[150px] sm:max-w-[200px]">
                     <Link 
-                      href={`/users/${encodeURIComponent(user.user_email)}`}
+                      href={`/users/${encodeURIComponent(user.username)}`}
                       className="hover:underline text-primary flex items-center gap-1 truncate"
                     >
-                      <span className="truncate">{user.display_name || user.user_email}</span>
+                      <span className="truncate">{user.username}</span>
                       <ExternalLink className="h-3 w-3 flex-shrink-0" />
                     </Link>
                   </TableCell>
