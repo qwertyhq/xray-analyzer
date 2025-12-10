@@ -55,7 +55,7 @@ export function MatchesTable({ matches, title, description }: MatchesTableProps)
       const searchLower = search.toLowerCase();
       result = result.filter(m => 
         m.user_email.toLowerCase().includes(searchLower) ||
-        (m.display_name && m.display_name.toLowerCase().includes(searchLower)) ||
+        (m.username && m.username.toLowerCase().includes(searchLower)) ||
         m.destination.toLowerCase().includes(searchLower)
       );
     }
@@ -189,7 +189,7 @@ export function MatchesTable({ matches, title, description }: MatchesTableProps)
                       href={`/users/${encodeURIComponent(match.user_email)}`}
                       className="hover:underline text-primary truncate block"
                     >
-                      {match.display_name || match.user_email}
+                      {match.username || match.user_email}
                     </Link>
                   </TableCell>
                   <TableCell className="font-mono text-xs sm:text-sm max-w-[200px] truncate hidden md:table-cell">

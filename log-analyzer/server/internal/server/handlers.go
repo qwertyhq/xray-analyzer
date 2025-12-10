@@ -36,6 +36,37 @@ func (s *Server) resolveUserDisplayNames(ctx context.Context, users []*models.Us
 	}
 }
 
+// resolveCategoryUserStats resolves numeric IDs to usernames in CategoryUserStats
+func (s *Server) resolveCategoryUserStats(ctx context.Context, stats []*threatintel.CategoryUserStats) {
+	if s.remnawave == nil {
+		return
+	}
+	for _, stat := range stats {
+		if stat.DisplayName == "" || stat.DisplayName == stat.UserEmail {
+			stat.DisplayName = s.remnawave.ResolveUsername(ctx, stat.UserEmail)
+		}
+	}
+}
+
+// resolveCategoryTopUsers resolves usernames for all categories in map
+func (s *Server) resolveCategoryTopUsers(ctx context.Context, topUsers map[string][]*threatintel.CategoryUserStats) {
+	for _, stats := range topUsers {
+		s.resolveCategoryUserStats(ctx, stats)
+	}
+}
+
+// resolveThreatMatches resolves numeric IDs to usernames in ThreatMatch
+func (s *Server) resolveThreatMatches(ctx context.Context, matches []*threatintel.ThreatMatch) {
+	if s.remnawave == nil {
+		return
+	}
+	for _, m := range matches {
+		if m.DisplayName == "" || m.DisplayName == m.UserEmail {
+			m.DisplayName = s.remnawave.ResolveUsername(ctx, m.UserEmail)
+		}
+	}
+}
+
 // handleStats returns overall statistics
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -856,18 +887,6 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 	// Check if category-specific query
 	category := r.URL.Query().Get("category")
 
-	// Helper to resolve usernames in CategoryUserStats
-	resolveUserStats := func(stats []*threatintel.CategoryUserStats) {
-		if s.remnawave == nil {
-			return
-		}
-		for _, stat := range stats {
-			if stat.DisplayName == "" || stat.DisplayName == stat.UserEmail {
-				stat.DisplayName = s.remnawave.ResolveUsername(ctx, stat.UserEmail)
-			}
-		}
-	}
-
 	if category != "" {
 		result, err := s.threatIntel.GetTopUsersByCategory(ctx, category, limit)
 		if err != nil {
@@ -875,7 +894,7 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		resolveUserStats(result)
+		s.resolveCategoryUserStats(ctx, result)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
 	} else {
@@ -886,9 +905,7 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		// Resolve usernames for all categories
-		for _, stats := range result {
-			resolveUserStats(stats)
-		}
+		s.resolveCategoryTopUsers(ctx, result)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
 	}

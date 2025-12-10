@@ -35,9 +35,9 @@ export function UserList({ users }: UserListProps) {
               <Link
                 href={`/users/${encodeURIComponent(user.user_email)}`}
                 className="text-sm hover:underline truncate"
-                title={user.user_email}
+                title={user.username || user.user_email}
               >
-                {user.user_email}
+                {user.username || user.user_email}
               </Link>
               <Badge variant="secondary" className="text-xs font-mono">
                 {user.match_count}

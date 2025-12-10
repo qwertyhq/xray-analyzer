@@ -403,6 +403,13 @@ func (s *Server) broadcastToDashboards() {
 			log.Printf("server: failed to get top users by categories: %v", err)
 			tiTopUsers = nil
 		}
+		// Resolve usernames for matches and top users
+		if tiMatches != nil {
+			s.resolveThreatMatches(ctx, tiMatches)
+		}
+		if tiTopUsers != nil {
+			s.resolveCategoryTopUsers(ctx, tiTopUsers)
+		}
 		threatData := map[string]interface{}{
 			"stats":    tiStats,
 			"matches":  tiMatches,
@@ -486,6 +493,14 @@ func (s *Server) sendThreatIntelUpdate(client *DashboardClient) {
 	tiStats := s.threatIntel.GetStats()
 	tiMatches, _ := s.storage.GetThreatMatches(ctx, 20) // Get all stored matches (max 20)
 	tiTopUsers, _ := s.threatIntel.GetTopUsersByAllCategories(ctx, 5)
+
+	// Resolve usernames for matches and top users
+	if tiMatches != nil {
+		s.resolveThreatMatches(ctx, tiMatches)
+	}
+	if tiTopUsers != nil {
+		s.resolveCategoryTopUsers(ctx, tiTopUsers)
+	}
 
 	threatData := map[string]interface{}{
 		"stats":    tiStats,

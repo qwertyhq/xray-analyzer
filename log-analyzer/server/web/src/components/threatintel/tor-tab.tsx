@@ -118,7 +118,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
                       href={`/users/${encodeURIComponent(user.user_email)}`}
                       className="font-medium hover:underline block truncate"
                     >
-                      {user.user_email}
+                      {user.username || user.user_email}
                     </Link>
                     <div className="flex items-center gap-2 mt-1">
                       <Badge variant="secondary">{user.match_count} hits</Badge>

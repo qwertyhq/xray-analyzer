@@ -211,7 +211,7 @@ export type ThreatSource =
 export interface ThreatMatch {
   id: number;
   user_email: string;
-  display_name?: string;
+  username?: string;
   node_id: string;
   source_ip: string;
   destination: string;
@@ -242,6 +242,7 @@ export interface FeedStatus {
 
 export interface CategoryUserStats {
   user_email: string;
+  username: string;
   category: string;
   match_count: number;
   domains: string[]; // Top visited domains in this category
