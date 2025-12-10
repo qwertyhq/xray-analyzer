@@ -313,17 +313,18 @@ func (s *Storage) GetUserAIProfile(ctx context.Context, userEmail string) (*User
 // GetAllUserAIProfiles returns all AI profiles with optional filtering
 func (s *Storage) GetAllUserAIProfiles(ctx context.Context, limit int, minRiskScore int) ([]UserAIProfile, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, unique_ips, unique_hwids, unique_fingerprints, unique_countries, unique_nodes,
-			total_requests, total_sessions, avg_session_duration_sec,
-			total_threat_matches, threat_categories,
-			shared_ip_users, shared_hwid_users, cluster_ids,
-			first_seen, last_seen, active_days, typical_hours,
-			risk_score, risk_factors,
-			remna_uuid, remna_status, remna_traffic_used, remna_traffic_limit, remna_expire_at, remna_hwid_devices, remna_hwid_limit,
-			updated_at
-		FROM user_ai_profile
-		WHERE risk_score >= ?
-		ORDER BY risk_score DESC, total_threat_matches DESC
+		SELECT p.user_email, COALESCE(r.username, ''), p.unique_ips, p.unique_hwids, p.unique_fingerprints, p.unique_countries, p.unique_nodes,
+			p.total_requests, p.total_sessions, p.avg_session_duration_sec,
+			p.total_threat_matches, p.threat_categories,
+			p.shared_ip_users, p.shared_hwid_users, p.cluster_ids,
+			p.first_seen, p.last_seen, p.active_days, p.typical_hours,
+			p.risk_score, p.risk_factors,
+			p.remna_uuid, p.remna_status, p.remna_traffic_used, p.remna_traffic_limit, p.remna_expire_at, p.remna_hwid_devices, p.remna_hwid_limit,
+			p.updated_at
+		FROM user_ai_profile p
+		LEFT JOIN remna_users r ON p.user_email = r.username OR p.remna_uuid = r.uuid
+		WHERE p.risk_score >= ?
+		ORDER BY p.risk_score DESC, p.total_threat_matches DESC
 		LIMIT ?
 	`, minRiskScore, limit)
 	if err != nil {
@@ -334,11 +335,12 @@ func (s *Storage) GetAllUserAIProfiles(ctx context.Context, limit int, minRiskSc
 	var result []UserAIProfile
 	for rows.Next() {
 		var p UserAIProfile
+		var remnaUsername sql.NullString
 		var threatCategories, clusterIDs, typicalHours, riskFactors sql.NullString
 		var firstSeen, lastSeen, remnaExpireAt, updatedAt sql.NullTime
 		var remnaUUID, remnaStatus sql.NullString
 
-		err := rows.Scan(&p.UserEmail, &p.UniqueIPs, &p.UniqueHWIDs, &p.UniqueFingerprints, &p.UniqueCountries, &p.UniqueNodes,
+		err := rows.Scan(&p.UserEmail, &remnaUsername, &p.UniqueIPs, &p.UniqueHWIDs, &p.UniqueFingerprints, &p.UniqueCountries, &p.UniqueNodes,
 			&p.TotalRequests, &p.TotalSessions, &p.AvgSessionDurationSec,
 			&p.TotalThreatMatches, &threatCategories,
 			&p.SharedIPUsers, &p.SharedHWIDUsers, &clusterIDs,
@@ -350,6 +352,9 @@ func (s *Storage) GetAllUserAIProfiles(ctx context.Context, limit int, minRiskSc
 			continue
 		}
 
+		if remnaUsername.Valid && remnaUsername.String != "" {
+			p.RemnaUsername = remnaUsername.String
+		}
 		if threatCategories.Valid {
 			json.Unmarshal([]byte(threatCategories.String), &p.ThreatCategories)
 		}
@@ -390,39 +395,34 @@ func (s *Storage) GetAllUserAIProfiles(ctx context.Context, limit int, minRiskSc
 func (s *Storage) GetCorrelationStats(ctx context.Context) (*CorrelationStats, error) {
 	var stats CorrelationStats
 
-	// Get shared IP stats
+	// Optimized query using CTE for shared IPs (avoids repeated subqueries)
 	s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT ip_address) FROM ip_user_map
-		WHERE ip_address IN (
-			SELECT ip_address FROM ip_user_map GROUP BY ip_address HAVING COUNT(DISTINCT user_email) > 1
+		WITH shared_ips AS (
+			SELECT ip_address, COUNT(DISTINCT user_email) as user_count
+			FROM ip_user_map
+			GROUP BY ip_address
+			HAVING user_count > 1
 		)
-	`).Scan(&stats.SharedIPs)
+		SELECT 
+			(SELECT COUNT(*) FROM shared_ips) as shared_ip_count,
+			(SELECT COUNT(DISTINCT m.user_email) FROM ip_user_map m INNER JOIN shared_ips s ON m.ip_address = s.ip_address)
+	`).Scan(&stats.SharedIPs, &stats.UsersWithSharedIP)
 
-	// Get shared HWID stats
+	// Optimized query for shared HWIDs
 	s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT hwid) FROM hwid_user_map
-		WHERE hwid IN (
-			SELECT hwid FROM hwid_user_map GROUP BY hwid HAVING COUNT(DISTINCT user_email) > 1
+		WITH shared_hwids AS (
+			SELECT hwid, COUNT(DISTINCT user_email) as user_count
+			FROM hwid_user_map
+			GROUP BY hwid
+			HAVING user_count > 1
 		)
-	`).Scan(&stats.SharedHWIDs)
+		SELECT 
+			(SELECT COUNT(*) FROM shared_hwids) as shared_hwid_count,
+			(SELECT COUNT(DISTINCT m.user_email) FROM hwid_user_map m INNER JOIN shared_hwids s ON m.hwid = s.hwid)
+	`).Scan(&stats.SharedHWIDs, &stats.UsersWithSharedHWID)
 
 	// Get total fingerprints
 	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_fingerprints`).Scan(&stats.TotalFingerprints)
-
-	// Get users with shared resources
-	s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT user_email) FROM ip_user_map
-		WHERE ip_address IN (
-			SELECT ip_address FROM ip_user_map GROUP BY ip_address HAVING COUNT(DISTINCT user_email) > 1
-		)
-	`).Scan(&stats.UsersWithSharedIP)
-
-	s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT user_email) FROM hwid_user_map
-		WHERE hwid IN (
-			SELECT hwid FROM hwid_user_map GROUP BY hwid HAVING COUNT(DISTINCT user_email) > 1
-		)
-	`).Scan(&stats.UsersWithSharedHWID)
 
 	// Get cluster stats
 	s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT cluster_id) FROM user_clusters`).Scan(&stats.TotalClusters)
@@ -529,6 +529,7 @@ type UserFingerprint struct {
 
 type UserAIProfile struct {
 	UserEmail             string         `json:"user_email"`
+	RemnaUsername         string         `json:"remna_username,omitempty"`
 	UniqueIPs             int            `json:"unique_ips"`
 	UniqueHWIDs           int            `json:"unique_hwids"`
 	UniqueFingerprints    int            `json:"unique_fingerprints"`

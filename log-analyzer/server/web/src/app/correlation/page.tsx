@@ -44,6 +44,7 @@ interface CorrelationStats {
 
 interface UserAIProfile {
   user_email: string;
+  remna_username?: string;
   unique_ips: number;
   unique_hwids: number;
   unique_fingerprints: number;
@@ -346,7 +347,12 @@ export default function CorrelationPage() {
                     profilesPagination.paginatedData.map((profile) => (
                       <TableRow key={profile.user_email}>
                         <TableCell className="font-medium">
-                          {profile.user_email}
+                          <div className="flex flex-col">
+                            <span>{profile.remna_username || profile.user_email}</span>
+                            {profile.remna_username && profile.remna_username !== profile.user_email && (
+                              <span className="text-xs text-muted-foreground">ID: {profile.user_email}</span>
+                            )}
+                          </div>
                           {profile.risk_factors && profile.risk_factors.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1">
                               {profile.risk_factors.slice(0, 3).map((factor, i) => (
