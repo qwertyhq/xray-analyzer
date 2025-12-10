@@ -882,6 +882,36 @@ func (s *Server) handleThreatIntelTimeStats(w http.ResponseWriter, r *http.Reque
 	json.NewEncoder(w).Encode(response)
 }
 
+// handleThreatIntelClear clears all ThreatIntel data to reset statistics
+func (s *Server) handleThreatIntelClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.storage == nil {
+		http.Error(w, "Storage not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	err := s.storage.ClearThreatIntelData(ctx)
+	if err != nil {
+		log.Printf("Error clearing ThreatIntel data: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Println("ThreatIntel data cleared successfully")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "ThreatIntel data cleared successfully",
+	})
+}
+
 // handleThreatIntelGeoStats returns geographic threat statistics
 func (s *Server) handleThreatIntelGeoStats(w http.ResponseWriter, r *http.Request) {
 	if s.storage == nil {

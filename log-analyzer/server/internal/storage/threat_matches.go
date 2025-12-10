@@ -278,3 +278,37 @@ type sqlRows interface {
 	Scan(dest ...any) error
 	Err() error
 }
+
+// ClearThreatIntelData clears all ThreatIntel-related tables to reset statistics
+func (s *Storage) ClearThreatIntelData(ctx context.Context) error {
+	tables := []string{
+		"threat_matches",
+		"threat_stats_agg",
+		"threat_type_stats",
+		"user_threat_stats",
+		"user_threat_domains",
+		"threat_hourly_stats",
+		"threat_hourly_users",
+		"threat_daily_stats",
+		"threat_daily_users",
+		"threat_geo_stats",
+	}
+
+	for _, table := range tables {
+		_, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s", table))
+		if err != nil {
+			return fmt.Errorf("clear %s: %w", table, err)
+		}
+	}
+
+	// Reset aggregated counter
+	_, err := s.db.ExecContext(ctx, `
+		INSERT OR REPLACE INTO threat_stats_agg (id, total_matches, last_updated) 
+		VALUES (1, 0, datetime('now'))
+	`)
+	if err != nil {
+		return fmt.Errorf("reset threat_stats_agg: %w", err)
+	}
+
+	return nil
+}

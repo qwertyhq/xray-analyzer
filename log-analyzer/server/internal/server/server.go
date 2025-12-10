@@ -133,6 +133,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/threatintel/risk-profiles", s.handleUserRiskProfiles)
 	mux.HandleFunc("/api/threatintel/dns-analysis", s.handleDNSAnalysis)
 	mux.HandleFunc("/api/threatintel/reports", s.handleReports)
+	mux.HandleFunc("/api/threatintel/clear", s.handleThreatIntelClear)
 	mux.HandleFunc("/api/ipinfo", s.handleIPInfo)
 	mux.HandleFunc("/health", s.handleHealth)
 
