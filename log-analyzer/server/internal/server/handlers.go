@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -18,6 +19,23 @@ import (
 
 // Ensure remnawave is used (for type reference in enrichAbusersWithHWID)
 var _ *remnawave.User
+
+// resolveUserDisplayNames resolves numeric IDs to usernames via Remnawave API
+func (s *Server) resolveUserDisplayNames(ctx context.Context, users []*models.UserStats) {
+	if s.remnawave == nil {
+		return
+	}
+
+	for _, u := range users {
+		// If display_name is same as user_email (not resolved), try to resolve
+		if u.DisplayName == "" || u.DisplayName == u.UserEmail {
+			resolved := s.remnawave.ResolveUsername(ctx, u.UserEmail)
+			if resolved != u.UserEmail {
+				u.DisplayName = resolved
+			}
+		}
+	}
+}
 
 // handleStats returns overall statistics
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +86,9 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve numeric IDs to usernames via Remnawave API
+	s.resolveUserDisplayNames(ctx, users)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users)
 }
@@ -89,6 +110,9 @@ func (s *Server) handleAllUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Resolve numeric IDs to usernames via Remnawave API
+	s.resolveUserDisplayNames(ctx, users)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users)

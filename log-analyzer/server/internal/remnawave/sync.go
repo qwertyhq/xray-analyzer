@@ -81,6 +81,9 @@ type SyncService struct {
 	syncInterval time.Duration
 	storage      StorageWriter
 
+	// ID Cache for resolving numeric IDs to usernames
+	idCache *IDCache
+
 	// Cached data
 	mu              sync.RWMutex
 	users           map[string]*User        // by UUID
@@ -95,7 +98,7 @@ type SyncService struct {
 
 // NewSyncService creates a new sync service
 func NewSyncService(client *Client, syncInterval time.Duration) *SyncService {
-	return &SyncService{
+	svc := &SyncService{
 		client:          client,
 		syncInterval:    syncInterval,
 		users:           make(map[string]*User),
@@ -103,6 +106,8 @@ func NewSyncService(client *Client, syncInterval time.Duration) *SyncService {
 		usersByUsername: make(map[string]*User),
 		hwidDevices:     make(map[string][]HwidDevice),
 	}
+	svc.idCache = NewIDCache(client)
+	return svc
 }
 
 // SetStorage sets the storage writer for persisting data
@@ -423,6 +428,36 @@ func (s *SyncService) GetUserByUsername(username string) *User {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.usersByUsername[username]
+}
+
+// ResolveUsername resolves a numeric ID or username to the actual username
+// If the input is a numeric ID, it looks up the username via Remnawave API
+// If the input already looks like a username, returns it as-is
+func (s *SyncService) ResolveUsername(ctx context.Context, idOrUsername string) string {
+	if s.idCache == nil {
+		return idOrUsername
+	}
+	return s.idCache.GetUsername(ctx, idOrUsername)
+}
+
+// ResolveUsernames resolves multiple IDs/usernames at once
+func (s *SyncService) ResolveUsernames(ctx context.Context, ids []string) map[string]string {
+	if s.idCache == nil {
+		result := make(map[string]string)
+		for _, id := range ids {
+			result[id] = id
+		}
+		return result
+	}
+	return s.idCache.ResolveMultiple(ctx, ids)
+}
+
+// GetIDCacheStats returns ID cache statistics
+func (s *SyncService) GetIDCacheStats() (cached, notFound int) {
+	if s.idCache == nil {
+		return 0, 0
+	}
+	return s.idCache.Stats()
 }
 
 // GetUserHwidDevices returns cached HWID devices for a user

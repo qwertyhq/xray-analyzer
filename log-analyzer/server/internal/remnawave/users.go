@@ -67,3 +67,12 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User,
 	}
 	return parseResponse[*User](data)
 }
+
+// GetUserByID fetches a user by numeric ID (the ID used in xray logs)
+func (c *Client) GetUserByID(ctx context.Context, id string) (*User, error) {
+	data, err := c.doRequest(ctx, "GET", fmt.Sprintf("/api/users/by-id/%s", id), nil)
+	if err != nil {
+		return nil, err
+	}
+	return parseResponse[*User](data)
+}
