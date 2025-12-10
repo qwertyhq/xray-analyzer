@@ -270,6 +270,8 @@ func (s *Server) sendFullDashboardData(client *DashboardClient) {
 
 	// Users (top 500 for dashboard)
 	if users, err := s.storage.GetAllUsers(ctx, 500); err == nil {
+		// Resolve numeric IDs to usernames via Remnawave API
+		s.resolveUserDisplayNames(ctx, users)
 		client.mu.Lock()
 		client.Conn.WriteJSON(&DashboardUpdate{Type: "users", Data: users})
 		client.mu.Unlock()
@@ -377,6 +379,8 @@ func (s *Server) broadcastToDashboards() {
 
 	// Users (top 500 for dashboard)
 	if users, err := s.storage.GetAllUsers(ctx, 500); err == nil {
+		// Resolve numeric IDs to usernames via Remnawave API
+		s.resolveUserDisplayNames(ctx, users)
 		updates = append(updates, DashboardUpdate{Type: "users", Data: users})
 	}
 
