@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PaginationControls, usePagination } from "@/components/ui/data-table";
+import { SubscriptionAbuseAnalytics } from "@/components/remnawave/subscription-abuse-analytics";
 import { 
   Users, 
   Network, 
@@ -29,6 +30,7 @@ import {
   TrendingUp,
   Link2
 } from "lucide-react";
+import { SubscriptionAbuse, RemnawaveAbuseUser } from "@/lib/types";
 
 interface CorrelationStats {
   shared_ips: number;
@@ -90,6 +92,8 @@ export default function CorrelationPage() {
   const [profiles, setProfiles] = useState<UserAIProfile[]>([]);
   const [sharedIPs, setSharedIPs] = useState<SharedIPInfo[]>([]);
   const [sharedHWIDs, setSharedHWIDs] = useState<SharedHWIDInfo[]>([]);
+  const [ipAbuseUsers, setIpAbuseUsers] = useState<SubscriptionAbuse[]>([]);
+  const [hwidAbuseUsers, setHwidAbuseUsers] = useState<RemnawaveAbuseUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -106,24 +110,30 @@ export default function CorrelationPage() {
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const [statsRes, profilesRes, sharedIPsRes, sharedHWIDsRes] = await Promise.all([
+      const [statsRes, profilesRes, sharedIPsRes, sharedHWIDsRes, ipAbuseRes, hwidAbuseRes] = await Promise.all([
         fetch("/api/correlation/stats", { headers }),
         fetch(`/api/correlation/profiles?limit=100&min_risk=${minRiskScore}`, { headers }),
         fetch("/api/correlation/shared-ips?limit=50", { headers }),
-        fetch("/api/correlation/shared-hwids?limit=50", { headers })
+        fetch("/api/correlation/shared-hwids?limit=50", { headers }),
+        fetch("/api/blacklist/abuse", { headers }),
+        fetch("/api/remnawave/abuse", { headers })
       ]);
 
-      const [statsData, profilesData, sharedIPsData, sharedHWIDsData] = await Promise.all([
+      const [statsData, profilesData, sharedIPsData, sharedHWIDsData, ipAbuseData, hwidAbuseData] = await Promise.all([
         statsRes.ok ? statsRes.json() : null,
         profilesRes.ok ? profilesRes.json() : { profiles: [] },
         sharedIPsRes.ok ? sharedIPsRes.json() : { shared_ips: [] },
-        sharedHWIDsRes.ok ? sharedHWIDsRes.json() : { shared_hwids: [] }
+        sharedHWIDsRes.ok ? sharedHWIDsRes.json() : { shared_hwids: [] },
+        ipAbuseRes.ok ? ipAbuseRes.json() : [],
+        hwidAbuseRes.ok ? hwidAbuseRes.json() : { enabled: false, users: [] }
       ]);
 
       setStats(statsData);
       setProfiles(profilesData.profiles || []);
       setSharedIPs(sharedIPsData.shared_ips || []);
       setSharedHWIDs(sharedHWIDsData.shared_hwids || []);
+      setIpAbuseUsers(ipAbuseData || []);
+      setHwidAbuseUsers(hwidAbuseData.users || []);
     } catch (err) {
       console.error("Failed to fetch correlation data:", err);
     } finally {
@@ -247,8 +257,17 @@ export default function CorrelationPage() {
       </div>
 
       {/* Main Content Tabs */}
-      <Tabs defaultValue="profiles" className="space-y-4">
+      <Tabs defaultValue="abuse" className="space-y-4">
         <TabsList>
+          <TabsTrigger value="abuse" className="flex items-center gap-2">
+            <Shield className="h-4 w-4" />
+            Abuse Detection
+            {(ipAbuseUsers.length > 0 || hwidAbuseUsers.length > 0) && (
+              <Badge variant="destructive" className="ml-1">
+                {ipAbuseUsers.length + hwidAbuseUsers.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="profiles">
             <Users className="mr-2 h-4 w-4" />
             AI Profiles
@@ -262,6 +281,14 @@ export default function CorrelationPage() {
             Shared HWIDs
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="abuse" className="space-y-4">
+          <SubscriptionAbuseAnalytics
+            ipAbuseData={ipAbuseUsers}
+            hwidAbuseData={hwidAbuseUsers}
+            onHwidCleared={() => fetchData(true)}
+          />
+        </TabsContent>
 
         <TabsContent value="profiles" className="space-y-4">
           <Card>

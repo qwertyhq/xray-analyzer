@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/table";
 import { PaginationControls, usePagination } from "@/components/ui/data-table";
 import { RemnawaveUsersTable } from "@/components/remnawave/remnawave-users-table";
-import { SubscriptionAbuseAnalytics } from "@/components/remnawave/subscription-abuse-analytics";
 import { 
   Users, 
   Smartphone, 
@@ -24,19 +23,16 @@ import {
   Activity, 
   RefreshCw,
   Server,
-  Shield,
   TrendingUp,
   Wifi,
   Clock,
   Globe
 } from "lucide-react";
-import { RemnawaveStats, RemnawaveAbuseUser, RemnawaveOnlineStats, SubscriptionAbuse } from "@/lib/types";
+import { RemnawaveStats, RemnawaveOnlineStats } from "@/lib/types";
 
 export default function RemnavewavePage() {
   const [stats, setStats] = useState<RemnawaveStats | null>(null);
   const [onlineStats, setOnlineStats] = useState<RemnawaveOnlineStats | null>(null);
-  const [abuseUsers, setAbuseUsers] = useState<RemnawaveAbuseUser[]>([]);
-  const [ipAbuseUsers, setIpAbuseUsers] = useState<SubscriptionAbuse[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,25 +51,19 @@ export default function RemnavewavePage() {
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const [statsRes, abuseRes, onlineRes, ipAbuseRes] = await Promise.all([
+      const [statsRes, onlineRes] = await Promise.all([
         fetch("/api/remnawave/stats", { headers }),
-        fetch("/api/remnawave/abuse", { headers }),
-        fetch("/api/remnawave/online", { headers }),
-        fetch("/api/blacklist/abuse", { headers })
+        fetch("/api/remnawave/online", { headers })
       ]);
 
       // All endpoints now return JSON even when Remnawave is not configured
-      const [statsData, abuseData, onlineData, ipAbuseData] = await Promise.all([
+      const [statsData, onlineData] = await Promise.all([
         statsRes.ok ? statsRes.json() : { enabled: false },
-        abuseRes.ok ? abuseRes.json() : { enabled: false, users: [] },
-        onlineRes.ok ? onlineRes.json() : { enabled: false, onlineUsers: [] },
-        ipAbuseRes.ok ? ipAbuseRes.json() : []
+        onlineRes.ok ? onlineRes.json() : { enabled: false, onlineUsers: [] }
       ]);
 
       setStats(statsData);
-      setAbuseUsers(abuseData.users || []);
       setOnlineStats(onlineData);
-      setIpAbuseUsers(ipAbuseData || []);
       setLastUpdate(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch data");
@@ -89,12 +79,6 @@ export default function RemnavewavePage() {
     const interval = setInterval(() => fetchData(true), 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
-
-  // Risk counts - computed regardless of loading state
-  const highRiskCount = abuseUsers.filter(u => u.excessDevices >= 3).length;
-  const mediumRiskCount = abuseUsers.filter(u => u.excessDevices === 2).length;
-  const lowRiskCount = abuseUsers.filter(u => u.excessDevices === 1).length;
-  const atLimitCount = abuseUsers.filter(u => u.excessDevices === 0).length;
 
   // Pagination for online users - must be called before any early returns
   const onlineUsersPagination = usePagination(onlineStats?.onlineUsers ?? []);
@@ -240,40 +224,6 @@ export default function RemnavewavePage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-              Подозрительные
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-500">{abuseUsers.length}</div>
-            <div className="flex gap-1 mt-2 flex-wrap">
-              {highRiskCount > 0 && (
-                <Badge variant="destructive" className="text-xs">
-                  Высокий: {highRiskCount}
-                </Badge>
-              )}
-              {mediumRiskCount > 0 && (
-                <Badge variant="default" className="bg-orange-500 text-xs">
-                  Средний: {mediumRiskCount}
-                </Badge>
-              )}
-              {lowRiskCount > 0 && (
-                <Badge variant="outline" className="border-yellow-500 text-yellow-500 text-xs">
-                  Низкий: {lowRiskCount}
-                </Badge>
-              )}
-              {atLimitCount > 0 && (
-                <Badge variant="outline" className="border-blue-500 text-blue-500 text-xs">
-                  На пределе: {atLimitCount}
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Server className="h-4 w-4 text-muted-foreground" />
               Платформы
             </CardTitle>
@@ -307,15 +257,6 @@ export default function RemnavewavePage() {
             {onlineStats && onlineStats.now > 0 && (
               <Badge variant="default" className="ml-1 bg-green-500">
                 {onlineStats.now}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="abuse" className="flex items-center gap-2">
-            <Shield className="h-4 w-4" />
-            Abuse Detection
-            {abuseUsers.length > 0 && (
-              <Badge variant="destructive" className="ml-1">
-                {abuseUsers.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -442,14 +383,6 @@ export default function RemnavewavePage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="abuse" className="space-y-4">
-          <SubscriptionAbuseAnalytics
-            ipAbuseData={ipAbuseUsers}
-            hwidAbuseData={abuseUsers}
-            onHwidCleared={() => fetchData(true)}
-          />
-        </TabsContent>
-
         <TabsContent value="users" className="space-y-4">
           <Card>
             <CardHeader>
@@ -569,9 +502,9 @@ export default function RemnavewavePage() {
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Превышают лимит</span>
-                    <span className="font-medium text-orange-500">
-                      {abuseUsers.length}
+                    <span className="text-muted-foreground">Всего устройств</span>
+                    <span className="font-medium">
+                      {stats?.hwidStats?.totalDevices ?? "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
