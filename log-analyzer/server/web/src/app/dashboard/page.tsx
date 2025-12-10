@@ -85,8 +85,8 @@ export default function DashboardPage() {
           const topUsers = (data || [])
             .filter((u: { blacklist_hits: number }) => u.blacklist_hits > 0)
             .slice(0, 5)
-            .map((u: { user_email: string; blacklist_hits: number }) => ({
-              user_email: u.user_email,
+            .map((u: { user_email: string; display_name?: string; blacklist_hits: number }) => ({
+              user_email: u.display_name || u.user_email,
               blacklist_hits: u.blacklist_hits,
             }));
           setTopOffenders(topUsers);

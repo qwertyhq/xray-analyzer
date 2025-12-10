@@ -90,6 +90,7 @@ type ThreatIndicator struct {
 type ThreatMatch struct {
 	ID          int64        `json:"id"`
 	UserEmail   string       `json:"user_email"`
+	DisplayName string       `json:"display_name,omitempty"`
 	NodeID      string       `json:"node_id"`
 	SourceIP    string       `json:"source_ip"`
 	Destination string       `json:"destination"`

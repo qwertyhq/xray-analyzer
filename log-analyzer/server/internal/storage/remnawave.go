@@ -756,3 +756,119 @@ func (s *Storage) GetRemnaSummaryForAI(ctx context.Context) (map[string]interfac
 
 	return summary, nil
 }
+
+// ResolveUserEmail resolves a user identifier (username, email, or numeric US_ID) to display name
+// Returns the original identifier if no match found
+func (s *Storage) ResolveUserEmail(ctx context.Context, userEmail string) string {
+	if userEmail == "" {
+		return userEmail
+	}
+
+	// First try direct lookup by username or email
+	var username string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT username FROM remna_users WHERE username = ? OR email = ?
+	`, userEmail, userEmail).Scan(&username)
+	if err == nil && username != "" {
+		return username
+	}
+
+	// If userEmail is numeric, try to find by US_ID in description
+	// Format: "SHM_info- @123456, Name, ..., US_ID: 29"
+	if isNumericString(userEmail) {
+		searchPattern := "%US_ID: " + userEmail + "%"
+		err = s.db.QueryRowContext(ctx, `
+			SELECT username FROM remna_users WHERE description LIKE ?
+		`, searchPattern).Scan(&username)
+		if err == nil && username != "" {
+			return username
+		}
+	}
+
+	return userEmail
+}
+
+// isNumericString checks if a string contains only digits
+func isNumericString(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// BuildUserEmailCache builds a cache mapping all user identifiers to usernames
+// This includes username, email, and US_ID from description
+func (s *Storage) BuildUserEmailCache(ctx context.Context) (map[string]string, error) {
+	cache := make(map[string]string)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT username, COALESCE(email, ''), COALESCE(description, '') FROM remna_users
+	`)
+	if err != nil {
+		return cache, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var username, email, description string
+		if err := rows.Scan(&username, &email, &description); err != nil {
+			continue
+		}
+
+		// Map username -> username
+		cache[username] = username
+
+		// Map email -> username (if different)
+		if email != "" && email != username {
+			cache[email] = username
+		}
+
+		// Extract US_ID from description and map it
+		if usID := extractUSID(description); usID != "" {
+			cache[usID] = username
+		}
+	}
+
+	return cache, nil
+}
+
+// extractUSID extracts US_ID value from description
+// Format: "..., US_ID: 123" or "... US_ID: 123, ..."
+func extractUSID(description string) string {
+	if description == "" {
+		return ""
+	}
+
+	// Find "US_ID: " or "US_ID:" pattern
+	patterns := []string{"US_ID: ", "US_ID:"}
+	for _, pattern := range patterns {
+		idx := -1
+		for i := 0; i <= len(description)-len(pattern); i++ {
+			if description[i:i+len(pattern)] == pattern {
+				idx = i + len(pattern)
+				break
+			}
+		}
+		if idx > 0 {
+			// Extract digits after the pattern
+			var usID string
+			for i := idx; i < len(description); i++ {
+				c := description[i]
+				if c >= '0' && c <= '9' {
+					usID += string(c)
+				} else {
+					break
+				}
+			}
+			if usID != "" {
+				return usID
+			}
+		}
+	}
+	return ""
+}

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -38,14 +39,24 @@ func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string,
 // GetTopBlacklistUsers gets users with most blacklist hits
 func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*models.UserStats, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT node_id, user_email, total_requests, blacklist_hits, 
-			   COALESCE(last_seen, '') as last_seen, 
-			   COALESCE(last_ip, '') as last_ip,
-			   COALESCE(last_blacklist_hit, '') as last_blacklist_hit, 
-			   COALESCE(last_blacklist_domain, '') as last_blacklist_domain
-		FROM user_stats
-		WHERE blacklist_hits > 0
-		ORDER BY blacklist_hits DESC, total_requests DESC
+		SELECT 
+			u.node_id, 
+			u.user_email, 
+			COALESCE(r.username, u.user_email) as display_name,
+			u.total_requests, 
+			u.blacklist_hits, 
+			COALESCE(u.last_seen, '') as last_seen, 
+			COALESCE(u.last_ip, '') as last_ip,
+			COALESCE(u.last_blacklist_hit, '') as last_blacklist_hit, 
+			COALESCE(u.last_blacklist_domain, '') as last_blacklist_domain
+		FROM user_stats u
+		LEFT JOIN remna_users r ON (
+			r.username = u.user_email 
+			OR r.description LIKE '%US_ID: ' || u.user_email || '%'
+			OR r.description LIKE '%US_ID: ' || u.user_email || ',%'
+		)
+		WHERE u.blacklist_hits > 0
+		ORDER BY u.blacklist_hits DESC, u.total_requests DESC
 		LIMIT ?
 	`, limit)
 	if err != nil {
@@ -57,7 +68,7 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 	for rows.Next() {
 		u := &models.UserStats{}
 		var lastSeenStr, lastHitStr string
-		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &lastSeenStr, &u.LastIP, &lastHitStr, &u.LastBlacklistDomain)
+		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.DisplayName, &u.TotalRequests, &u.BlacklistHits, &lastSeenStr, &u.LastIP, &lastHitStr, &u.LastBlacklistDomain)
 		if err != nil {
 			return nil, err
 		}
@@ -69,20 +80,39 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 }
 
 // GetAllUsers gets all users sorted by requests (aggregated across nodes)
+// Joins with remna_users to get display names for numeric user IDs
 func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserStats, error) {
 	rows, err := s.db.QueryContext(ctx, `
+		WITH user_agg AS (
+			SELECT 
+				COALESCE(GROUP_CONCAT(DISTINCT node_id), '') as nodes,
+				user_email, 
+				COALESCE(SUM(total_requests), 0) as total_requests, 
+				COALESCE(SUM(blacklist_hits), 0) as blacklist_hits, 
+				COALESCE(MAX(last_seen), '') as last_seen, 
+				COALESCE(MAX(last_ip), '') as last_ip,
+				COALESCE(MAX(last_blacklist_hit), '') as last_blacklist_hit, 
+				COALESCE(MAX(last_blacklist_domain), '') as last_blacklist_domain
+			FROM user_stats
+			GROUP BY user_email
+		)
 		SELECT 
-			COALESCE(GROUP_CONCAT(DISTINCT node_id), '') as nodes,
-			user_email, 
-			COALESCE(SUM(total_requests), 0) as total_requests, 
-			COALESCE(SUM(blacklist_hits), 0) as blacklist_hits, 
-			COALESCE(MAX(last_seen), '') as last_seen, 
-			COALESCE(MAX(last_ip), '') as last_ip,
-			COALESCE(MAX(last_blacklist_hit), '') as last_blacklist_hit, 
-			COALESCE(MAX(last_blacklist_domain), '') as last_blacklist_domain
-		FROM user_stats
-		GROUP BY user_email
-		ORDER BY total_requests DESC
+			u.nodes,
+			u.user_email,
+			COALESCE(r.username, u.user_email) as display_name,
+			u.total_requests,
+			u.blacklist_hits,
+			u.last_seen,
+			u.last_ip,
+			u.last_blacklist_hit,
+			u.last_blacklist_domain
+		FROM user_agg u
+		LEFT JOIN remna_users r ON (
+			r.username = u.user_email 
+			OR r.description LIKE '%US_ID: ' || u.user_email || '%'
+			OR r.description LIKE '%US_ID: ' || u.user_email || ',%'
+		)
+		ORDER BY u.total_requests DESC
 		LIMIT ?
 	`, limit)
 	if err != nil {
@@ -94,7 +124,7 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 	for rows.Next() {
 		u := &models.UserStats{}
 		var lastSeenStr, lastHitStr string
-		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.TotalRequests, &u.BlacklistHits, &lastSeenStr, &u.LastIP, &lastHitStr, &u.LastBlacklistDomain)
+		err := rows.Scan(&u.NodeID, &u.UserEmail, &u.DisplayName, &u.TotalRequests, &u.BlacklistHits, &lastSeenStr, &u.LastIP, &lastHitStr, &u.LastBlacklistDomain)
 		if err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
@@ -110,6 +140,16 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 	user := &models.UserDetails{
 		UserEmail: userEmail,
 		Nodes:     []models.UserNodeStats{},
+	}
+
+	// Try to resolve display name from remna_users
+	var displayName sql.NullString
+	_ = s.db.QueryRowContext(ctx, `
+		SELECT username FROM remna_users 
+		WHERE username = ? OR description LIKE '%US_ID: ' || ? || '%'
+	`, userEmail, userEmail).Scan(&displayName)
+	if displayName.Valid && displayName.String != "" {
+		user.DisplayName = displayName.String
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -376,9 +416,11 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 	sinceStr := since.UTC().Format(time.RFC3339)
 
 	// Find users with many unique IPs in the time period, also count unique nodes
+	// Join with remna_users to get username for display
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT 
 			h.user_email,
+			COALESCE(r.username, h.user_email) as display_name,
 			COUNT(DISTINCT h.ip_address) as unique_ips,
 			COUNT(DISTINCT h.node_id) as unique_nodes,
 			COUNT(DISTINCT h.country_code) as unique_countries,
@@ -387,6 +429,11 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 			SUM(h.request_count) as total_requests,
 			MAX(h.last_seen) as last_seen
 		FROM user_ip_history h
+		LEFT JOIN remna_users r ON (
+			r.username = h.user_email 
+			OR r.description LIKE '%US_ID: ' || h.user_email || '%'
+			OR r.description LIKE '%US_ID: ' || h.user_email || ',%'
+		)
 		WHERE h.last_seen >= ?
 		GROUP BY h.user_email
 		HAVING unique_ips >= ?
@@ -402,7 +449,7 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 		a := &models.SubscriptionAbuse{}
 		var countriesStr, nodesStr, lastSeenStr string
 		var nodesStrPtr *string
-		if err := rows.Scan(&a.UserEmail, &a.UniqueIPs, &a.UniqueNodes, &a.UniqueCountries, &countriesStr, &nodesStrPtr, &a.TotalRequests, &lastSeenStr); err != nil {
+		if err := rows.Scan(&a.UserEmail, &a.Username, &a.UniqueIPs, &a.UniqueNodes, &a.UniqueCountries, &countriesStr, &nodesStrPtr, &a.TotalRequests, &lastSeenStr); err != nil {
 			return nil, err
 		}
 		a.LastSeen = parseDateTime(lastSeenStr)

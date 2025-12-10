@@ -48,6 +48,7 @@ type Alert struct {
 type UserStats struct {
 	NodeID              string    `json:"node_id"`
 	UserEmail           string    `json:"user_email"`
+	DisplayName         string    `json:"display_name,omitempty"`
 	TotalRequests       int64     `json:"total_requests"`
 	BlacklistHits       int64     `json:"blacklist_hits"`
 	UniqueDestinations  int       `json:"unique_destinations"`
@@ -92,6 +93,7 @@ type HourlyStats struct {
 // UserDetails represents detailed info about a user
 type UserDetails struct {
 	UserEmail          string               `json:"user_email"`
+	DisplayName        string               `json:"display_name,omitempty"`
 	TotalRequests      int64                `json:"total_requests"`
 	TotalBlacklistHits int64                `json:"total_blacklist_hits"`
 	Nodes              []UserNodeStats      `json:"nodes"`

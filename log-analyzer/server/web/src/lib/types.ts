@@ -24,6 +24,7 @@ export interface NodeStats {
 export interface UserStats {
   node_id: string;
   user_email: string;
+  display_name?: string;
   total_requests: number;
   blacklist_hits: number;
   unique_destinations: number;
@@ -42,6 +43,7 @@ export interface HourlyStats {
 
 export interface UserDetails {
   user_email: string;
+  display_name?: string;
   total_requests: number;
   total_blacklist_hits: number;
   nodes: UserNodeStats[];
@@ -210,6 +212,7 @@ export type ThreatSource =
 export interface ThreatMatch {
   id: number;
   user_email: string;
+  display_name?: string;
   node_id: string;
   source_ip: string;
   destination: string;

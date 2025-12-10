@@ -131,10 +131,13 @@ func (s *Storage) GetThreatMatches(ctx context.Context, limit int) ([]*threatint
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_email, node_id, source_ip, destination,
-			   threat_type, source, confidence, description, matched_at
-		FROM threat_matches
-		ORDER BY matched_at DESC
+		SELECT tm.id, tm.user_email, tm.node_id, tm.source_ip, tm.destination,
+			   tm.threat_type, tm.source, tm.confidence, tm.description, tm.matched_at,
+			   COALESCE(r.username, '') as display_name
+		FROM threat_matches tm
+		LEFT JOIN remna_users r ON r.username = tm.user_email 
+			OR r.description LIKE '%US_ID: ' || tm.user_email || '%'
+		ORDER BY tm.matched_at DESC
 		LIMIT ?
 	`, limit)
 	if err != nil {
@@ -142,17 +145,20 @@ func (s *Storage) GetThreatMatches(ctx context.Context, limit int) ([]*threatint
 	}
 	defer rows.Close()
 
-	return scanThreatMatches(rows)
+	return scanThreatMatchesWithDisplayName(rows)
 }
 
 // GetThreatMatchesByUser returns threat matches for a specific user
 func (s *Storage) GetThreatMatchesByUser(ctx context.Context, userEmail string, limit int) ([]*threatintel.ThreatMatch, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_email, node_id, source_ip, destination,
-			   threat_type, source, confidence, description, matched_at
-		FROM threat_matches
-		WHERE user_email = ?
-		ORDER BY matched_at DESC
+		SELECT tm.id, tm.user_email, tm.node_id, tm.source_ip, tm.destination,
+			   tm.threat_type, tm.source, tm.confidence, tm.description, tm.matched_at,
+			   COALESCE(r.username, '') as display_name
+		FROM threat_matches tm
+		LEFT JOIN remna_users r ON r.username = tm.user_email 
+			OR r.description LIKE '%US_ID: ' || tm.user_email || '%'
+		WHERE tm.user_email = ?
+		ORDER BY tm.matched_at DESC
 		LIMIT ?
 	`, userEmail, limit)
 	if err != nil {
@@ -160,7 +166,7 @@ func (s *Storage) GetThreatMatchesByUser(ctx context.Context, userEmail string, 
 	}
 	defer rows.Close()
 
-	return scanThreatMatches(rows)
+	return scanThreatMatchesWithDisplayName(rows)
 }
 
 // GetThreatMatchesByType returns threat matches for a specific threat type
@@ -171,11 +177,14 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 
 	// First try to get from recent matches table
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_email, node_id, source_ip, destination,
-			   threat_type, source, confidence, description, matched_at
-		FROM threat_matches
-		WHERE threat_type = ?
-		ORDER BY matched_at DESC
+		SELECT tm.id, tm.user_email, tm.node_id, tm.source_ip, tm.destination,
+			   tm.threat_type, tm.source, tm.confidence, tm.description, tm.matched_at,
+			   COALESCE(r.username, '') as display_name
+		FROM threat_matches tm
+		LEFT JOIN remna_users r ON r.username = tm.user_email 
+			OR r.description LIKE '%US_ID: ' || tm.user_email || '%'
+		WHERE tm.threat_type = ?
+		ORDER BY tm.matched_at DESC
 		LIMIT ?
 	`, threatType, limit)
 	if err != nil {
@@ -183,7 +192,7 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 	}
 	defer rows.Close()
 
-	matches, err := scanThreatMatches(rows)
+	matches, err := scanThreatMatchesWithDisplayName(rows)
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +271,34 @@ func scanThreatMatches(rows sqlRows) ([]*threatintel.ThreatMatch, error) {
 
 		m.ThreatType = threatintel.ThreatType(threatType)
 		m.Source = threatintel.ThreatSource(source)
+		if t, err := time.Parse(time.RFC3339, matchedAt); err == nil {
+			m.MatchedAt = t
+		}
+
+		matches = append(matches, &m)
+	}
+
+	return matches, rows.Err()
+}
+
+// scanThreatMatchesWithDisplayName is a helper to scan threat match rows with display_name
+func scanThreatMatchesWithDisplayName(rows sqlRows) ([]*threatintel.ThreatMatch, error) {
+	var matches []*threatintel.ThreatMatch
+	for rows.Next() {
+		var m threatintel.ThreatMatch
+		var threatType, source string
+		var matchedAt string
+		var displayName string
+
+		err := rows.Scan(&m.ID, &m.UserEmail, &m.NodeID, &m.SourceIP, &m.Destination,
+			&threatType, &source, &m.Confidence, &m.Description, &matchedAt, &displayName)
+		if err != nil {
+			return nil, err
+		}
+
+		m.ThreatType = threatintel.ThreatType(threatType)
+		m.Source = threatintel.ThreatSource(source)
+		m.DisplayName = displayName
 		if t, err := time.Parse(time.RFC3339, matchedAt); err == nil {
 			m.MatchedAt = t
 		}

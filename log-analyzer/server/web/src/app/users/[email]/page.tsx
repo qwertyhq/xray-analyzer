@@ -72,9 +72,12 @@ export default function UserDetailsPage() {
         <div className="min-w-0">
           <h2 className="text-lg sm:text-2xl font-bold tracking-tight flex items-center gap-2 truncate">
             <User className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" />
-            <span className="truncate">{details.user_email}</span>
+            <span className="truncate">{details.display_name || details.user_email}</span>
           </h2>
           <p className="text-sm text-muted-foreground">
+            {details.display_name && details.display_name !== details.user_email && (
+              <span className="mr-2 font-mono text-xs">{details.user_email}</span>
+            )}
             User activity across {details.nodes.length} node(s)
           </p>
         </div>

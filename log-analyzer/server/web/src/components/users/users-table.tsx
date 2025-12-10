@@ -186,6 +186,7 @@ export function UsersTable({
       const lower = search.toLowerCase();
       result = result.filter(u => 
         u.user_email.toLowerCase().includes(lower) ||
+        (u.display_name && u.display_name.toLowerCase().includes(lower)) ||
         u.node_id.toLowerCase().includes(lower) ||
         (u.last_ip && u.last_ip.includes(lower))
       );
@@ -387,7 +388,7 @@ export function UsersTable({
                       href={`/users/${encodeURIComponent(user.user_email)}`}
                       className="hover:underline text-primary flex items-center gap-1 truncate"
                     >
-                      <span className="truncate">{user.user_email}</span>
+                      <span className="truncate">{user.display_name || user.user_email}</span>
                       <ExternalLink className="h-3 w-3 flex-shrink-0" />
                     </Link>
                   </TableCell>
