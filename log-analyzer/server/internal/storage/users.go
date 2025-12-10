@@ -52,8 +52,7 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 		FROM user_stats u
 		LEFT JOIN remna_users r ON (
 			r.username = u.user_email 
-			OR r.description LIKE '%US_ID: ' || u.user_email || '%'
-			OR r.description LIKE '%US_ID: ' || u.user_email || ',%'
+			OR r.description LIKE '%US_ID: ' || u.user_email
 		)
 		WHERE u.blacklist_hits > 0
 		ORDER BY u.blacklist_hits DESC, u.total_requests DESC
@@ -109,8 +108,7 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 		FROM user_agg u
 		LEFT JOIN remna_users r ON (
 			r.username = u.user_email 
-			OR r.description LIKE '%US_ID: ' || u.user_email || '%'
-			OR r.description LIKE '%US_ID: ' || u.user_email || ',%'
+			OR r.description LIKE '%US_ID: ' || u.user_email
 		)
 		ORDER BY u.total_requests DESC
 		LIMIT ?
@@ -146,7 +144,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 	var displayName sql.NullString
 	_ = s.db.QueryRowContext(ctx, `
 		SELECT username FROM remna_users 
-		WHERE username = ? OR description LIKE '%US_ID: ' || ? || '%'
+		WHERE username = ? OR description LIKE '%US_ID: ' || ?
 	`, userEmail, userEmail).Scan(&displayName)
 	if displayName.Valid && displayName.String != "" {
 		user.DisplayName = displayName.String
@@ -431,8 +429,7 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 		FROM user_ip_history h
 		LEFT JOIN remna_users r ON (
 			r.username = h.user_email 
-			OR r.description LIKE '%US_ID: ' || h.user_email || '%'
-			OR r.description LIKE '%US_ID: ' || h.user_email || ',%'
+			OR r.description LIKE '%US_ID: ' || h.user_email
 		)
 		WHERE h.last_seen >= ?
 		GROUP BY h.user_email

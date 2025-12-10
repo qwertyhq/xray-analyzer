@@ -136,7 +136,7 @@ func (s *Storage) GetThreatMatches(ctx context.Context, limit int) ([]*threatint
 			   COALESCE(r.username, '') as display_name
 		FROM threat_matches tm
 		LEFT JOIN remna_users r ON r.username = tm.user_email 
-			OR r.description LIKE '%US_ID: ' || tm.user_email || '%'
+			OR r.description LIKE '%US_ID: ' || tm.user_email
 		ORDER BY tm.matched_at DESC
 		LIMIT ?
 	`, limit)
@@ -156,7 +156,7 @@ func (s *Storage) GetThreatMatchesByUser(ctx context.Context, userEmail string, 
 			   COALESCE(r.username, '') as display_name
 		FROM threat_matches tm
 		LEFT JOIN remna_users r ON r.username = tm.user_email 
-			OR r.description LIKE '%US_ID: ' || tm.user_email || '%'
+			OR r.description LIKE '%US_ID: ' || tm.user_email
 		WHERE tm.user_email = ?
 		ORDER BY tm.matched_at DESC
 		LIMIT ?
@@ -182,7 +182,7 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 			   COALESCE(r.username, '') as display_name
 		FROM threat_matches tm
 		LEFT JOIN remna_users r ON r.username = tm.user_email 
-			OR r.description LIKE '%US_ID: ' || tm.user_email || '%'
+			OR r.description LIKE '%US_ID: ' || tm.user_email
 		WHERE tm.threat_type = ?
 		ORDER BY tm.matched_at DESC
 		LIMIT ?
