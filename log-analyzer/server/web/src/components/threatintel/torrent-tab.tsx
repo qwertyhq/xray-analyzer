@@ -19,6 +19,9 @@ export function TorrentTab({ matches, topUsers, feeds }: TorrentTabProps) {
   // Calculate total detections from topUsers (aggregated stats)
   const totalDetections = topUsers?.reduce((sum, u) => sum + u.match_count, 0) || 0;
   const uniqueUsers = topUsers?.length || 0;
+
+  // Check if we have any data at all
+  const hasData = totalDetections > 0 || uniqueUsers > 0 || matches.length > 0;
   
   return (
     <div className="space-y-6">
@@ -64,8 +67,24 @@ export function TorrentTab({ matches, topUsers, feeds }: TorrentTabProps) {
         </Card>
       </div>
 
+      {/* No Data State */}
+      {!hasData && (
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center text-muted-foreground">
+              <Download className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <h3 className="text-lg font-medium mb-2">Нет данных о торрент-активности</h3>
+              <p className="text-sm max-w-md mx-auto">
+                Пользователи не посещали известные торрент-трекеры и сайты. 
+                Мониторинг активен с {totalIndicators.toLocaleString()} индикаторами.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Top Torrent Users */}
-      {topUsers && topUsers.length > 0 && (
+      {hasData && topUsers && topUsers.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -114,12 +133,14 @@ export function TorrentTab({ matches, topUsers, feeds }: TorrentTabProps) {
         </Card>
       )}
 
-      {/* Torrent Matches Table */}
-      <MatchesTable 
-        matches={matches} 
-        title="Torrent Activity"
-        description={`Detected torrent tracker and site connections (${matches.length} total)`}
-      />
+      {/* Torrent Matches Table - only show if we have recent matches */}
+      {matches.length > 0 && (
+        <MatchesTable 
+          matches={matches} 
+          title="Recent Torrent Activity"
+          description={`Последние обнаружения торрент-активности (${matches.length} записей)`}
+        />
+      )}
     </div>
   );
 }

@@ -117,20 +117,17 @@ export function PeriodComparison({ stats, periodLabel = "vs yesterday" }: Period
         </CardTitle>
       </CardHeader>
       <CardContent className="pb-4">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2">
           {comparisons.map((item) => {
             const { value, trend } = formatChange(item.current, item.previous);
             return (
               <div 
                 key={item.label}
-                className="flex items-center gap-1.5 p-2 rounded-lg bg-muted/50"
+                className="flex items-center gap-2 p-2 rounded-lg bg-muted/50"
               >
                 {item.icon}
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate" title={item.label}>
-                    <span className="sm:hidden">{item.shortLabel}</span>
-                    <span className="hidden sm:inline">{item.label}</span>
-                  </p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-muted-foreground">{item.label}</p>
                   <p className="text-sm font-semibold">{item.current.toLocaleString()}</p>
                 </div>
                 <TrendBadge trend={trend} value={value} inverted={item.inverted} />

@@ -39,6 +39,25 @@ export function MatchesTable({ matches, title, description }: MatchesTableProps)
   const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
   const pageSize = 20;
 
+  // If no matches at all, show empty state
+  if (matches.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
+          <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-12 text-muted-foreground">
+            <div className="text-4xl mb-4">🔍</div>
+            <p className="text-sm">Нет недавних совпадений для этой категории</p>
+            <p className="text-xs mt-2">Данные отображаются при обнаружении активности</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // Get unique threat types from matches
   const threatTypes = useMemo(() => {
     const types = new Set<ThreatType>();
