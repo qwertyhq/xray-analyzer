@@ -50,10 +50,10 @@ export function MatchesTable({ matches, title, description }: MatchesTableProps)
         <CardContent>
           <div className="text-center py-12 text-muted-foreground">
             <div className="text-4xl mb-4">🔍</div>
-            <p className="text-sm">Нет недавних совпадений для этой категории</p>
+            <p className="text-sm">Нет недавней активности для этой категории</p>
             <p className="text-xs mt-2 max-w-md mx-auto">
               Статистика выше показывает общее число детекций за всё время. 
-              Детальные записи хранятся 7 дней и автоматически очищаются.
+              Детальные записи хранятся 30 дней — возможно, активность этого типа была давно.
             </p>
           </div>
         </CardContent>

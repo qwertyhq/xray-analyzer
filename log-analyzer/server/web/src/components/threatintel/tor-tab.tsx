@@ -141,14 +141,12 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
         </Card>
       )}
 
-      {/* Tor Matches Table - only show if there are recent matches */}
-      {matches.length > 0 && (
-        <MatchesTable 
-          matches={matches} 
-          title="Recent Tor Activity"
-          description={`Последние обнаружения Tor-активности`}
-        />
-      )}
+      {/* Tor Matches Table */}
+      <MatchesTable 
+        matches={matches} 
+        title="Recent Tor Activity"
+        description={`Последние обнаружения Tor-активности`}
+      />
     </div>
   );
 }
