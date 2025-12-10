@@ -29,6 +29,8 @@ type Storage interface {
 	GetThreatStats(ctx context.Context) (*ThreatStats, error)
 	GetTopUsersByCategory(ctx context.Context, category string, limit int) ([]*CategoryUserStats, error)
 	GetTopUsersByAllCategories(ctx context.Context, limit int) (map[string][]*CategoryUserStats, error)
+	GetRecentUsersByCategory(ctx context.Context, category string, limit int) ([]*CategoryUserStats, error)
+	GetRecentUsersByAllCategories(ctx context.Context, limit int) (map[string][]*CategoryUserStats, error)
 	// Geo stats
 	SaveGeoStats(ctx context.Context, countryCode, countryName, threatType, userEmail string) error
 	SaveUserLocation(ctx context.Context, userEmail, countryCode, countryName, city string, lat, lon float64) error
@@ -317,4 +319,20 @@ func (s *Service) GetTopUsersByAllCategories(ctx context.Context, limit int) (ma
 		return nil, nil
 	}
 	return s.storage.GetTopUsersByAllCategories(ctx, limit)
+}
+
+// GetRecentUsersByCategory returns recent users for a specific content category
+func (s *Service) GetRecentUsersByCategory(ctx context.Context, category string, limit int) ([]*CategoryUserStats, error) {
+	if s.storage == nil {
+		return nil, nil
+	}
+	return s.storage.GetRecentUsersByCategory(ctx, category, limit)
+}
+
+// GetRecentUsersByAllCategories returns recent users for all content categories
+func (s *Service) GetRecentUsersByAllCategories(ctx context.Context, limit int) (map[string][]*CategoryUserStats, error) {
+	if s.storage == nil {
+		return nil, nil
+	}
+	return s.storage.GetRecentUsersByAllCategories(ctx, limit)
 }

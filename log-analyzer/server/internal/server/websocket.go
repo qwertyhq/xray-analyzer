@@ -398,22 +398,22 @@ func (s *Server) broadcastToDashboards() {
 			log.Printf("server: failed to get threat matches: %v", err)
 			tiMatches = nil
 		}
-		tiTopUsers, err := s.threatIntel.GetTopUsersByAllCategories(ctx, 5)
+		tiRecentUsers, err := s.threatIntel.GetRecentUsersByAllCategories(ctx, 20)
 		if err != nil {
-			log.Printf("server: failed to get top users by categories: %v", err)
-			tiTopUsers = nil
+			log.Printf("server: failed to get recent users by categories: %v", err)
+			tiRecentUsers = nil
 		}
-		// Resolve usernames for matches and top users
+		// Resolve usernames for matches and recent users
 		if tiMatches != nil {
 			s.resolveThreatMatches(ctx, tiMatches)
 		}
-		if tiTopUsers != nil {
-			s.resolveCategoryTopUsers(ctx, tiTopUsers)
+		if tiRecentUsers != nil {
+			s.resolveCategoryTopUsers(ctx, tiRecentUsers)
 		}
 		threatData := map[string]interface{}{
 			"stats":    tiStats,
 			"matches":  tiMatches,
-			"topUsers": tiTopUsers,
+			"topUsers": tiRecentUsers,
 		}
 		updates = append(updates, DashboardUpdate{Type: "threatintel", Data: threatData})
 	}
@@ -492,20 +492,20 @@ func (s *Server) sendThreatIntelUpdate(client *DashboardClient) {
 	ctx := context.Background()
 	tiStats := s.threatIntel.GetStats()
 	tiMatches, _ := s.storage.GetThreatMatches(ctx, 20) // Get all stored matches (max 20)
-	tiTopUsers, _ := s.threatIntel.GetTopUsersByAllCategories(ctx, 5)
+	tiRecentUsers, _ := s.threatIntel.GetRecentUsersByAllCategories(ctx, 20)
 
-	// Resolve usernames for matches and top users
+	// Resolve usernames for matches and recent users
 	if tiMatches != nil {
 		s.resolveThreatMatches(ctx, tiMatches)
 	}
-	if tiTopUsers != nil {
-		s.resolveCategoryTopUsers(ctx, tiTopUsers)
+	if tiRecentUsers != nil {
+		s.resolveCategoryTopUsers(ctx, tiRecentUsers)
 	}
 
 	threatData := map[string]interface{}{
 		"stats":    tiStats,
 		"matches":  tiMatches,
-		"topUsers": tiTopUsers,
+		"topUsers": tiRecentUsers,
 	}
 
 	client.mu.Lock()

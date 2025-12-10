@@ -139,7 +139,7 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
         </CardContent>
       </Card>
 
-      {/* Top Users by Content Category */}
+      {/* Recent Users by Content Category */}
       {topUsers && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {(["porn", "gambling", "social", "fakenews", "torrent", "tor"] as const).map((category) => {
@@ -149,7 +149,7 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
             
             return (
               <Card key={category} className="overflow-hidden">
-                <CardHeader className="pb-3">
+                <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className={`p-1.5 rounded-md ${config.color}`}>
@@ -161,9 +161,10 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
                       <span className="text-xl font-bold">{totalCount}</span>
                     )}
                   </div>
+                  <p className="text-xs text-muted-foreground mt-1">Последние {users.length} пользователей</p>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  <UserList users={users} />
+                  <UserList users={users} maxHeight="350px" />
                 </CardContent>
               </Card>
             );

@@ -877,7 +877,7 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 
 	ctx := r.Context()
 
-	limit := 10
+	limit := 20
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 50 {
 			limit = parsed
@@ -888,9 +888,9 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 	category := r.URL.Query().Get("category")
 
 	if category != "" {
-		result, err := s.threatIntel.GetTopUsersByCategory(ctx, category, limit)
+		result, err := s.threatIntel.GetRecentUsersByCategory(ctx, category, limit)
 		if err != nil {
-			log.Printf("Error getting top users: %v", err)
+			log.Printf("Error getting recent users: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -898,9 +898,9 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
 	} else {
-		result, err := s.threatIntel.GetTopUsersByAllCategories(ctx, limit)
+		result, err := s.threatIntel.GetRecentUsersByAllCategories(ctx, limit)
 		if err != nil {
-			log.Printf("Error getting top users: %v", err)
+			log.Printf("Error getting recent users: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
