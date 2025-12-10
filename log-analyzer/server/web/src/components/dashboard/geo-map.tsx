@@ -197,7 +197,10 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
 
   // Choose which data to display based on mode
   const geojson = mode === "cities" && cityData.length > 0 ? cityGeojson : countryGeojson;
-  const displayData = mode === "cities" && cityData.length > 0 ? cityData : data;
+  const displayData = useMemo(() => 
+    mode === "cities" && cityData.length > 0 ? cityData : data,
+    [mode, cityData, data]
+  );
 
   const totalCount = useMemo(() => displayData.reduce((sum, d) => sum + d.count, 0), [displayData]);
   const maxCount = useMemo(() => Math.max(...displayData.map(d => d.count), 1), [displayData]);
