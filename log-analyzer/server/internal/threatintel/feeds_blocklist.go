@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -17,7 +18,8 @@ import (
 // ============================================================================
 
 // blockListProjectBaseURL is the base URL for BlockList Project raw files
-const blockListProjectBaseURL = "https://blocklistproject.github.io/Lists/"
+// Using raw.githubusercontent.com instead of github.io for better reliability
+const blockListProjectBaseURL = "https://raw.githubusercontent.com/blocklistproject/Lists/master/"
 
 // loadBlockListProjectHosts loads domains from BlockList Project hosts format
 // Format: 0.0.0.0 domain.com
@@ -42,25 +44,23 @@ func (f *FeedLoader) loadBlockListProjectHosts(ctx context.Context, listName str
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 2*1024*1024) // 2MB buffer for large lists
 
+	lineCount := 0
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+		lineCount++
 
 		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		// Parse hosts format: "0.0.0.0 domain.com" or "127.0.0.1 domain.com"
+		// Parse hosts file format: 0.0.0.0 domain.com
 		parts := strings.Fields(line)
 		if len(parts) < 2 {
 			continue
 		}
 
-		// First part should be IP (0.0.0.0 or 127.0.0.1)
-		if parts[0] != "0.0.0.0" && parts[0] != "127.0.0.1" {
-			continue
-		}
-
+		// Get the domain - it's the second field after the IP
 		domain := strings.ToLower(parts[1])
 
 		// Skip localhost entries
@@ -93,6 +93,10 @@ func (f *FeedLoader) loadBlockListProjectHosts(ctx context.Context, listName str
 
 	if err := scanner.Err(); err != nil && err != io.EOF {
 		return count, fmt.Errorf("scan blocklist %s: %w", listName, err)
+	}
+
+	if count == 0 {
+		log.Printf("threatintel: blocklist %s parsed %d lines but found 0 valid domains", listName, lineCount)
 	}
 
 	return count, nil
