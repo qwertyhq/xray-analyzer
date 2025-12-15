@@ -2,6 +2,9 @@ package storage
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/models"
@@ -22,31 +25,60 @@ func (s *Storage) RecordUserDestination(ctx context.Context, userEmail, nodeID, 
 	return err
 }
 
+// buildDestinationSearchIDs creates a list of possible user identifiers
+func buildDestinationSearchIDs(userEmail string) (string, []interface{}) {
+	searchIDs := []string{userEmail}
+
+	if strings.HasPrefix(userEmail, "us_") {
+		numericPart := strings.TrimPrefix(userEmail, "us_")
+		searchIDs = append(searchIDs, numericPart)
+	}
+
+	if _, err := strconv.Atoi(userEmail); err == nil {
+		searchIDs = append(searchIDs, "us_"+userEmail)
+	}
+
+	placeholders := make([]string, len(searchIDs))
+	args := make([]interface{}, len(searchIDs))
+	for i, id := range searchIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	return strings.Join(placeholders, ","), args
+}
+
 // GetUserDestinations returns paginated destinations for a user
 func (s *Storage) GetUserDestinations(ctx context.Context, userEmail string, since time.Time, page, pageSize int) (*models.UserDestinationsResponse, error) {
 	sinceStr := since.UTC().Format(time.RFC3339)
 	offset := (page - 1) * pageSize
 
+	placeholders, searchArgs := buildDestinationSearchIDs(userEmail)
+
 	// Get total count
 	var total int
-	err := s.db.QueryRowContext(ctx, `
+	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*) FROM user_destinations
-		WHERE user_email = ? AND last_seen > ?
-	`, userEmail, sinceStr).Scan(&total)
+		WHERE user_email IN (%s) AND last_seen > ?
+	`, placeholders)
+	countArgs := append(searchArgs, sinceStr)
+	err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get paginated results
-	rows, err := s.db.QueryContext(ctx, `
+	query := fmt.Sprintf(`
 		SELECT node_id, destination, request_count, 
 			   COALESCE(first_seen, '') as first_seen,
 			   COALESCE(last_seen, '') as last_seen
 		FROM user_destinations
-		WHERE user_email = ? AND last_seen > ?
+		WHERE user_email IN (%s) AND last_seen > ?
 		ORDER BY request_count DESC, last_seen DESC
 		LIMIT ? OFFSET ?
-	`, userEmail, sinceStr, pageSize, offset)
+	`, placeholders)
+	queryArgs := append(searchArgs, sinceStr, pageSize, offset)
+
+	rows, err := s.db.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, err
 	}

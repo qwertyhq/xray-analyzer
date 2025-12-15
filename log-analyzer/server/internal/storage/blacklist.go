@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -221,24 +222,47 @@ func (s *Storage) GetUserBlacklistMatches(ctx context.Context, userEmail string,
 	sinceStr := since.UTC().Format(time.RFC3339)
 	offset := (page - 1) * pageSize
 
+	// Build list of possible identifiers to search for
+	searchIDs := []string{userEmail}
+	if strings.HasPrefix(userEmail, "us_") {
+		numericPart := strings.TrimPrefix(userEmail, "us_")
+		searchIDs = append(searchIDs, numericPart)
+	}
+	if _, err := strconv.Atoi(userEmail); err == nil {
+		searchIDs = append(searchIDs, "us_"+userEmail)
+	}
+
+	placeholders := make([]string, len(searchIDs))
+	searchArgs := make([]interface{}, len(searchIDs))
+	for i, id := range searchIDs {
+		placeholders[i] = "?"
+		searchArgs[i] = id
+	}
+	placeholderStr := strings.Join(placeholders, ",")
+
 	// Get total count
 	var total int
-	err := s.db.QueryRowContext(ctx, `
+	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*) FROM blacklist_matches
-		WHERE user_email = ? AND timestamp > ?
-	`, userEmail, sinceStr).Scan(&total)
+		WHERE user_email IN (%s) AND timestamp > ?
+	`, placeholderStr)
+	countArgs := append(searchArgs, sinceStr)
+	err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get paginated results
-	rows, err := s.db.QueryContext(ctx, `
+	query := fmt.Sprintf(`
 		SELECT node_id, source_ip, destination, matched_rule, COALESCE(timestamp, '') as timestamp
 		FROM blacklist_matches
-		WHERE user_email = ? AND timestamp > ?
+		WHERE user_email IN (%s) AND timestamp > ?
 		ORDER BY timestamp DESC
 		LIMIT ? OFFSET ?
-	`, userEmail, sinceStr, pageSize, offset)
+	`, placeholderStr)
+	queryArgs := append(searchArgs, sinceStr, pageSize, offset)
+
+	rows, err := s.db.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -133,12 +134,46 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 	return users, nil
 }
 
+// buildUserSearchIDs creates a list of possible user identifiers to search for
+// This handles cases where user might be stored with different formats (e.g., "1301" vs "us_1301")
+func buildUserSearchIDs(userEmail string) []string {
+	searchIDs := []string{userEmail}
+
+	// If userEmail starts with "us_", also search for just the numeric part
+	if strings.HasPrefix(userEmail, "us_") {
+		numericPart := strings.TrimPrefix(userEmail, "us_")
+		searchIDs = append(searchIDs, numericPart)
+	}
+
+	// If userEmail is purely numeric, also search with "us_" prefix
+	if _, err := strconv.Atoi(userEmail); err == nil {
+		searchIDs = append(searchIDs, "us_"+userEmail)
+	}
+
+	return searchIDs
+}
+
+// buildUserSearchQuery creates a WHERE clause and args for searching by multiple user IDs
+func buildUserSearchQuery(searchIDs []string) (string, []interface{}) {
+	placeholders := make([]string, len(searchIDs))
+	args := make([]interface{}, len(searchIDs))
+	for i, id := range searchIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	return strings.Join(placeholders, ","), args
+}
+
 // GetUserDetails gets detailed stats for a specific user
 func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models.UserDetails, error) {
 	user := &models.UserDetails{
 		UserEmail: userEmail,
 		Nodes:     []models.UserNodeStats{},
 	}
+
+	// Build list of possible identifiers to search for
+	searchIDs := buildUserSearchIDs(userEmail)
+	placeholders, args := buildUserSearchQuery(searchIDs)
 
 	// Try to resolve display name from remna_users
 	var displayName sql.NullString
@@ -150,15 +185,17 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		user.DisplayName = displayName.String
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	query := fmt.Sprintf(`
 		SELECT node_id, total_requests, blacklist_hits, unique_destinations, 
 			   COALESCE(last_seen, '') as last_seen, 
 			   COALESCE(last_blacklist_hit, '') as last_blacklist_hit, 
 			   COALESCE(last_blacklist_domain, '') as last_blacklist_domain
 		FROM user_stats
-		WHERE user_email = ?
+		WHERE user_email IN (%s)
 		ORDER BY total_requests DESC
-	`, userEmail)
+	`, placeholders)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -177,14 +214,16 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		user.Nodes = append(user.Nodes, ns)
 	}
 
-	// Get recent blacklist matches
-	matchRows, err := s.db.QueryContext(ctx, `
+	// Get recent blacklist matches with all possible identifiers
+	matchQuery := fmt.Sprintf(`
 		SELECT node_id, source_ip, destination, matched_rule, COALESCE(timestamp, '') as timestamp
 		FROM blacklist_matches
-		WHERE user_email = ?
+		WHERE user_email IN (%s)
 		ORDER BY timestamp DESC
 		LIMIT 50
-	`, userEmail)
+	`, placeholders)
+
+	matchRows, err := s.db.QueryContext(ctx, matchQuery, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +416,10 @@ func (s *Storage) RecordUserIP(ctx context.Context, userEmail, ipAddress, nodeID
 
 // GetUserIPHistory gets the IP history for a user (last 20 IPs)
 func (s *Storage) GetUserIPHistory(ctx context.Context, userEmail string) ([]*UserIPHistory, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	searchIDs := buildUserSearchIDs(userEmail)
+	placeholders, args := buildUserSearchQuery(searchIDs)
+
+	query := fmt.Sprintf(`
 		SELECT ip_address, COALESCE(node_id, '') as node_id, 
 			   COALESCE(country_code, '') as country_code,
 			   COALESCE(country_name, '') as country_name,
@@ -386,10 +428,12 @@ func (s *Storage) GetUserIPHistory(ctx context.Context, userEmail string) ([]*Us
 			   COALESCE(last_seen, '') as last_seen,
 			   request_count
 		FROM user_ip_history
-		WHERE user_email = ?
+		WHERE user_email IN (%s)
 		ORDER BY last_seen DESC
 		LIMIT 20
-	`, userEmail)
+	`, placeholders)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
