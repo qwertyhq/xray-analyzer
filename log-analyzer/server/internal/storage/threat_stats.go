@@ -145,25 +145,16 @@ func (s *Storage) GetTopUsersByAllCategories(ctx context.Context, limit int) (ma
 // GetRecentUsersByCategory returns the most recent unique users who accessed a specific category
 // with their latest accessed domains
 func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string, limit int) ([]*threatintel.CategoryUserStats, error) {
-	if limit <= 0 || limit > 50 {
+	if limit <= 0 || limit > 100 {
 		limit = 10
 	}
 
-	// Get recent unique users with their most recent destination
+	// First try user_threat_stats table (persisted aggregated stats)
 	rows, err := s.db.QueryContext(ctx, `
-		WITH RankedMatches AS (
-			SELECT 
-				user_email,
-				destination,
-				matched_at,
-				ROW_NUMBER() OVER (PARTITION BY user_email ORDER BY matched_at DESC) as rn
-			FROM threat_matches
-			WHERE threat_type = ?
-		)
-		SELECT user_email, destination, matched_at
-		FROM RankedMatches
-		WHERE rn = 1
-		ORDER BY matched_at DESC
+		SELECT user_email, match_count, last_match
+		FROM user_threat_stats
+		WHERE threat_type = ?
+		ORDER BY last_match DESC
 		LIMIT ?
 	`, category, limit)
 	if err != nil {
@@ -174,30 +165,46 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 	var stats []*threatintel.CategoryUserStats
 	for rows.Next() {
 		var st threatintel.CategoryUserStats
-		var destination string
-		var matchedAt string
-		if err := rows.Scan(&st.UserEmail, &destination, &matchedAt); err != nil {
+		var lastMatch string
+		if err := rows.Scan(&st.UserEmail, &st.MatchCount, &lastMatch); err != nil {
 			return nil, err
 		}
 		st.Category = category
-		st.MatchCount = 1 // Will be updated below
-		st.Domains = []string{destination}
 		stats = append(stats, &st)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	// Get total match count and more domains for each user
-	for _, st := range stats {
-		// Get total count
-		row := s.db.QueryRowContext(ctx, `
-			SELECT COALESCE(match_count, 0) FROM user_threat_stats 
-			WHERE user_email = ? AND threat_type = ?
-		`, st.UserEmail, category)
-		row.Scan(&st.MatchCount)
+	// If no results from user_threat_stats, fallback to threat_matches table
+	if len(stats) == 0 {
+		fallbackRows, err := s.db.QueryContext(ctx, `
+			SELECT user_email, COUNT(*) as match_count, MAX(matched_at) as last_match
+			FROM threat_matches
+			WHERE threat_type = ?
+			GROUP BY user_email
+			ORDER BY last_match DESC
+			LIMIT ?
+		`, category, limit)
+		if err != nil {
+			return nil, err
+		}
+		defer fallbackRows.Close()
 
-		// Get top 5 domains
+		for fallbackRows.Next() {
+			var st threatintel.CategoryUserStats
+			var lastMatch string
+			if err := fallbackRows.Scan(&st.UserEmail, &st.MatchCount, &lastMatch); err != nil {
+				return nil, err
+			}
+			st.Category = category
+			stats = append(stats, &st)
+		}
+	}
+
+	// Get top 5 domains for each user
+	for _, st := range stats {
+		// First try user_threat_domains
 		domainRows, err := s.db.QueryContext(ctx, `
 			SELECT domain FROM user_threat_domains
 			WHERE user_email = ? AND threat_type = ?
@@ -208,7 +215,6 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 			continue
 		}
 
-		st.Domains = nil // Reset
 		for domainRows.Next() {
 			var domain string
 			if domainRows.Scan(&domain) == nil {
@@ -216,9 +222,124 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 			}
 		}
 		domainRows.Close()
+
+		// If no domains from user_threat_domains, get from threat_matches
+		if len(st.Domains) == 0 {
+			matchDomainRows, err := s.db.QueryContext(ctx, `
+				SELECT DISTINCT destination FROM threat_matches
+				WHERE user_email = ? AND threat_type = ?
+				ORDER BY matched_at DESC
+				LIMIT 5
+			`, st.UserEmail, category)
+			if err != nil {
+				continue
+			}
+
+			for matchDomainRows.Next() {
+				var domain string
+				if matchDomainRows.Scan(&domain) == nil {
+					st.Domains = append(st.Domains, domain)
+				}
+			}
+			matchDomainRows.Close()
+		}
 	}
 
 	return stats, nil
+}
+
+// GetUsersByCategory returns users for a category with pagination
+func (s *Storage) GetUsersByCategory(ctx context.Context, category string, page, pageSize int) ([]*threatintel.CategoryUserStats, int, error) {
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * pageSize
+
+	// Get total count
+	var total int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT user_email) FROM (
+			SELECT user_email FROM user_threat_stats WHERE threat_type = ?
+			UNION
+			SELECT user_email FROM threat_matches WHERE threat_type = ?
+		)
+	`, category, category).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get users with pagination - merge from both tables
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_email, SUM(match_count) as total_matches, MAX(last_match) as last_match
+		FROM (
+			SELECT user_email, match_count, last_match FROM user_threat_stats WHERE threat_type = ?
+			UNION ALL
+			SELECT user_email, 1 as match_count, matched_at as last_match FROM threat_matches 
+			WHERE threat_type = ? AND user_email NOT IN (SELECT user_email FROM user_threat_stats WHERE threat_type = ?)
+		)
+		GROUP BY user_email
+		ORDER BY last_match DESC
+		LIMIT ? OFFSET ?
+	`, category, category, category, pageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var stats []*threatintel.CategoryUserStats
+	for rows.Next() {
+		var st threatintel.CategoryUserStats
+		var lastMatch string
+		if err := rows.Scan(&st.UserEmail, &st.MatchCount, &lastMatch); err != nil {
+			return nil, 0, err
+		}
+		st.Category = category
+		stats = append(stats, &st)
+	}
+
+	// Get domains for each user
+	for _, st := range stats {
+		domainRows, err := s.db.QueryContext(ctx, `
+			SELECT domain FROM user_threat_domains
+			WHERE user_email = ? AND threat_type = ?
+			ORDER BY hit_count DESC
+			LIMIT 5
+		`, st.UserEmail, category)
+		if err != nil {
+			continue
+		}
+
+		for domainRows.Next() {
+			var domain string
+			if domainRows.Scan(&domain) == nil {
+				st.Domains = append(st.Domains, domain)
+			}
+		}
+		domainRows.Close()
+
+		// Fallback to threat_matches
+		if len(st.Domains) == 0 {
+			matchDomainRows, _ := s.db.QueryContext(ctx, `
+				SELECT DISTINCT destination FROM threat_matches
+				WHERE user_email = ? AND threat_type = ?
+				LIMIT 5
+			`, st.UserEmail, category)
+			if matchDomainRows != nil {
+				for matchDomainRows.Next() {
+					var domain string
+					if matchDomainRows.Scan(&domain) == nil {
+						st.Domains = append(st.Domains, domain)
+					}
+				}
+				matchDomainRows.Close()
+			}
+		}
+	}
+
+	return stats, total, nil
 }
 
 // GetRecentUsersByAllCategories returns recent users for all content categories

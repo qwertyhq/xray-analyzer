@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Globe } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Globe, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { ThreatMatch, FeedStatus, CategoryUserStats } from "@/lib/types";
 import Link from "next/link";
 import { MatchesTable } from "./matches-table";
@@ -13,9 +14,48 @@ interface TorTabProps {
   feeds: FeedStatus[];
 }
 
+interface PaginatedUsersResponse {
+  users: CategoryUserStats[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 export function TorTab({ topUsers, feeds }: TorTabProps) {
   const [matches, setMatches] = useState<ThreatMatch[]>([]);
-  const [loading, setLoading] = useState(true);
+  
+  // Paginated users state
+  const [paginatedUsers, setPaginatedUsers] = useState<CategoryUserStats[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const pageSize = 12;
+
+  // Fetch paginated users
+  const fetchUsers = useCallback(async (page: number) => {
+    setUsersLoading(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const headers: HeadersInit = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      const res = await fetch(`/api/threatintel/top-users?category=tor&page=${page}&page_size=${pageSize}`, { headers });
+      if (res.ok) {
+        const data: PaginatedUsersResponse = await res.json();
+        setPaginatedUsers(data.users || []);
+        setTotalUsers(data.total || 0);
+        setTotalPages(data.total_pages || 0);
+        setCurrentPage(data.page || 1);
+      }
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
 
   // Fetch tor matches on mount
   const fetchMatches = useCallback(async () => {
@@ -32,20 +72,22 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
       }
     } catch (err) {
       console.error("Failed to fetch tor matches:", err);
-    } finally {
-      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchMatches();
-  }, [fetchMatches]);
+    fetchUsers(1);
+  }, [fetchMatches, fetchUsers]);
 
   // Sum indicators from all Tor-related feeds
   const totalIndicators = feeds.reduce((sum, f) => sum + (f.indicators || 0), 0);
-  // Calculate total detections from topUsers (aggregated stats)
-  const totalDetections = topUsers?.reduce((sum, u) => sum + u.match_count, 0) || 0;
-  const uniqueUsers = topUsers?.length || 0;
+  // Calculate total detections from paginated data or topUsers
+  const displayUsers = paginatedUsers.length > 0 ? paginatedUsers : topUsers;
+  const totalDetections = totalUsers > 0 
+    ? displayUsers.reduce((sum, u) => sum + u.match_count, 0) 
+    : topUsers?.reduce((sum, u) => sum + u.match_count, 0) || 0;
+  const uniqueUsers = totalUsers > 0 ? totalUsers : (topUsers?.length || 0);
   
   return (
     <div className="space-y-6">
@@ -62,7 +104,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
             <div className="text-2xl font-bold text-violet-600">
               {totalDetections.toLocaleString()}
             </div>
-            <p className="text-xs text-muted-foreground">All time</p>
+            <p className="text-xs text-muted-foreground">On current page</p>
           </CardContent>
         </Card>
         <Card>
@@ -73,7 +115,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
             <div className="text-2xl font-bold">
               {uniqueUsers}
             </div>
-            <p className="text-xs text-muted-foreground">Using Tor</p>
+            <p className="text-xs text-muted-foreground">Using Tor (all time)</p>
           </CardContent>
         </Card>
         <Card>
@@ -89,29 +131,60 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
         </Card>
       </div>
 
-
-
-      {/* Top Tor Users */}
-      {topUsers && topUsers.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Globe className="h-5 w-5 text-violet-600" />
-              Top Tor Users
-            </CardTitle>
-            <CardDescription>Users with most Tor network activity</CardDescription>
-          </CardHeader>
-          <CardContent>
+      {/* Top Tor Users with Pagination */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-violet-600" />
+                Tor Users
+              </CardTitle>
+              <CardDescription>
+                {totalUsers > 0 ? `${totalUsers} users with Tor network activity` : 'Users with Tor network activity'}
+              </CardDescription>
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchUsers(currentPage - 1)}
+                  disabled={currentPage <= 1 || usersLoading}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {currentPage} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchUsers(currentPage + 1)}
+                  disabled={currentPage >= totalPages || usersLoading}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {usersLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : displayUsers.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {topUsers.map((user, idx) => (
+              {displayUsers.map((user, idx) => (
                 <div key={user.user_email} className="flex items-start gap-3 p-3 rounded-lg border">
                   <span className={`text-lg font-bold w-6 ${
-                    idx === 0 ? "text-yellow-500" :
-                    idx === 1 ? "text-gray-400" :
-                    idx === 2 ? "text-amber-600" :
+                    currentPage === 1 && idx === 0 ? "text-yellow-500" :
+                    currentPage === 1 && idx === 1 ? "text-gray-400" :
+                    currentPage === 1 && idx === 2 ? "text-amber-600" :
                     "text-muted-foreground"
                   }`}>
-                    {idx + 1}
+                    {(currentPage - 1) * pageSize + idx + 1}
                   </span>
                   <div className="flex-1 min-w-0">
                     <Link
@@ -137,9 +210,13 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No Tor users detected yet
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Tor Matches Table */}
       <MatchesTable 

@@ -9,8 +9,11 @@ import (
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
-// MaxThreatMatches is the maximum number of recent threat matches to keep for display
-const MaxThreatMatches = 20
+// MaxThreatMatchesPerCategory is the maximum number of recent threat matches to keep per category
+const MaxThreatMatchesPerCategory = 100
+
+// MaxThreatMatches is the total maximum for display queries (legacy, used in GetThreatMatches)
+const MaxThreatMatches = 500
 
 // SaveThreatMatch saves a threat match to the database, updates statistics, and cleans up old records
 func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.ThreatMatch) error {
@@ -100,15 +103,18 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 			unique_users = (SELECT COUNT(*) FROM threat_daily_users WHERE day = ? AND threat_type = ?)
 	`, dayKey, string(match.ThreatType), dayKey, string(match.ThreatType))
 
-	// Delete old recent records keeping only MaxThreatMatches most recent
+	// Delete old recent records keeping only MaxThreatMatchesPerCategory most recent PER CATEGORY
+	// This ensures each category maintains its own history without being displaced by other categories
 	_, err = s.db.ExecContext(ctx, `
 		DELETE FROM threat_matches 
 		WHERE id NOT IN (
-			SELECT id FROM threat_matches 
-			ORDER BY matched_at DESC 
-			LIMIT ?
+			SELECT id FROM (
+				SELECT id, ROW_NUMBER() OVER (PARTITION BY threat_type ORDER BY matched_at DESC) as rn
+				FROM threat_matches
+			) ranked
+			WHERE rn <= ?
 		)
-	`, MaxThreatMatches)
+	`, MaxThreatMatchesPerCategory)
 
 	return err
 }

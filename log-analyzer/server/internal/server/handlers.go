@@ -891,7 +891,7 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 
 	limit := 10
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 50 {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
 			limit = parsed
 		}
 	}
@@ -899,7 +899,44 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 	// Check if category-specific query
 	category := r.URL.Query().Get("category")
 
+	// Check for pagination
+	page := 0
+	pageSize := 0
+	if p := r.URL.Query().Get("page"); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
+			pageSize = parsed
+		}
+	}
+
 	if category != "" {
+		// If pagination requested, use paginated endpoint
+		if page > 0 {
+			if pageSize <= 0 {
+				pageSize = 20
+			}
+			result, total, err := s.threatIntel.GetUsersByCategory(ctx, category, page, pageSize)
+			if err != nil {
+				log.Printf("Error getting users by category: %v", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			s.resolveCategoryUserStats(ctx, result)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"users":       result,
+				"total":       total,
+				"page":        page,
+				"page_size":   pageSize,
+				"total_pages": (total + pageSize - 1) / pageSize,
+			})
+			return
+		}
+
 		result, err := s.threatIntel.GetRecentUsersByCategory(ctx, category, limit)
 		if err != nil {
 			log.Printf("Error getting recent users: %v", err)

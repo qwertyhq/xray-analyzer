@@ -31,6 +31,7 @@ type Storage interface {
 	GetTopUsersByAllCategories(ctx context.Context, limit int) (map[string][]*CategoryUserStats, error)
 	GetRecentUsersByCategory(ctx context.Context, category string, limit int) ([]*CategoryUserStats, error)
 	GetRecentUsersByAllCategories(ctx context.Context, limit int) (map[string][]*CategoryUserStats, error)
+	GetUsersByCategory(ctx context.Context, category string, page, pageSize int) ([]*CategoryUserStats, int, error)
 	// Geo stats
 	SaveGeoStats(ctx context.Context, countryCode, countryName, threatType, userEmail string) error
 	SaveUserLocation(ctx context.Context, userEmail, countryCode, countryName, city string, lat, lon float64) error
@@ -335,4 +336,12 @@ func (s *Service) GetRecentUsersByAllCategories(ctx context.Context, limit int) 
 		return nil, nil
 	}
 	return s.storage.GetRecentUsersByAllCategories(ctx, limit)
+}
+
+// GetUsersByCategory returns users for a category with pagination
+func (s *Service) GetUsersByCategory(ctx context.Context, category string, page, pageSize int) ([]*CategoryUserStats, int, error) {
+	if s.storage == nil {
+		return nil, 0, nil
+	}
+	return s.storage.GetUsersByCategory(ctx, category, page, pageSize)
 }
