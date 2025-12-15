@@ -90,10 +90,10 @@ export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
                       <p className="text-sm font-mono truncate mt-1 max-w-full">{match.destination}</p>
                       <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                         <Link
-                          href={`/users/${encodeURIComponent(match.user_email)}`}
+                          href={`/users/${encodeURIComponent(match.username || match.user_email || '')}`}
                           className="hover:underline truncate"
                         >
-                          {match.user_email}
+                          {match.username || match.user_email || 'Unknown'}
                         </Link>
                         <span>•</span>
                         <span className="whitespace-nowrap">{formatDistanceToNow(new Date(match.matched_at), { addSuffix: true })}</span>

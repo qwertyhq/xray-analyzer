@@ -24,7 +24,7 @@ interface RecentBlocksProps {
 
 // Generate unique key for a match
 function getMatchKey(match: BlacklistMatchInfo, index: number): string {
-  return `${match.timestamp}-${match.user_email}-${match.destination}-${match.node_id}-${index}`;
+  return `${match.timestamp}-${match.display_name || match.user_email || ''}-${match.destination}-${match.node_id}-${index}`;
 }
 
 export function RecentBlocks({ matches, loading, limit = 12 }: RecentBlocksProps) {
@@ -71,12 +71,12 @@ export function RecentBlocks({ matches, loading, limit = 12 }: RecentBlocksProps
           {sortedMatches.map((match, index) => (
             <TableRow key={getMatchKey(match, index)}>
               <TableCell className="font-medium max-w-[100px] sm:max-w-none">
-                {match.user_email ? (
+                {(match.display_name || match.user_email) ? (
                   <Link
-                    href={`/users/${encodeURIComponent(match.user_email)}`}
+                    href={`/users/${encodeURIComponent(match.user_email || match.display_name || '')}`}
                     className="text-primary hover:underline truncate block"
                   >
-                    {match.user_email}
+                    {match.display_name || match.user_email}
                   </Link>
                 ) : (
                   <span className="text-muted-foreground">Unknown</span>
