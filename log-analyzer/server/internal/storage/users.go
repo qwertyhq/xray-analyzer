@@ -134,20 +134,54 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 	return users, nil
 }
 
-// buildUserSearchIDs creates a list of possible user identifiers to search for
-// This handles cases where user might be stored with different formats (e.g., "1301" vs "us_1301")
-func buildUserSearchIDs(userEmail string) []string {
-	searchIDs := []string{userEmail}
+// extractNumericPart extracts numeric suffix from a string like "prefix_123" or "abc123"
+func extractNumericPart(s string) string {
+	// Try to find underscore and get part after it
+	if idx := strings.LastIndex(s, "_"); idx != -1 && idx < len(s)-1 {
+		part := s[idx+1:]
+		if _, err := strconv.Atoi(part); err == nil {
+			return part
+		}
+	}
+	// Try to extract trailing digits
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] < '0' || s[i] > '9' {
+			if i < len(s)-1 {
+				return s[i+1:]
+			}
+			break
+		}
+	}
+	// Check if entire string is numeric
+	if _, err := strconv.Atoi(s); err == nil {
+		return s
+	}
+	return ""
+}
 
-	// If userEmail starts with "us_", also search for just the numeric part
-	if strings.HasPrefix(userEmail, "us_") {
-		numericPart := strings.TrimPrefix(userEmail, "us_")
-		searchIDs = append(searchIDs, numericPart)
+// buildUserSearchIDs creates a list of possible user identifiers to search for
+// This handles cases where user might be stored with different formats (e.g., "1301" vs "us_1301" vs "remnawave_1301" vs "anything_1301")
+func buildUserSearchIDs(userEmail string) []string {
+	seen := make(map[string]bool)
+	var searchIDs []string
+
+	addID := func(id string) {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			searchIDs = append(searchIDs, id)
+		}
 	}
 
-	// If userEmail is purely numeric, also search with "us_" prefix
-	if _, err := strconv.Atoi(userEmail); err == nil {
-		searchIDs = append(searchIDs, "us_"+userEmail)
+	// Always include original
+	addID(userEmail)
+
+	// Extract numeric part and add variations
+	numericPart := extractNumericPart(userEmail)
+	if numericPart != "" {
+		addID(numericPart)
+		// Common prefixes used in the system
+		addID("us_" + numericPart)
+		addID("remnawave_" + numericPart)
 	}
 
 	return searchIDs

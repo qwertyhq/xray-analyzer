@@ -217,19 +217,40 @@ func (s *Storage) GetUserBlacklistDetails(ctx context.Context, userEmail string,
 	return matches, nil
 }
 
+// extractNumericPartBl extracts numeric suffix from a string like "prefix_123"
+func extractNumericPartBl(s string) string {
+	if idx := strings.LastIndex(s, "_"); idx != -1 && idx < len(s)-1 {
+		part := s[idx+1:]
+		if _, err := strconv.Atoi(part); err == nil {
+			return part
+		}
+	}
+	if _, err := strconv.Atoi(s); err == nil {
+		return s
+	}
+	return ""
+}
+
 // GetUserBlacklistMatches returns paginated blacklist matches for a user
 func (s *Storage) GetUserBlacklistMatches(ctx context.Context, userEmail string, since time.Time, page, pageSize int) (*models.PaginatedBlacklistMatchesResponse, error) {
 	sinceStr := since.UTC().Format(time.RFC3339)
 	offset := (page - 1) * pageSize
 
 	// Build list of possible identifiers to search for
-	searchIDs := []string{userEmail}
-	if strings.HasPrefix(userEmail, "us_") {
-		numericPart := strings.TrimPrefix(userEmail, "us_")
-		searchIDs = append(searchIDs, numericPart)
+	seen := make(map[string]bool)
+	var searchIDs []string
+	addID := func(id string) {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			searchIDs = append(searchIDs, id)
+		}
 	}
-	if _, err := strconv.Atoi(userEmail); err == nil {
-		searchIDs = append(searchIDs, "us_"+userEmail)
+	addID(userEmail)
+	numericPart := extractNumericPartBl(userEmail)
+	if numericPart != "" {
+		addID(numericPart)
+		addID("us_" + numericPart)
+		addID("remnawave_" + numericPart)
 	}
 
 	placeholders := make([]string, len(searchIDs))
