@@ -115,6 +115,7 @@ type UserNodeStats struct {
 type BlacklistMatchInfo struct {
 	NodeID      string    `json:"node_id"`
 	UserEmail   string    `json:"user_email,omitempty"`
+	DisplayName string    `json:"display_name,omitempty"`
 	SourceIP    string    `json:"source_ip"`
 	Destination string    `json:"destination"`
 	MatchedRule string    `json:"matched_rule"`

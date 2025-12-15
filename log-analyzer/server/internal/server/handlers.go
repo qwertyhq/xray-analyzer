@@ -67,6 +67,18 @@ func (s *Server) resolveThreatMatches(ctx context.Context, matches []*threatinte
 	}
 }
 
+// resolveBlacklistMatches resolves numeric IDs to usernames in BlacklistMatchInfo
+func (s *Server) resolveBlacklistMatches(ctx context.Context, matches []models.BlacklistMatchInfo) {
+	if s.remnawave == nil {
+		return
+	}
+	for i := range matches {
+		if matches[i].DisplayName == "" || matches[i].DisplayName == matches[i].UserEmail {
+			matches[i].DisplayName = s.remnawave.ResolveUsername(ctx, matches[i].UserEmail)
+		}
+	}
+}
+
 // handleStats returns overall statistics
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
