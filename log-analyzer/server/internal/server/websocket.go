@@ -294,6 +294,8 @@ func (s *Server) sendFullDashboardData(client *DashboardClient) {
 	// Blacklist analytics
 	since := time.Now().Add(-24 * time.Hour)
 	if analytics, err := s.storage.GetBlacklistAnalytics(ctx, since); err == nil {
+		// Resolve usernames for recent matches
+		s.resolveBlacklistMatches(ctx, analytics.RecentMatches)
 		client.mu.Lock()
 		client.Conn.WriteJSON(&DashboardUpdate{Type: "blacklist", Data: analytics})
 		client.mu.Unlock()
@@ -387,6 +389,8 @@ func (s *Server) broadcastToDashboards() {
 	// Blacklist analytics (with recent matches)
 	since := time.Now().Add(-24 * time.Hour)
 	if analytics, err := s.storage.GetBlacklistAnalytics(ctx, since); err == nil {
+		// Resolve usernames for recent matches
+		s.resolveBlacklistMatches(ctx, analytics.RecentMatches)
 		updates = append(updates, DashboardUpdate{Type: "blacklist", Data: analytics})
 	}
 

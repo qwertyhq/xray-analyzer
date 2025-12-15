@@ -106,6 +106,7 @@ export interface HWIDInfo {
 export interface BlacklistMatchInfo {
   node_id: string;
   user_email?: string;
+  display_name?: string;
   source_ip: string;
   destination: string;
   matched_rule: string;
@@ -210,7 +211,7 @@ export type ThreatSource =
 
 export interface ThreatMatch {
   id: number;
-  user_email: string;
+  user_email?: string; // fallback, typically username is used
   username?: string;
   node_id: string;
   source_ip: string;

@@ -85,8 +85,8 @@ export default function DashboardPage() {
           const topUsers = (data || [])
             .filter((u: { blacklist_hits: number }) => u.blacklist_hits > 0)
             .slice(0, 5)
-            .map((u: { user_email: string; display_name?: string; blacklist_hits: number }) => ({
-              user_email: u.display_name || u.user_email,
+            .map((u: { username: string; blacklist_hits: number }) => ({
+              user_email: u.username,
               blacklist_hits: u.blacklist_hits,
             }));
           setTopOffenders(topUsers);
@@ -128,7 +128,7 @@ export default function DashboardPage() {
         id: `bl-${match.timestamp}-${index}`,
         type: "blacklist_hit" as EventType,
         message: `Blocked: ${match.destination}`,
-        details: match.user_email,
+        details: match.display_name || match.user_email,
         timestamp: match.timestamp,
         severity: "warning",
       });
@@ -140,7 +140,7 @@ export default function DashboardPage() {
         id: `ti-${match.id}`,
         type: "threat_match" as EventType,
         message: `Threat: ${match.destination}`,
-        details: `${match.threat_type} - ${match.user_email}`,
+        details: `${match.threat_type} - ${match.username || match.user_email}`,
         timestamp: match.matched_at,
         severity: "error",
       });
