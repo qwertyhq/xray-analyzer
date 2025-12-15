@@ -33,6 +33,7 @@ export default function DashboardPage() {
   const [topOffenders, setTopOffenders] = useState<Array<{ user_email: string; blacklist_hits: number; risk_score?: number }>>([]);
   const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [dbAlerts, setDbAlerts] = useState<Alert[]>([]);
   const [remnawaveStatus, setRemnawaveStatus] = useState<"online" | "offline" | "unknown">("unknown");
   const [remnawaveEnabled, setRemnawaveEnabled] = useState<boolean>(true);
   const [remnawaveLastSync, setRemnawaveLastSync] = useState<string | undefined>();
@@ -108,6 +109,22 @@ export default function DashboardPage() {
           setRemnawaveEnabled(false);
           setRemnawaveStatus("offline");
         }
+
+        // Fetch real alerts from database
+        const alertsRes = await fetch("/api/alerts?limit=20", { headers });
+        if (alertsRes.ok) {
+          const alertsData = await alertsRes.json();
+          const mappedAlerts: Alert[] = (alertsData || []).map((a: { id: number; type: string; user_email: string; destination: string; count: number; message: string; created_at: string; sent: boolean }) => ({
+            id: `db-${a.id}`,
+            title: a.type === "blacklist_threshold" ? `🚨 Блоклист: ${a.user_email}` : `⚠️ ${a.type}`,
+            description: a.destination ? `${a.count}x → ${a.destination}` : `${a.count} нарушений`,
+            severity: a.count >= 10 ? "critical" as const : a.count >= 5 ? "high" as const : "medium" as const,
+            timestamp: a.created_at,
+            read: a.sent,
+            link: `/users/${encodeURIComponent(a.user_email)}`,
+          }));
+          setDbAlerts(mappedAlerts);
+        }
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
       }
@@ -164,15 +181,10 @@ export default function DashboardPage() {
     setFeedEvents(newEvents.slice(0, 50));
   }, [blacklist?.recent_matches, threatIntel.matches, anomalies]);
 
-  // Generate alerts from threat intel categories (tor, torrent, porn, gambling, malware)
+  // Generate alerts from threat intel categories + merge with database alerts
   useEffect(() => {
     const newAlerts: Alert[] = [];
     const topUsers = threatIntel.topUsers;
-    
-    if (!topUsers) {
-      setAlerts([]);
-      return;
-    }
 
     // Category labels and severity config
     const categoryConfig: Record<string, { label: string; severity: "critical" | "high" | "medium"; icon: string }> = {
@@ -183,36 +195,53 @@ export default function DashboardPage() {
       malware: { label: "🦠 Malware", severity: "critical", icon: "🦠" },
     };
 
-    // Generate alerts for recent users in each category
-    const categories = ["tor", "torrent", "porn", "gambling", "malware"] as const;
-    
-    categories.forEach(category => {
-      const users = topUsers[category] || [];
-      const config = categoryConfig[category];
+    // Generate alerts for recent users in each category (if topUsers available)
+    if (topUsers) {
+      const categories = ["tor", "torrent", "porn", "gambling", "malware"] as const;
       
-      // Take last 3 users from each category
-      users.slice(0, 3).forEach((user, idx) => {
-        const displayName = user.username || user.user_email;
-        const domains = user.domains?.slice(0, 2).join(", ") || "";
+      categories.forEach(category => {
+        const users = topUsers[category] || [];
+        const config = categoryConfig[category];
         
-        newAlerts.push({
-          id: `threat-${category}-${user.user_email}-${idx}`,
-          title: `${config.label}: ${displayName}`,
-          description: domains ? `→ ${domains}` : `${user.match_count} обращений`,
-          severity: config.severity,
-          timestamp: new Date().toISOString(), // Recent activity
-          read: false,
-          link: `/users/${encodeURIComponent(user.user_email)}`,
+        // Take last 3 users from each category
+        users.slice(0, 3).forEach((user, idx) => {
+          const displayName = user.username || user.user_email;
+          const domains = user.domains?.slice(0, 2).join(", ") || "";
+          
+          newAlerts.push({
+            id: `threat-${category}-${user.user_email}-${idx}`,
+            title: `${config.label}: ${displayName}`,
+            description: domains ? `→ ${domains}` : `${user.match_count} обращений`,
+            severity: config.severity,
+            timestamp: new Date().toISOString(), // Recent activity
+            read: false,
+            link: `/users/${encodeURIComponent(user.user_email)}`,
+          });
         });
       });
+    }
+
+    // Add database alerts
+    newAlerts.push(...dbAlerts);
+    
+    // Sort by severity (critical first, then high), then by timestamp
+    const severityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+    newAlerts.sort((a, b) => {
+      const sevDiff = severityOrder[a.severity] - severityOrder[b.severity];
+      if (sevDiff !== 0) return sevDiff;
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     });
     
-    // Sort by severity (critical first, then high)
-    const severityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-    newAlerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+    // Remove duplicates by id and limit
+    const seen = new Set<string>();
+    const uniqueAlerts = newAlerts.filter(a => {
+      if (seen.has(a.id)) return false;
+      seen.add(a.id);
+      return true;
+    });
     
-    setAlerts(newAlerts.slice(0, 15));
-  }, [threatIntel.topUsers]);
+    setAlerts(uniqueAlerts.slice(0, 20));
+  }, [threatIntel.topUsers, dbAlerts]);
 
   // Quick action handlers
   const handleSyncRemnawave = useCallback(async () => {
