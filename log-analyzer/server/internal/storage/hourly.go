@@ -24,8 +24,14 @@ func (s *Storage) UpdateHourlyStats(ctx context.Context, nodeID string, requests
 	return err
 }
 
-// GetHourlyStats gets hourly statistics for the last N hours
+// GetHourlyStats gets hourly statistics for the last N hours (cached)
 func (s *Storage) GetHourlyStats(ctx context.Context, hours int) ([]models.HourlyStats, error) {
+	cacheKey := fmt.Sprintf("hourly_stats_%d", hours)
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]models.HourlyStats), nil
+	}
+
 	since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour).Truncate(time.Hour)
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -51,6 +57,8 @@ func (s *Storage) GetHourlyStats(ctx context.Context, hours int) ([]models.Hourl
 		s.Hour = parseDateTime(hourStr)
 		stats = append(stats, s)
 	}
+
+	s.cache.Set(cacheKey, stats, CacheTTLShort)
 	return stats, nil
 }
 

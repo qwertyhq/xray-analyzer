@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/remnawave"
@@ -200,8 +201,14 @@ type RemnaStats struct {
 	LastSyncAt       time.Time `json:"last_sync_at"`
 }
 
-// GetRemnaStats returns aggregated Remnawave statistics
+// GetRemnaStats returns aggregated Remnawave statistics (cached)
 func (s *Storage) GetRemnaStats(ctx context.Context) (*RemnaStats, error) {
+	cacheKey := "remna_stats"
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.(*RemnaStats), nil
+	}
+
 	stats := &RemnaStats{}
 
 	// User stats
@@ -235,11 +242,21 @@ func (s *Storage) GetRemnaStats(ctx context.Context) (*RemnaStats, error) {
 		FROM remna_hwid_devices
 	`).Scan(&stats.TotalHwids, &stats.UsersWithHwid)
 
+	s.cache.Set(cacheKey, stats, CacheTTLMedium)
 	return stats, nil
 }
 
-// GetRemnaUsers returns Remnawave users with optional filters
+// GetRemnaUsers returns Remnawave users with optional filters (cached for common queries)
 func (s *Storage) GetRemnaUsers(ctx context.Context, limit int, status string, search string) ([]*RemnaUser, error) {
+	// Only cache default queries without search
+	cacheKey := ""
+	if search == "" {
+		cacheKey = fmt.Sprintf("remna_users_%d_%s", limit, status)
+		if cached, found := s.cache.Get(cacheKey); found {
+			return cached.([]*RemnaUser), nil
+		}
+	}
+
 	query := `
 		SELECT uuid, short_uuid, username, email, status,
 			traffic_limit_bytes, used_traffic_bytes, lifetime_traffic_bytes,
@@ -286,6 +303,11 @@ func (s *Storage) GetRemnaUsers(ctx context.Context, limit int, status string, s
 			continue
 		}
 		users = append(users, u)
+	}
+
+	// Cache result if it's a cacheable query
+	if cacheKey != "" {
+		s.cache.Set(cacheKey, users, CacheTTLShort)
 	}
 	return users, nil
 }
@@ -425,8 +447,14 @@ func (s *Storage) GetRemnaSharedHwids(ctx context.Context, limit int) ([]map[str
 	return results, nil
 }
 
-// GetRemnaNodes returns all nodes
+// GetRemnaNodes returns all nodes (cached)
 func (s *Storage) GetRemnaNodes(ctx context.Context) ([]*RemnaNode, error) {
+	cacheKey := "remna_nodes"
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]*RemnaNode), nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT uuid, name, address, port, is_connected, is_disabled, is_traffic_track,
 			traffic_total, traffic_used, users_online, country_code, synced_at
@@ -447,6 +475,8 @@ func (s *Storage) GetRemnaNodes(ctx context.Context) ([]*RemnaNode, error) {
 		}
 		nodes = append(nodes, n)
 	}
+
+	s.cache.Set(cacheKey, nodes, CacheTTLMedium)
 	return nodes, nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -310,8 +311,14 @@ func (s *Storage) GetUserAIProfile(ctx context.Context, userEmail string) (*User
 	return &p, nil
 }
 
-// GetAllUserAIProfiles returns all AI profiles with optional filtering
+// GetAllUserAIProfiles returns all AI profiles with optional filtering (cached)
 func (s *Storage) GetAllUserAIProfiles(ctx context.Context, limit int, minRiskScore int) ([]UserAIProfile, error) {
+	cacheKey := fmt.Sprintf("ai_profiles_%d_%d", limit, minRiskScore)
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]UserAIProfile), nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT p.user_email, COALESCE(r.username, ''), p.unique_ips, p.unique_hwids, p.unique_fingerprints, p.unique_countries, p.unique_nodes,
 			p.total_requests, p.total_sessions, p.avg_session_duration_sec,
@@ -392,11 +399,19 @@ func (s *Storage) GetAllUserAIProfiles(ctx context.Context, limit int, minRiskSc
 
 		result = append(result, p)
 	}
+
+	s.cache.Set(cacheKey, result, CacheTTLMedium)
 	return result, nil
 }
 
-// GetCorrelationStats returns overview statistics about correlations
+// GetCorrelationStats returns overview statistics about correlations (cached)
 func (s *Storage) GetCorrelationStats(ctx context.Context) (*CorrelationStats, error) {
+	cacheKey := "correlation_stats"
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.(*CorrelationStats), nil
+	}
+
 	var stats CorrelationStats
 
 	// Optimized query using CTE for shared IPs (avoids repeated subqueries)
@@ -432,6 +447,7 @@ func (s *Storage) GetCorrelationStats(ctx context.Context) (*CorrelationStats, e
 	s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT cluster_id) FROM user_clusters`).Scan(&stats.TotalClusters)
 	s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT user_email) FROM user_clusters`).Scan(&stats.UsersInClusters)
 
+	s.cache.Set(cacheKey, &stats, CacheTTLMedium)
 	return &stats, nil
 }
 
@@ -461,8 +477,13 @@ func (s *Storage) GetTopSharedIPs(ctx context.Context, limit int) ([]SharedIPInf
 	return result, nil
 }
 
-// GetTopSharedHWIDs returns HWIDs shared by most users
+// GetTopSharedHWIDs returns HWIDs shared by most users (cached)
 func (s *Storage) GetTopSharedHWIDs(ctx context.Context, limit int) ([]SharedHWIDInfo, error) {
+	cacheKey := fmt.Sprintf("shared_hwids_%d", limit)
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]SharedHWIDInfo), nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT hwid, platform, COUNT(DISTINCT user_email) as user_count, MAX(last_seen) as last_seen, SUM(request_count) as total_requests
 		FROM hwid_user_map
@@ -488,6 +509,8 @@ func (s *Storage) GetTopSharedHWIDs(ctx context.Context, limit int) ([]SharedHWI
 		}
 		result = append(result, info)
 	}
+
+	s.cache.Set(cacheKey, result, CacheTTLMedium)
 	return result, nil
 }
 

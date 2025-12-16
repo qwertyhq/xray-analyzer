@@ -2,13 +2,20 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
-// GetThreatStats returns threat intelligence statistics from aggregated tables
+// GetThreatStats returns threat intelligence statistics from aggregated tables (cached)
 func (s *Storage) GetThreatStats(ctx context.Context) (*threatintel.ThreatStats, error) {
+	cacheKey := "threat_stats"
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.(*threatintel.ThreatStats), nil
+	}
+
 	stats := &threatintel.ThreatStats{
 		IndicatorsByType:   make(map[string]int64),
 		IndicatorsBySource: make(map[string]int64),
@@ -71,11 +78,18 @@ func (s *Storage) GetThreatStats(ctx context.Context) (*threatintel.ThreatStats,
 	}
 
 	stats.LastUpdated = time.Now()
+	s.cache.Set(cacheKey, stats, CacheTTLMedium)
 	return stats, nil
 }
 
-// GetTopUsersByCategory returns top users by content category violations with their visited domains
+// GetTopUsersByCategory returns top users by content category violations with their visited domains (cached)
 func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, limit int) ([]*threatintel.CategoryUserStats, error) {
+	cacheKey := fmt.Sprintf("top_users_category_%s_%d", category, limit)
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]*threatintel.CategoryUserStats), nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT user_email, threat_type, match_count
 		FROM user_threat_stats

@@ -1,17 +1,29 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/xray-log-analyzer/server/internal/cache"
 	_ "modernc.org/sqlite"
+)
+
+// Cache TTL constants
+const (
+	CacheTTLShort  = 10 * time.Second // For frequently updated data
+	CacheTTLMedium = 30 * time.Second // For moderately updated data
+	CacheTTLLong   = 5 * time.Minute  // For rarely updated data
 )
 
 // Storage handles database operations
 type Storage struct {
-	db *sql.DB
+	db    *sql.DB
+	cache *cache.Cache
 }
 
 // New creates a new Storage
@@ -46,12 +58,49 @@ func New(dbPath string) (*Storage, error) {
 	db.Exec("PRAGMA cache_size=10000")
 	db.Exec("PRAGMA temp_store=MEMORY")
 
-	storage := &Storage{db: db}
+	storage := &Storage{
+		db:    db,
+		cache: cache.New(),
+	}
 	if err := storage.migrate(); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
 	return storage, nil
+}
+
+// InvalidateCache clears cache entries with the given prefix
+func (s *Storage) InvalidateCache(prefix string) {
+	s.cache.DeletePrefix(prefix)
+}
+
+// CacheStats returns cache statistics
+func (s *Storage) CacheStats() map[string]int {
+	return s.cache.Stats()
+}
+
+// WarmCache pre-populates cache with commonly accessed data
+// Call this after data sync to ensure fast responses
+func (s *Storage) WarmCache(ctx context.Context) {
+	log.Println("[cache] warming cache...")
+	start := time.Now()
+
+	// Pre-load global stats
+	s.GetGlobalStats(ctx)
+
+	// Pre-load node stats
+	s.GetNodeStats(ctx)
+
+	// Pre-load remna stats
+	s.GetRemnaStats(ctx)
+
+	// Pre-load threat stats
+	s.GetThreatStats(ctx)
+
+	// Pre-load all users (top 100)
+	s.GetAllUsers(ctx, 100)
+
+	log.Printf("[cache] cache warmed in %v, stats: %v", time.Since(start), s.cache.Stats())
 }
 
 // Close closes the database connection
