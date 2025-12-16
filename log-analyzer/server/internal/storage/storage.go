@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/cache"
@@ -79,26 +80,37 @@ func (s *Storage) CacheStats() map[string]int {
 	return s.cache.Stats()
 }
 
-// WarmCache pre-populates cache with commonly accessed data
+// WarmCache pre-populates cache with commonly accessed data (parallel)
 // Call this after data sync to ensure fast responses
 func (s *Storage) WarmCache(ctx context.Context) {
-	log.Println("[cache] warming cache...")
+	log.Println("[cache] warming cache in parallel...")
 	start := time.Now()
 
-	// Pre-load global stats
-	s.GetGlobalStats(ctx)
+	var wg sync.WaitGroup
 
-	// Pre-load node stats
-	s.GetNodeStats(ctx)
+	// Run all cache warming in parallel
+	warmFuncs := []func(){
+		func() { s.GetGlobalStats(ctx) },
+		func() { s.GetNodeStats(ctx) },
+		func() { s.GetRemnaStats(ctx) },
+		func() { s.GetThreatStats(ctx) },
+		func() { s.GetAllUsers(ctx, 100) },
+		func() { s.GetCorrelationStats(ctx) },
+		func() { s.GetHourlyStats(ctx, 24) },
+		func() { s.GetRemnaUsers(ctx, 100, "", "") },
+		func() { s.GetRemnaNodes(ctx) },
+		func() { s.GetTopSharedHWIDs(ctx, 50) },
+		func() { s.GetTopSharedIPs(ctx, 50) },
+	}
 
-	// Pre-load remna stats
-	s.GetRemnaStats(ctx)
-
-	// Pre-load threat stats
-	s.GetThreatStats(ctx)
-
-	// Pre-load all users (top 100)
-	s.GetAllUsers(ctx, 100)
+	wg.Add(len(warmFuncs))
+	for _, fn := range warmFuncs {
+		go func(f func()) {
+			defer wg.Done()
+			f()
+		}(fn)
+	}
+	wg.Wait()
 
 	log.Printf("[cache] cache warmed in %v, stats: %v", time.Since(start), s.cache.Stats())
 }
@@ -660,6 +672,15 @@ func (s *Storage) migrate() error {
 	if err != nil {
 		return err
 	}
+
+	// Additional performance indexes for heavy queries
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_hourly_stats_hour ON hourly_stats(hour DESC)")
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_blacklist_matches_time ON blacklist_matches(timestamp DESC)")
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_user_stats_requests ON user_stats(total_requests DESC)")
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_user_stats_blacklist ON user_stats(blacklist_hits DESC)")
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_ip_user_map_count ON ip_user_map(request_count DESC)")
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_hwid_user_map_count ON hwid_user_map(request_count DESC)")
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_remna_users_traffic ON remna_users(used_traffic_bytes DESC)")
 
 	// Migration: add last_ip column if not exists
 	s.db.Exec("ALTER TABLE user_stats ADD COLUMN last_ip TEXT")

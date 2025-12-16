@@ -100,7 +100,9 @@ export default function CorrelationPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [minRiskScore, setMinRiskScore] = useState(0);
+  const [statsLoaded, setStatsLoaded] = useState(false);
 
+  // Progressive loading: stats first, then heavy data
   const fetchData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
@@ -112,8 +114,17 @@ export default function CorrelationPage() {
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const [statsRes, profilesRes, sharedIPsRes, sharedHWIDsRes, ipAbuseRes, hwidAbuseRes] = await Promise.all([
-        fetch("/api/correlation/stats", { headers }),
+      // Phase 1: Load stats first (fast, shows immediately)
+      const statsRes = await fetch("/api/correlation/stats", { headers });
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        setStats(statsData);
+        setStatsLoaded(true);
+        setLoading(false); // Show page immediately with stats
+      }
+
+      // Phase 2: Load heavy data in parallel (background)
+      const [profilesRes, sharedIPsRes, sharedHWIDsRes, ipAbuseRes, hwidAbuseRes] = await Promise.all([
         fetch(`/api/correlation/profiles?limit=100&min_risk=${minRiskScore}`, { headers }),
         fetch("/api/correlation/shared-ips?limit=50", { headers }),
         fetch("/api/correlation/shared-hwids?limit=50", { headers }),
@@ -121,8 +132,7 @@ export default function CorrelationPage() {
         fetch("/api/remnawave/abuse", { headers })
       ]);
 
-      const [statsData, profilesData, sharedIPsData, sharedHWIDsData, ipAbuseData, hwidAbuseData] = await Promise.all([
-        statsRes.ok ? statsRes.json() : null,
+      const [profilesData, sharedIPsData, sharedHWIDsData, ipAbuseData, hwidAbuseData] = await Promise.all([
         profilesRes.ok ? profilesRes.json() : { profiles: [] },
         sharedIPsRes.ok ? sharedIPsRes.json() : { shared_ips: [] },
         sharedHWIDsRes.ok ? sharedHWIDsRes.json() : { shared_hwids: [] },
@@ -130,7 +140,6 @@ export default function CorrelationPage() {
         hwidAbuseRes.ok ? hwidAbuseRes.json() : { enabled: false, users: [] }
       ]);
 
-      setStats(statsData);
       setProfiles(profilesData.profiles || []);
       setSharedIPs(sharedIPsData.shared_ips || []);
       setSharedHWIDs(sharedHWIDsData.shared_hwids || []);
