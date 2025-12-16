@@ -39,27 +39,8 @@ func extractNumericPartDest(s string) string {
 	return ""
 }
 
-// buildDestinationSearchIDs creates a list of possible user identifiers
-func buildDestinationSearchIDs(userEmail string) (string, []interface{}) {
-	seen := make(map[string]bool)
-	var searchIDs []string
-
-	addID := func(id string) {
-		if id != "" && !seen[id] {
-			seen[id] = true
-			searchIDs = append(searchIDs, id)
-		}
-	}
-
-	addID(userEmail)
-
-	numericPart := extractNumericPartDest(userEmail)
-	if numericPart != "" {
-		addID(numericPart)
-		addID("us_" + numericPart)
-		addID("remnawave_" + numericPart)
-	}
-
+// buildSearchQuery creates placeholders and args for IN clause
+func buildSearchQuery(searchIDs []string) (string, []interface{}) {
 	placeholders := make([]string, len(searchIDs))
 	args := make([]interface{}, len(searchIDs))
 	for i, id := range searchIDs {
@@ -74,7 +55,9 @@ func (s *Storage) GetUserDestinations(ctx context.Context, userEmail string, sin
 	sinceStr := since.UTC().Format(time.RFC3339)
 	offset := (page - 1) * pageSize
 
-	placeholders, searchArgs := buildDestinationSearchIDs(userEmail)
+	// Use BuildFullSearchIDs to include Remnawave numeric ID
+	searchIDs := s.BuildFullSearchIDs(ctx, userEmail)
+	placeholders, searchArgs := buildSearchQuery(searchIDs)
 
 	// Get total count
 	var total int

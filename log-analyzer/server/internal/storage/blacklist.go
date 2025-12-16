@@ -236,22 +236,8 @@ func (s *Storage) GetUserBlacklistMatches(ctx context.Context, userEmail string,
 	sinceStr := since.UTC().Format(time.RFC3339)
 	offset := (page - 1) * pageSize
 
-	// Build list of possible identifiers to search for
-	seen := make(map[string]bool)
-	var searchIDs []string
-	addID := func(id string) {
-		if id != "" && !seen[id] {
-			seen[id] = true
-			searchIDs = append(searchIDs, id)
-		}
-	}
-	addID(userEmail)
-	numericPart := extractNumericPartBl(userEmail)
-	if numericPart != "" {
-		addID(numericPart)
-		addID("us_" + numericPart)
-		addID("remnawave_" + numericPart)
-	}
+	// Use BuildFullSearchIDs to include Remnawave numeric ID
+	searchIDs := s.BuildFullSearchIDs(ctx, userEmail)
 
 	placeholders := make([]string, len(searchIDs))
 	searchArgs := make([]interface{}, len(searchIDs))

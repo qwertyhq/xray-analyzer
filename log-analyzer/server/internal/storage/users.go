@@ -200,6 +200,57 @@ func buildUserSearchQuery(searchIDs []string) (string, []interface{}) {
 	return strings.Join(placeholders, ","), args
 }
 
+// GetRemnaIDForUser finds the Remnawave numeric ID for a user by username, us_id, or existing numeric ID
+// This is needed because Xray logs contain Remnawave numeric ID in the email field
+func (s *Storage) GetRemnaIDForUser(ctx context.Context, userEmail string) (int64, error) {
+	var remnaID int64
+
+	// Check if userEmail is already a numeric ID
+	if numericID, err := strconv.ParseInt(userEmail, 10, 64); err == nil {
+		// Verify it exists in remna_users
+		row := s.db.QueryRowContext(ctx, `SELECT id FROM remna_users WHERE id = ?`, numericID)
+		if err := row.Scan(&remnaID); err == nil {
+			return remnaID, nil
+		}
+	}
+
+	// Try to find by username
+	row := s.db.QueryRowContext(ctx, `SELECT COALESCE(id, 0) FROM remna_users WHERE username = ?`, userEmail)
+	if err := row.Scan(&remnaID); err == nil && remnaID > 0 {
+		return remnaID, nil
+	}
+
+	// Try to find by us_id
+	row = s.db.QueryRowContext(ctx, `SELECT COALESCE(id, 0) FROM remna_users WHERE us_id = ?`, userEmail)
+	if err := row.Scan(&remnaID); err == nil && remnaID > 0 {
+		return remnaID, nil
+	}
+
+	return 0, nil // Not found, but not an error
+}
+
+// BuildFullSearchIDs creates a comprehensive list of user identifiers including Remnawave ID
+func (s *Storage) BuildFullSearchIDs(ctx context.Context, userEmail string) []string {
+	searchIDs := buildUserSearchIDs(userEmail)
+
+	// Add Remnawave numeric ID if we can find it
+	if remnaID, err := s.GetRemnaIDForUser(ctx, userEmail); err == nil && remnaID > 0 {
+		remnaIDStr := strconv.FormatInt(remnaID, 10)
+		found := false
+		for _, id := range searchIDs {
+			if id == remnaIDStr {
+				found = true
+				break
+			}
+		}
+		if !found {
+			searchIDs = append(searchIDs, remnaIDStr)
+		}
+	}
+
+	return searchIDs
+}
+
 // GetUserDetails gets detailed stats for a specific user
 func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models.UserDetails, error) {
 	user := &models.UserDetails{
@@ -602,7 +653,7 @@ func (s *Storage) RecordUserIP(ctx context.Context, userEmail, ipAddress, nodeID
 
 // GetUserIPHistory gets the IP history for a user (last 20 IPs)
 func (s *Storage) GetUserIPHistory(ctx context.Context, userEmail string) ([]*UserIPHistory, error) {
-	searchIDs := buildUserSearchIDs(userEmail)
+	searchIDs := s.BuildFullSearchIDs(ctx, userEmail)
 	placeholders, args := buildUserSearchQuery(searchIDs)
 
 	query := fmt.Sprintf(`

@@ -13,7 +13,8 @@ import (
 // Parser parses Xray access log lines
 type Parser struct {
 	// Regex to parse log lines
-	// Format: 2025/12/06 00:00:14.136976 from 95.25.117.121:10976 accepted udp:142.250.130.106:443 [VTR-PL >> DIRECT] email: us_1319
+	// Format: 2025/12/06 00:00:14.136976 from 95.25.117.121:10976 accepted udp:142.250.130.106:443 [VTR-PL >> DIRECT] email: 547
+	// Note: "email:" field contains Remnawave numeric user ID, not username
 	lineRegex *regexp.Regexp
 }
 
