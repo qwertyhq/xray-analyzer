@@ -201,8 +201,8 @@ export function SubscriptionAbuseAnalytics({
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"score" | "ips" | "hwids" | "requests">("score");
   const [riskFilter, setRiskFilter] = useState<string>("all");
+  const [hwidFilter, setHwidFilter] = useState<"all" | "exceeded" | "at_limit" | "with_hwid">("all");
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState("overview");
   
   // Track if data is provided externally
   const isExternalData = ipAbuseData !== undefined || hwidAbuseData !== undefined;
@@ -508,12 +508,28 @@ export function SubscriptionAbuseAnalytics({
       );
     }
 
-    // Risk filter
+    // Risk filter - only filter if not "all"
     if (riskFilter !== "all") {
       result = result.filter(a => getRiskLevel(a.abuse_score) === riskFilter);
     }
 
-    // Sort
+    // HWID filter - additional filter, not exclusive
+    if (hwidFilter !== "all") {
+      result = result.filter(a => {
+        switch (hwidFilter) {
+          case "exceeded":
+            return a.excess_devices && a.excess_devices > 0;
+          case "at_limit":
+            return a.device_limit && a.unique_hwids >= a.device_limit && !(a.excess_devices && a.excess_devices > 0);
+          case "with_hwid":
+            return a.unique_hwids > 0;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Sort - maintains all items, just orders them
     result.sort((a, b) => {
       switch (sortBy) {
         case "ips": return b.unique_ips - a.unique_ips;
@@ -524,7 +540,7 @@ export function SubscriptionAbuseAnalytics({
     });
 
     return result;
-  }, [combinedAbusers, search, riskFilter, sortBy]);
+  }, [combinedAbusers, search, riskFilter, hwidFilter, sortBy]);
 
   const toggleExpanded = (email: string) => {
     setExpandedUsers(prev => {
@@ -771,6 +787,17 @@ export function SubscriptionAbuseAnalytics({
                 <SelectItem value="high">Высокий</SelectItem>
                 <SelectItem value="medium">Средний</SelectItem>
                 <SelectItem value="low">Низкий</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={hwidFilter} onValueChange={(v) => setHwidFilter(v as typeof hwidFilter)}>
+              <SelectTrigger className="w-[145px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все HWID</SelectItem>
+                <SelectItem value="exceeded">Превышен лимит</SelectItem>
+                <SelectItem value="at_limit">На лимите</SelectItem>
+                <SelectItem value="with_hwid">С HWID</SelectItem>
               </SelectContent>
             </Select>
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
