@@ -308,7 +308,22 @@
     right: 0;
     bottom: 0;
     width: 100%;
-    height: 100%;
+    height: 100dvh;
     max-height: 100dvh;
+  }
+  
+  /* Ensure proper keyboard behavior */
+  html, body {
+    height: 100dvh;
+    overflow: hidden;
+  }
+}
+
+/* Chat keyboard support for iOS */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 639px) {
+    .fixed.inset-0 {
+      height: -webkit-fill-available;
+    }
   }
 }

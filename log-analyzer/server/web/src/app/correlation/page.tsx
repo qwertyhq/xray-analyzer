@@ -284,29 +284,35 @@ export default function CorrelationPage() {
 
       {/* Main Content Tabs */}
       <Tabs defaultValue="abuse" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="abuse" className="flex items-center gap-2">
-            <Shield className="h-4 w-4" />
-            Abuse Detection
-            {(ipAbuseUsers.length > 0 || hwidAbuseUsers.length > 0) && (
-              <Badge variant="destructive" className="ml-1">
-                {ipAbuseUsers.length + hwidAbuseUsers.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="profiles">
-            <Users className="mr-2 h-4 w-4" />
-            AI Profiles
-          </TabsTrigger>
-          <TabsTrigger value="shared-ips">
-            <Network className="mr-2 h-4 w-4" />
-            Shared IPs
-          </TabsTrigger>
-          <TabsTrigger value="shared-hwids">
-            <Smartphone className="mr-2 h-4 w-4" />
-            Shared HWIDs
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <TabsList className="inline-flex w-auto min-w-full sm:w-auto">
+            <TabsTrigger value="abuse" className="flex items-center gap-2 whitespace-nowrap">
+              <Shield className="h-4 w-4" />
+              <span className="hidden sm:inline">Abuse Detection</span>
+              <span className="sm:hidden">Abuse</span>
+              {(ipAbuseUsers.length > 0 || hwidAbuseUsers.length > 0) && (
+                <Badge variant="destructive" className="ml-1">
+                  {ipAbuseUsers.length + hwidAbuseUsers.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="profiles" className="whitespace-nowrap">
+              <Users className="mr-2 h-4 w-4" />
+              <span className="hidden sm:inline">AI Profiles</span>
+              <span className="sm:hidden">Profiles</span>
+            </TabsTrigger>
+            <TabsTrigger value="shared-ips" className="whitespace-nowrap">
+              <Network className="mr-2 h-4 w-4" />
+              <span className="hidden sm:inline">Shared IPs</span>
+              <span className="sm:hidden">IPs</span>
+            </TabsTrigger>
+            <TabsTrigger value="shared-hwids" className="whitespace-nowrap">
+              <Smartphone className="mr-2 h-4 w-4" />
+              <span className="hidden sm:inline">Shared HWIDs</span>
+              <span className="sm:hidden">HWIDs</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="abuse" className="space-y-4">
           <SubscriptionAbuseAnalytics

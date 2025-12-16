@@ -501,12 +501,15 @@ export function FloatingAIChat() {
         "fixed z-50 bg-background border shadow-2xl flex flex-col overflow-hidden",
         effectiveFullscreen
           ? "inset-0 rounded-none sm:inset-4 sm:rounded-lg"
-          : "bottom-6 right-6 rounded-lg"
+          : "bottom-6 right-6 rounded-lg",
+        isMobile && "h-[100dvh]"
       )}
       style={
-        effectiveFullscreen
+        effectiveFullscreen && !isMobile
           ? undefined
-          : { width: size.width, height: size.height }
+          : isMobile
+            ? { maxHeight: '100dvh' }
+            : { width: size.width, height: size.height }
       }
     >
       {/* Resize handle - hidden on mobile */}
@@ -746,13 +749,24 @@ export function FloatingAIChat() {
           </div>
 
           {/* Input */}
-          <div className="p-3 border-t safe-area-inset-bottom">
+          <div className="p-3 border-t safe-area-inset-bottom bg-background sticky bottom-0">
             <div className="flex gap-2">
               <Textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onFocus={() => {
+                  // Scroll to bottom when focused on mobile
+                  if (isMobile) {
+                    setTimeout(() => {
+                      scrollRef.current?.scrollTo({
+                        top: scrollRef.current.scrollHeight,
+                        behavior: 'smooth'
+                      });
+                    }, 300);
+                  }
+                }}
                 placeholder="Спросите что-нибудь..."
                 className="min-h-[44px] max-h-[120px] resize-none text-base sm:text-sm"
                 disabled={loading || streaming}

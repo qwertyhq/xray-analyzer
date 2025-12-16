@@ -778,72 +778,78 @@ export function SubscriptionAbuseAnalytics({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Search and Filters */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Поиск по email или username..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-8"
-              />
-            </div>
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Поиск по email или username..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+          
+          {/* Compact Filters Grid */}
+          <div className="flex flex-wrap gap-2">
             <Select value={period} onValueChange={(v) => setPeriod(v as TimeRange)}>
-              <SelectTrigger className="w-[110px]">
+              <SelectTrigger className="h-8 w-auto min-w-[70px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1h">1 час</SelectItem>
-                <SelectItem value="6h">6 часов</SelectItem>
-                <SelectItem value="24h">24 часа</SelectItem>
-                <SelectItem value="7d">7 дней</SelectItem>
-                <SelectItem value="30d">30 дней</SelectItem>
+                <SelectItem value="1h">1ч</SelectItem>
+                <SelectItem value="6h">6ч</SelectItem>
+                <SelectItem value="24h">24ч</SelectItem>
+                <SelectItem value="7d">7д</SelectItem>
+                <SelectItem value="30d">30д</SelectItem>
               </SelectContent>
             </Select>
+            
             <Select value={String(minIPs)} onValueChange={(v) => setMinIPs(Number(v))}>
-              <SelectTrigger className="w-[95px]">
+              <SelectTrigger className="h-8 w-auto min-w-[65px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="2">≥ 2 IP</SelectItem>
-                <SelectItem value="3">≥ 3 IP</SelectItem>
-                <SelectItem value="5">≥ 5 IP</SelectItem>
-                <SelectItem value="10">≥ 10 IP</SelectItem>
+                <SelectItem value="2">≥2 IP</SelectItem>
+                <SelectItem value="3">≥3 IP</SelectItem>
+                <SelectItem value="5">≥5 IP</SelectItem>
+                <SelectItem value="10">≥10 IP</SelectItem>
               </SelectContent>
             </Select>
+            
             <Select value={riskFilter} onValueChange={setRiskFilter}>
-              <SelectTrigger className="w-[130px]">
+              <SelectTrigger className="h-8 w-auto min-w-[80px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Все риски</SelectItem>
-                <SelectItem value="critical">Критический</SelectItem>
-                <SelectItem value="high">Высокий</SelectItem>
-                <SelectItem value="medium">Средний</SelectItem>
-                <SelectItem value="low">Низкий</SelectItem>
+                <SelectItem value="all">Все</SelectItem>
+                <SelectItem value="critical">🔴 Крит</SelectItem>
+                <SelectItem value="high">🟠 Выс</SelectItem>
+                <SelectItem value="medium">🟡 Сред</SelectItem>
+                <SelectItem value="low">🟢 Низ</SelectItem>
               </SelectContent>
             </Select>
+            
             <Select value={hwidFilter} onValueChange={(v) => setHwidFilter(v as typeof hwidFilter)}>
-              <SelectTrigger className="w-[145px]">
+              <SelectTrigger className="h-8 w-auto min-w-[85px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Все HWID</SelectItem>
-                <SelectItem value="exceeded">Превышен лимит</SelectItem>
+                <SelectItem value="all">HWID: все</SelectItem>
+                <SelectItem value="exceeded">Превышен</SelectItem>
                 <SelectItem value="at_limit">На лимите</SelectItem>
                 <SelectItem value="with_hwid">С HWID</SelectItem>
               </SelectContent>
             </Select>
+            
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
-              <SelectTrigger className="w-[130px]">
+              <SelectTrigger className="h-8 w-auto min-w-[75px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="score">По риску</SelectItem>
-                <SelectItem value="ips">По кол-ву IP</SelectItem>
-                <SelectItem value="hwids">По кол-ву HWID</SelectItem>
-                <SelectItem value="requests">По запросам</SelectItem>
+                <SelectItem value="score">⚡ Риск</SelectItem>
+                <SelectItem value="ips">🌐 IP</SelectItem>
+                <SelectItem value="hwids">📱 HWID</SelectItem>
+                <SelectItem value="requests">📊 Запр</SelectItem>
               </SelectContent>
             </Select>
           </div>
