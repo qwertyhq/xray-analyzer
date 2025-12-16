@@ -471,22 +471,34 @@ func (s *SyncService) GetUserByIDOrUsername(idOrUsername string) *User {
 // If the input is a numeric ID, it looks up the username via Remnawave API
 // If the input already looks like a username, returns it as-is
 func (s *SyncService) ResolveUsername(ctx context.Context, idOrUsername string) string {
-	if s.idCache == nil {
-		return idOrUsername
+	// Try local cache first (usersByID)
+	if user := s.GetUserByIDOrUsername(idOrUsername); user != nil {
+		return user.Username
 	}
-	return s.idCache.GetUsername(ctx, idOrUsername)
+
+	// Fallback to idCache (makes API calls if needed)
+	if s.idCache != nil {
+		return s.idCache.GetUsername(ctx, idOrUsername)
+	}
+	return idOrUsername
 }
 
 // ResolveUsernames resolves multiple IDs/usernames at once
 func (s *SyncService) ResolveUsernames(ctx context.Context, ids []string) map[string]string {
-	if s.idCache == nil {
-		result := make(map[string]string)
-		for _, id := range ids {
+	result := make(map[string]string)
+
+	for _, id := range ids {
+		// Try local cache first
+		if user := s.GetUserByIDOrUsername(id); user != nil {
+			result[id] = user.Username
+		} else if s.idCache != nil {
+			result[id] = s.idCache.GetUsername(ctx, id)
+		} else {
 			result[id] = id
 		}
-		return result
 	}
-	return s.idCache.ResolveMultiple(ctx, ids)
+
+	return result
 }
 
 // GetIDCacheStats returns ID cache statistics
