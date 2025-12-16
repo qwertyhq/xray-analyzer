@@ -309,6 +309,7 @@ const (
 // UserRiskProfile represents the risk profile of a user
 type UserRiskProfile struct {
 	UserEmail       string         `json:"user_email"`
+	Username        string         `json:"username,omitempty"` // Display name from Remnawave
 	RiskLevel       RiskLevel      `json:"risk_level"`
 	RiskScore       int            `json:"risk_score"` // 0-100
 	TotalMatches    int            `json:"total_matches"`

@@ -109,7 +109,7 @@ function UserRiskCard({ profile, expanded, onToggle }: {
               <span className={config.color}>{config.icon}</span>
             </div>
             <div>
-              <CardTitle className="text-sm font-medium">{profile.user_email}</CardTitle>
+              <CardTitle className="text-sm font-medium">{profile.username || profile.user_email}</CardTitle>
               <div className="flex items-center gap-2 mt-1">
                 <Badge variant="outline" className={config.color}>
                   {config.label}

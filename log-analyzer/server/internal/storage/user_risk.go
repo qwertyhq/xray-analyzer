@@ -402,12 +402,17 @@ func (s *Storage) GetUserRiskSummary(ctx context.Context) (*threatintel.UserRisk
 
 	// Get high risk users (score >= 50)
 	highRiskRows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, risk_level, risk_score, total_matches, threats_by_type,
-			   unique_countries, anomaly_count, first_seen, last_activity,
-			   days_active, top_domains, risk_factors, trend_direction
-		FROM user_risk_profiles
-		WHERE risk_score >= 50
-		ORDER BY risk_score DESC
+		SELECT p.user_email, COALESCE(r.username, p.user_email) as display_name, 
+			   p.risk_level, p.risk_score, p.total_matches, p.threats_by_type,
+			   p.unique_countries, p.anomaly_count, p.first_seen, p.last_activity,
+			   p.days_active, p.top_domains, p.risk_factors, p.trend_direction
+		FROM user_risk_profiles p
+		LEFT JOIN remna_users r ON (
+			p.user_email = r.username 
+			OR CAST(r.id AS TEXT) = p.user_email
+		)
+		WHERE p.risk_score >= 50
+		ORDER BY p.risk_score DESC
 		LIMIT 10
 	`)
 	if err != nil {
@@ -425,7 +430,7 @@ func (s *Storage) GetUserRiskSummary(ctx context.Context) (*threatintel.UserRisk
 		var firstSeen, lastActivity sql.NullString
 		var riskLevel string
 
-		if err := highRiskRows.Scan(&profile.UserEmail, &riskLevel, &profile.RiskScore,
+		if err := highRiskRows.Scan(&profile.UserEmail, &profile.Username, &riskLevel, &profile.RiskScore,
 			&profile.TotalMatches, &threatsByType, &profile.UniqueCountries,
 			&profile.AnomalyCount, &firstSeen, &lastActivity,
 			&profile.DaysActive, &topDomains, &riskFactors, &profile.TrendDirection); err != nil {

@@ -360,6 +360,7 @@ export interface RiskFactor {
 
 export interface UserRiskProfile {
   user_email: string;
+  username?: string;
   risk_level: RiskLevel;
   risk_score: number;
   total_matches: number;

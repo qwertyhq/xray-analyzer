@@ -3,7 +3,6 @@ package storage
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,20 +22,6 @@ func (s *Storage) RecordUserDestination(ctx context.Context, userEmail, nodeID, 
 	`, userEmail, nodeID, destination, now, now, now)
 
 	return err
-}
-
-// extractNumericPartDest extracts numeric suffix from a string like "prefix_123"
-func extractNumericPartDest(s string) string {
-	if idx := strings.LastIndex(s, "_"); idx != -1 && idx < len(s)-1 {
-		part := s[idx+1:]
-		if _, err := strconv.Atoi(part); err == nil {
-			return part
-		}
-	}
-	if _, err := strconv.Atoi(s); err == nil {
-		return s
-	}
-	return ""
 }
 
 // buildSearchQuery creates placeholders and args for IN clause

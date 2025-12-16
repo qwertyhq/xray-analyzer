@@ -322,7 +322,11 @@ func (s *Storage) GetAllUserAIProfiles(ctx context.Context, limit int, minRiskSc
 			p.remna_uuid, p.remna_status, p.remna_traffic_used, p.remna_traffic_limit, p.remna_expire_at, p.remna_hwid_devices, p.remna_hwid_limit,
 			p.updated_at
 		FROM user_ai_profile p
-		LEFT JOIN remna_users r ON p.user_email = r.username OR p.remna_uuid = r.uuid
+		LEFT JOIN remna_users r ON (
+			p.user_email = r.username 
+			OR CAST(r.id AS TEXT) = p.user_email
+			OR p.remna_uuid = r.uuid
+		)
 		WHERE p.risk_score >= ?
 		ORDER BY p.risk_score DESC, p.total_threat_matches DESC
 		LIMIT ?
