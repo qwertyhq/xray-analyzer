@@ -113,6 +113,7 @@ export function FloatingAIChat() {
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState("");
+  const [loadingSession, setLoadingSession] = useState(false);
 
   // Resize state
   const [size, setSize] = useState({ width: 420, height: 550 });
@@ -155,27 +156,45 @@ export function FloatingAIChat() {
 
   // Load session messages
   const loadSession = useCallback(async (sessionId: string) => {
+    // Prevent loading the same session or if already loading
+    if (sessionId === currentSessionId || loadingSession) {
+      setView("chat");
+      return;
+    }
+    
+    setLoadingSession(true);
+    
     try {
       const token = localStorage.getItem("auth_token");
       const headers: HeadersInit = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
       const res = await fetch(`/api/ai/sessions/${sessionId}`, { headers });
+      if (!res.ok) throw new Error("Failed to load session");
+      
       const data = await res.json();
-      if (data.messages) {
+      
+      // Set session first, then messages
+      setCurrentSessionId(sessionId);
+      
+      if (data.messages && Array.isArray(data.messages)) {
         setMessages(
           data.messages.map((m: Message) => ({
             ...m,
             role: m.role as "user" | "assistant",
           }))
         );
+      } else {
+        setMessages([]);
       }
-      setCurrentSessionId(sessionId);
+      
       setView("chat");
     } catch (err) {
       console.error("Failed to load session:", err);
+    } finally {
+      setLoadingSession(false);
     }
-  }, []);
+  }, [currentSessionId, loadingSession]);
 
   // Create new session
   const createSession = useCallback(async () => {
@@ -254,13 +273,21 @@ export function FloatingAIChat() {
     }
   }, [isOpen, loadSessions]);
 
-  // Auto-load last session when opening chat
+  // Auto-load last session when opening chat (only once)
+  const hasAutoLoaded = useRef(false);
+  
   useEffect(() => {
-    if (isOpen && sessions.length > 0 && !currentSessionId && messages.length === 0) {
+    if (isOpen && sessions.length > 0 && !currentSessionId && !hasAutoLoaded.current) {
+      hasAutoLoaded.current = true;
       // Load the most recent session
       loadSession(sessions[0].id);
     }
-  }, [isOpen, sessions, currentSessionId, messages.length, loadSession]);
+    
+    // Reset flag when chat is closed
+    if (!isOpen) {
+      hasAutoLoaded.current = false;
+    }
+  }, [isOpen, sessions, currentSessionId, loadSession]);
 
   // Send message with streaming
   const sendMessage = async () => {
@@ -410,12 +437,29 @@ export function FloatingAIChat() {
     };
   }, [isResizing]);
 
-  // New chat
-  const handleNewChat = () => {
+  // New chat - creates a new session immediately
+  const [creatingChat, setCreatingChat] = useState(false);
+  
+  const handleNewChat = useCallback(async () => {
+    if (creatingChat || loadingSession) return;
+    
+    setCreatingChat(true);
+    
+    // Clear current state first
     setCurrentSessionId(null);
     setMessages([]);
     setView("chat");
-  };
+    
+    try {
+      // Create new session immediately
+      const sessionId = await createSession();
+      if (sessionId) {
+        setCurrentSessionId(sessionId);
+      }
+    } finally {
+      setCreatingChat(false);
+    }
+  }, [createSession, creatingChat, loadingSession]);
 
   const quickPrompts = [
     "Обзор состояния системы",
@@ -490,9 +534,14 @@ export function FloatingAIChat() {
                 size="icon"
                 className="h-7 w-7"
                 onClick={handleNewChat}
+                disabled={creatingChat || loading || streaming}
                 title="Новый чат"
               >
-                <Plus className="h-4 w-4" />
+                {creatingChat ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
               </Button>
               <Button
                 variant="ghost"
@@ -543,14 +592,18 @@ export function FloatingAIChat() {
                   <div
                     key={session.id}
                     className={cn(
-                      "flex items-center justify-between p-2 rounded-md hover:bg-muted/50 cursor-pointer group",
-                      currentSessionId === session.id && "bg-muted"
+                      "flex items-center justify-between p-2 rounded-md hover:bg-muted/50 cursor-pointer group transition-colors",
+                      currentSessionId === session.id && "bg-muted",
+                      loadingSession && "pointer-events-none opacity-50"
                     )}
-                    onClick={() => loadSession(session.id)}
+                    onClick={() => !loadingSession && loadSession(session.id)}
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">
+                      <div className="text-sm font-medium truncate flex items-center gap-2">
                         {session.title}
+                        {loadingSession && currentSessionId === null && (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        )}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {new Date(session.updated_at).toLocaleDateString("ru")}
