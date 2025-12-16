@@ -193,7 +193,7 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
       <MatchesTable 
         matches={threatMatches} 
         title="Recent Matches"
-        description={`Last ${threatMatches.length} detected connections (max 20 stored)`}
+        description={`Last ${threatMatches?.length || 0} detected connections (max 20 stored)`}
       />
     </div>
   );
