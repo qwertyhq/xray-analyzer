@@ -209,6 +209,9 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 	searchIDs := buildUserSearchIDs(userEmail)
 	placeholders, args := buildUserSearchQuery(searchIDs)
 
+	// Debug log
+	fmt.Printf("[DEBUG] GetUserDetails: email=%s, searchIDs=%v, placeholders=%s\n", userEmail, searchIDs, placeholders)
+
 	// Try to resolve display name from remna_users
 	var displayName sql.NullString
 	_ = s.db.QueryRowContext(ctx, `

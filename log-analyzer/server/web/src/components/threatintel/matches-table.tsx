@@ -27,12 +27,13 @@ import { threatTypeConfig, sourceLabels } from "./config";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface MatchesTableProps {
-  matches: ThreatMatch[];
+  matches: ThreatMatch[] | null;
   title: string;
   description: string;
 }
 
-export function MatchesTable({ matches, title, description }: MatchesTableProps) {
+export function MatchesTable({ matches: matchesProp, title, description }: MatchesTableProps) {
+  const matches = matchesProp || [];
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
