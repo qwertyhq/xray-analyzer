@@ -696,6 +696,7 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 
 	// Find users with many unique IPs in the time period, also count unique nodes
 	// Join with remna_users to get username for display
+	// user_email contains Remnawave numeric ID, so we need to match against remna_users.id
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT 
 			h.user_email,
@@ -709,8 +710,8 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 			MAX(h.last_seen) as last_seen
 		FROM user_ip_history h
 		LEFT JOIN remna_users r ON (
-			r.username = h.user_email 
-			OR r.description LIKE '%US_ID: ' || h.user_email
+			CAST(r.id AS TEXT) = h.user_email
+			OR r.username = h.user_email
 		)
 		WHERE h.last_seen >= ?
 		GROUP BY h.user_email
