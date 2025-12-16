@@ -6,6 +6,7 @@ import { NodesTable } from "@/components/nodes/nodes-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { AnimatedNumber } from "@/components/ui/animated-number";
 import { Wifi, WifiOff } from "lucide-react";
 import {
   AlertDialog,
@@ -89,7 +90,9 @@ export default function NodesPage() {
             <CardTitle className="text-sm font-medium">Total Nodes</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{nodes.length}</div>
+            <div className="text-2xl font-bold">
+              <AnimatedNumber value={nodes.length} />
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -97,7 +100,9 @@ export default function NodesPage() {
             <CardTitle className="text-sm font-medium text-green-600">Online</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{onlineNodes.length}</div>
+            <div className="text-2xl font-bold text-green-600">
+              <AnimatedNumber value={onlineNodes.length} />
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -105,7 +110,9 @@ export default function NodesPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Offline</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-muted-foreground">{offlineNodes.length}</div>
+            <div className="text-2xl font-bold text-muted-foreground">
+              <AnimatedNumber value={offlineNodes.length} />
+            </div>
           </CardContent>
         </Card>
       </div>

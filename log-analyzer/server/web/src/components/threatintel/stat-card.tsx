@@ -2,6 +2,7 @@
 
 import React from "react";
 import { cn } from "@/lib/utils";
+import { AnimatedNumber } from "@/components/ui/animated-number";
 
 export type StatCardVariant = "default" | "danger" | "warning" | "success" | "info" | "muted";
 
@@ -73,7 +74,7 @@ export function StatCard({
           </span>
         </div>
         <div className={cn("text-2xl font-bold", variantTextStyles[variant])}>
-          {typeof value === "number" ? value.toLocaleString() : value}
+          {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
         </div>
         {subValue && (
           <div className="text-xs text-muted-foreground mt-1">{subValue}</div>

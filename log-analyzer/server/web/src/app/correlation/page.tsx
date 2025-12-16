@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { AnimatedNumber } from "@/components/ui/animated-number";
 import {
   Table,
   TableBody,
@@ -145,6 +146,13 @@ export default function CorrelationPage() {
 
   useEffect(() => {
     fetchData();
+    
+    // Авто-обновление каждые 10 секунд (мгновенно из кэша)
+    const interval = setInterval(() => {
+      fetchData(true);
+    }, 10000);
+    
+    return () => clearInterval(interval);
   }, [fetchData]);
 
   const getRiskBadge = (score: number) => {
@@ -210,9 +218,11 @@ export default function CorrelationPage() {
             <Network className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.shared_ips || 0}</div>
+            <div className="text-2xl font-bold">
+              <AnimatedNumber value={stats?.shared_ips || 0} />
+            </div>
             <p className="text-xs text-muted-foreground">
-              {stats?.users_with_shared_ip || 0} users affected
+              <AnimatedNumber value={stats?.users_with_shared_ip || 0} /> users affected
             </p>
           </CardContent>
         </Card>
@@ -223,9 +233,11 @@ export default function CorrelationPage() {
             <Smartphone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-500">{stats?.shared_hwids || 0}</div>
+            <div className="text-2xl font-bold text-orange-500">
+              <AnimatedNumber value={stats?.shared_hwids || 0} />
+            </div>
             <p className="text-xs text-muted-foreground">
-              {stats?.users_with_shared_hwid || 0} users affected
+              <AnimatedNumber value={stats?.users_with_shared_hwid || 0} /> users affected
             </p>
           </CardContent>
         </Card>
@@ -236,7 +248,9 @@ export default function CorrelationPage() {
             <Fingerprint className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.total_fingerprints || 0}</div>
+            <div className="text-2xl font-bold">
+              <AnimatedNumber value={stats?.total_fingerprints || 0} />
+            </div>
             <p className="text-xs text-muted-foreground">
               Unique IP+HWID combinations
             </p>
@@ -249,9 +263,11 @@ export default function CorrelationPage() {
             <Link2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.total_clusters || 0}</div>
+            <div className="text-2xl font-bold">
+              <AnimatedNumber value={stats?.total_clusters || 0} />
+            </div>
             <p className="text-xs text-muted-foreground">
-              {stats?.users_in_clusters || 0} users linked
+              <AnimatedNumber value={stats?.users_in_clusters || 0} /> users linked
             </p>
           </CardContent>
         </Card>

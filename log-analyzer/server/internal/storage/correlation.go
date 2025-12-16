@@ -47,8 +47,13 @@ func (s *Storage) RecordUserFingerprint(ctx context.Context, userEmail, ip, hwid
 	return err
 }
 
-// GetUsersForIP returns all users that have used a specific IP
+// GetUsersForIP returns all users that have used a specific IP (cached)
 func (s *Storage) GetUsersForIP(ctx context.Context, ip string) ([]IPUserMapping, error) {
+	cacheKey := fmt.Sprintf("users_for_ip_%s", ip)
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]IPUserMapping), nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT ip_address, user_email, node_id, first_seen, last_seen, request_count
 		FROM ip_user_map WHERE ip_address = ?
@@ -71,11 +76,18 @@ func (s *Storage) GetUsersForIP(ctx context.Context, ip string) ([]IPUserMapping
 		}
 		result = append(result, m)
 	}
+
+	s.cache.Set(cacheKey, result, CacheTTLMedium)
 	return result, nil
 }
 
-// GetUsersForHWID returns all users that have used a specific HWID
+// GetUsersForHWID returns all users that have used a specific HWID (cached)
 func (s *Storage) GetUsersForHWID(ctx context.Context, hwid string) ([]HWIDUserMapping, error) {
+	cacheKey := fmt.Sprintf("users_for_hwid_%s", hwid)
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]HWIDUserMapping), nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT hwid, user_email, platform, first_seen, last_seen, request_count
 		FROM hwid_user_map WHERE hwid = ?
@@ -98,6 +110,8 @@ func (s *Storage) GetUsersForHWID(ctx context.Context, hwid string) ([]HWIDUserM
 		}
 		result = append(result, m)
 	}
+
+	s.cache.Set(cacheKey, result, CacheTTLMedium)
 	return result, nil
 }
 
@@ -451,8 +465,13 @@ func (s *Storage) GetCorrelationStats(ctx context.Context) (*CorrelationStats, e
 	return &stats, nil
 }
 
-// GetTopSharedIPs returns IPs shared by most users
+// GetTopSharedIPs returns IPs shared by most users (cached)
 func (s *Storage) GetTopSharedIPs(ctx context.Context, limit int) ([]SharedIPInfo, error) {
+	cacheKey := fmt.Sprintf("shared_ips_%d", limit)
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]SharedIPInfo), nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT ip_address, COUNT(DISTINCT user_email) as user_count, MAX(last_seen) as last_seen, SUM(request_count) as total_requests
 		FROM ip_user_map
@@ -474,6 +493,8 @@ func (s *Storage) GetTopSharedIPs(ctx context.Context, limit int) ([]SharedIPInf
 		}
 		result = append(result, info)
 	}
+
+	s.cache.Set(cacheKey, result, CacheTTLMedium)
 	return result, nil
 }
 

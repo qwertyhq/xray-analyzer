@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { PaginationControls, usePagination } from "@/components/ui/data-table";
 import { RemnawaveUsersTable } from "@/components/remnawave/remnawave-users-table";
+import { AnimatedNumber } from "@/components/ui/animated-number";
 import { 
   Users, 
   Smartphone, 
@@ -75,8 +76,8 @@ export default function RemnavewavePage() {
 
   useEffect(() => {
     fetchData();
-    // Auto-refresh every 1 minute for more accurate online stats
-    const interval = setInterval(() => fetchData(true), 60 * 1000);
+    // Auto-refresh every 10 seconds (instant from cache)
+    const interval = setInterval(() => fetchData(true), 10 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -180,11 +181,13 @@ export default function RemnavewavePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-green-500">{onlineStats?.now ?? 0}</div>
+            <div className="text-3xl font-bold text-green-500">
+              <AnimatedNumber value={onlineStats?.now ?? 0} />
+            </div>
             <div className="flex gap-2 mt-2 text-xs text-muted-foreground">
-              <span>15 мин: {onlineStats?.recent ?? 0}</span>
+              <span>15 мин: <AnimatedNumber value={onlineStats?.recent ?? 0} /></span>
               <span>•</span>
-              <span>1ч: {onlineStats?.lastHour ?? 0}</span>
+              <span>1ч: <AnimatedNumber value={onlineStats?.lastHour ?? 0} /></span>
             </div>
           </CardContent>
         </Card>
@@ -197,10 +200,12 @@ export default function RemnavewavePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalUsers ?? 0}</div>
+            <div className="text-2xl font-bold">
+              <AnimatedNumber value={stats?.totalUsers ?? 0} />
+            </div>
             <div className="flex gap-2 mt-2">
               <Badge variant="default" className="bg-green-500 text-xs">
-                Active: {stats?.activeUsers ?? 0}
+                Active: <AnimatedNumber value={stats?.activeUsers ?? 0} />
               </Badge>
             </div>
           </CardContent>
@@ -214,9 +219,11 @@ export default function RemnavewavePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.hwidStats?.totalDevices ?? 0}</div>
+            <div className="text-2xl font-bold">
+              <AnimatedNumber value={stats?.hwidStats?.totalDevices ?? 0} />
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Уникальных: {stats?.hwidStats?.uniqueUsers ?? 0}
+              Уникальных: <AnimatedNumber value={stats?.hwidStats?.uniqueUsers ?? 0} />
             </p>
           </CardContent>
         </Card>
