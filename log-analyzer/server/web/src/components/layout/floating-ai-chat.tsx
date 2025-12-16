@@ -468,6 +468,21 @@ export function FloatingAIChat() {
     "Аномалии поведения",
   ];
 
+  // Detect mobile on client side
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // On mobile, always fullscreen
+  const effectiveFullscreen = isFullscreen || isMobile;
+
   if (!isOpen) {
     return (
       <Button
@@ -480,17 +495,13 @@ export function FloatingAIChat() {
     );
   }
 
-  // On mobile, always fullscreen
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-  const effectiveFullscreen = isFullscreen || isMobile;
-
   return (
     <div
       className={cn(
-        "fixed z-50 bg-background border rounded-lg shadow-2xl flex flex-col overflow-hidden",
+        "fixed z-50 bg-background border shadow-2xl flex flex-col overflow-hidden",
         effectiveFullscreen
-          ? "inset-0 sm:inset-4 rounded-none sm:rounded-lg"
-          : "bottom-6 right-6"
+          ? "inset-0 rounded-none sm:inset-4 sm:rounded-lg"
+          : "bottom-6 right-6 rounded-lg"
       )}
       style={
         effectiveFullscreen
@@ -735,7 +746,7 @@ export function FloatingAIChat() {
           </div>
 
           {/* Input */}
-          <div className="p-3 border-t">
+          <div className="p-3 border-t safe-area-inset-bottom">
             <div className="flex gap-2">
               <Textarea
                 ref={inputRef}
@@ -743,7 +754,7 @@ export function FloatingAIChat() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Спросите что-нибудь..."
-                className="min-h-[44px] max-h-[120px] resize-none text-sm"
+                className="min-h-[44px] max-h-[120px] resize-none text-base sm:text-sm"
                 disabled={loading || streaming}
               />
               <Button

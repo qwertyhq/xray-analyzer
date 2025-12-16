@@ -286,3 +286,29 @@
     grid-template-columns: repeat(24, minmax(0, 1fr));
   }
 }
+
+/* iOS safe area support */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent iOS zoom on input focus */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* Mobile fullscreen chat fixes */
+@media (max-width: 639px) {
+  .fixed.inset-0 {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    max-height: 100dvh;
+  }
+}
