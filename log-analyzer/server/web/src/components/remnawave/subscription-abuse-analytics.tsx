@@ -376,8 +376,14 @@ export function SubscriptionAbuseAnalytics({
       const hwidUsername = hwidAbuser.username?.toLowerCase() || "";
       const hwidEmail = hwidAbuser.email?.toLowerCase() || "";
       
-      // Try to find existing entry by username first, then by email
-      let existingKey = usernameIndex.get(hwidUsername) || userMap.has(hwidEmail) ? hwidEmail : null;
+      // Try to find existing entry by username first (via index), then by email directly
+      let existingKey: string | null = null;
+      if (hwidUsername && usernameIndex.has(hwidUsername)) {
+        existingKey = usernameIndex.get(hwidUsername)!;
+      } else if (hwidEmail && userMap.has(hwidEmail)) {
+        existingKey = hwidEmail;
+      }
+      
       const existing = existingKey ? userMap.get(existingKey) : null;
 
       if (existing) {
