@@ -53,6 +53,7 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 		FROM user_stats u
 		LEFT JOIN remna_users r ON (
 			r.username = u.user_email 
+			OR CAST(r.id AS TEXT) = u.user_email
 			OR r.us_id = u.user_email
 		)
 		WHERE u.blacklist_hits > 0
@@ -109,6 +110,7 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 		FROM user_agg u
 		LEFT JOIN remna_users r ON (
 			r.username = u.user_email 
+			OR CAST(r.id AS TEXT) = u.user_email
 			OR r.us_id = u.user_email
 		)
 		ORDER BY u.total_requests DESC
@@ -216,19 +218,20 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 	// Then by username, then by us_id field
 	var remnaUserExists bool
 	var uuid, username, status string
+	var remnaID int64 // Remnawave numeric ID - this is what appears in Xray logs as email:
 	var usedTraffic, trafficLimit int64
 	var hwidCount int
 	var hwidLimit sql.NullInt64
 	var onlineAt, expireAt sql.NullString
 	var telegramID sql.NullInt64
 	var description string
-	var usID sql.NullString // us_id from description (Xray log user ID)
+	var usID sql.NullString // us_id from description (legacy, not used in Xray logs)
 
 	// Check if userEmail is a numeric ID
 	if numericID, err := strconv.ParseInt(userEmail, 10, 64); err == nil {
 		// Try to find by numeric ID first
 		row := s.db.QueryRowContext(ctx, `
-			SELECT uuid, username, status, 
+			SELECT uuid, COALESCE(id, 0), username, status, 
 				   COALESCE(used_traffic_bytes, 0), 
 				   COALESCE(traffic_limit_bytes, 0),
 				   COALESCE(hwid_device_count, 0),
@@ -241,17 +244,17 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 			FROM remna_users WHERE id = ?
 		`, numericID)
 
-		err := row.Scan(&uuid, &username, &status, &usedTraffic, &trafficLimit,
+		err := row.Scan(&uuid, &remnaID, &username, &status, &usedTraffic, &trafficLimit,
 			&hwidCount, &hwidLimit, &onlineAt, &expireAt, &telegramID, &description, &usID)
 		if err == nil {
 			remnaUserExists = true
 		}
 	}
 
-	// If not found by ID, try by us_id (Xray log user ID from description)
+	// If not found by ID, try by us_id (legacy Xray log user ID from description)
 	if !remnaUserExists {
 		row := s.db.QueryRowContext(ctx, `
-			SELECT uuid, username, status, 
+			SELECT uuid, COALESCE(id, 0), username, status, 
 				   COALESCE(used_traffic_bytes, 0), 
 				   COALESCE(traffic_limit_bytes, 0),
 				   COALESCE(hwid_device_count, 0),
@@ -264,7 +267,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 			FROM remna_users WHERE us_id = ?
 		`, userEmail)
 
-		err := row.Scan(&uuid, &username, &status, &usedTraffic, &trafficLimit,
+		err := row.Scan(&uuid, &remnaID, &username, &status, &usedTraffic, &trafficLimit,
 			&hwidCount, &hwidLimit, &onlineAt, &expireAt, &telegramID, &description, &usID)
 		if err == nil {
 			remnaUserExists = true
@@ -274,7 +277,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 	// If not found by us_id, try by username
 	if !remnaUserExists {
 		row := s.db.QueryRowContext(ctx, `
-			SELECT uuid, username, status, 
+			SELECT uuid, COALESCE(id, 0), username, status, 
 				   COALESCE(used_traffic_bytes, 0), 
 				   COALESCE(traffic_limit_bytes, 0),
 				   COALESCE(hwid_device_count, 0),
@@ -287,16 +290,32 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 			FROM remna_users WHERE username = ?
 		`, userEmail)
 
-		err := row.Scan(&uuid, &username, &status, &usedTraffic, &trafficLimit,
+		err := row.Scan(&uuid, &remnaID, &username, &status, &usedTraffic, &trafficLimit,
 			&hwidCount, &hwidLimit, &onlineAt, &expireAt, &telegramID, &description, &usID)
 		if err == nil {
 			remnaUserExists = true
 		}
 	}
 
-	// If found user, add their us_id to search IDs for stats lookup
+	// If found user, add their Remnawave ID to search IDs for stats lookup
+	// The Remnawave ID is what appears in Xray logs as "email: <number>"
+	if remnaUserExists && remnaID > 0 {
+		remnaIDStr := strconv.FormatInt(remnaID, 10)
+		found := false
+		for _, id := range searchIDs {
+			if id == remnaIDStr {
+				found = true
+				break
+			}
+		}
+		if !found {
+			searchIDs = append(searchIDs, remnaIDStr)
+			fmt.Printf("[DEBUG] GetUserDetails: added remnaID=%s to searchIDs, now=%v\n", remnaIDStr, searchIDs)
+		}
+	}
+
+	// Also add us_id if present (for backwards compatibility)
 	if remnaUserExists && usID.Valid && usID.String != "" {
-		// Add us_id to search IDs - this is the key that links to user_stats
 		found := false
 		for _, id := range searchIDs {
 			if id == usID.String {
