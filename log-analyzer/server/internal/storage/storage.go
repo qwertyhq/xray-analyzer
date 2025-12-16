@@ -512,6 +512,7 @@ func (s *Storage) migrate() error {
 	-- Remnawave Users (synced from API)
 	CREATE TABLE IF NOT EXISTS remna_users (
 		uuid TEXT PRIMARY KEY,
+		id INTEGER,
 		short_uuid TEXT,
 		username TEXT NOT NULL,
 		email TEXT,
@@ -537,6 +538,7 @@ func (s *Storage) migrate() error {
 		payment_info TEXT,
 		plan TEXT
 	);
+	CREATE INDEX IF NOT EXISTS idx_remna_users_id ON remna_users(id);
 	CREATE INDEX IF NOT EXISTS idx_remna_users_username ON remna_users(username);
 	CREATE INDEX IF NOT EXISTS idx_remna_users_email ON remna_users(email);
 	CREATE INDEX IF NOT EXISTS idx_remna_users_status ON remna_users(status);

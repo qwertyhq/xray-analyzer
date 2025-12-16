@@ -212,41 +212,74 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 	// Debug log
 	fmt.Printf("[DEBUG] GetUserDetails: email=%s, searchIDs=%v, placeholders=%s\n", userEmail, searchIDs, placeholders)
 
-	// Try to find user in remna_users by username (this is the primary lookup)
+	// Try to find user in remna_users
+	// First try by numeric ID (if userEmail is a number, e.g., from Xray logs)
+	// Then by username, then by description US_ID
 	var remnaUserExists bool
-	row := s.db.QueryRowContext(ctx, `
-		SELECT uuid, username, status, 
-			   COALESCE(used_traffic_bytes, 0), 
-			   COALESCE(traffic_limit_bytes, 0),
-			   COALESCE(traffic_percent, 0),
-			   COALESCE(hwid_device_count, 0),
-			   hwid_device_limit,
-			   online_at,
-			   expire_at,
-			   telegram_id,
-			   COALESCE(description, '')
-		FROM remna_users WHERE username = ?
-	`, userEmail)
-
 	var uuid, username, status string
 	var usedTraffic, trafficLimit int64
-	var trafficPct float64
 	var hwidCount int
 	var hwidLimit sql.NullInt64
 	var onlineAt, expireAt sql.NullString
 	var telegramID sql.NullInt64
 	var description string
 
-	err := row.Scan(&uuid, &username, &status, &usedTraffic, &trafficLimit, &trafficPct,
-		&hwidCount, &hwidLimit, &onlineAt, &expireAt, &telegramID, &description)
-	if err == nil {
-		remnaUserExists = true
+	// Check if userEmail is a numeric ID
+	if numericID, err := strconv.ParseInt(userEmail, 10, 64); err == nil {
+		// Try to find by numeric ID first
+		row := s.db.QueryRowContext(ctx, `
+			SELECT uuid, username, status, 
+				   COALESCE(used_traffic_bytes, 0), 
+				   COALESCE(traffic_limit_bytes, 0),
+				   COALESCE(hwid_device_count, 0),
+				   hwid_device_limit,
+				   online_at,
+				   expire_at,
+				   telegram_id,
+				   COALESCE(description, '')
+			FROM remna_users WHERE id = ?
+		`, numericID)
+
+		err := row.Scan(&uuid, &username, &status, &usedTraffic, &trafficLimit,
+			&hwidCount, &hwidLimit, &onlineAt, &expireAt, &telegramID, &description)
+		if err == nil {
+			remnaUserExists = true
+		}
+	}
+
+	// If not found by ID, try by username
+	if !remnaUserExists {
+		row := s.db.QueryRowContext(ctx, `
+			SELECT uuid, username, status, 
+				   COALESCE(used_traffic_bytes, 0), 
+				   COALESCE(traffic_limit_bytes, 0),
+				   COALESCE(hwid_device_count, 0),
+				   hwid_device_limit,
+				   online_at,
+				   expire_at,
+				   telegram_id,
+				   COALESCE(description, '')
+			FROM remna_users WHERE username = ?
+		`, userEmail)
+
+		err := row.Scan(&uuid, &username, &status, &usedTraffic, &trafficLimit,
+			&hwidCount, &hwidLimit, &onlineAt, &expireAt, &telegramID, &description)
+		if err == nil {
+			remnaUserExists = true
+		}
+	}
+
+	// Populate user fields if found
+	if remnaUserExists {
 		user.RemnaUUID = uuid
 		user.DisplayName = username
 		user.RemnaStatus = status
 		user.RemnaUsedTraffic = usedTraffic
 		user.RemnaTrafficLimit = trafficLimit
-		user.RemnaTrafficPct = trafficPct
+		// Calculate traffic percent
+		if trafficLimit > 0 {
+			user.RemnaTrafficPct = float64(usedTraffic) / float64(trafficLimit) * 100
+		}
 		user.RemnaHwidCount = hwidCount
 		if hwidLimit.Valid {
 			limit := int(hwidLimit.Int64)
@@ -264,7 +297,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		user.RemnaDescription = description
 	}
 
-	// If not found by exact username, try to find by description with US_ID
+	// If not found by exact username or ID, try to find by description with US_ID
 	if !remnaUserExists {
 		var displayName sql.NullString
 		_ = s.db.QueryRowContext(ctx, `

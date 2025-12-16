@@ -19,6 +19,7 @@ type StorageWriter interface {
 // RemnaUserData represents user data for storage
 type RemnaUserData struct {
 	UUID                 string
+	ID                   int64
 	ShortUUID            string
 	Username             string
 	Email                *string
@@ -228,6 +229,7 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 		if s.storage != nil {
 			userData := &RemnaUserData{
 				UUID:                 user.UUID,
+				ID:                   user.ID,
 				ShortUUID:            user.ShortUUID,
 				Username:             user.Username,
 				Email:                user.Email,

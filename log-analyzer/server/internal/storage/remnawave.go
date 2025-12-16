@@ -15,14 +15,15 @@ import (
 func (s *Storage) UpsertRemnaUser(ctx context.Context, user *remnawave.RemnaUserData) error {
 	query := `
 		INSERT INTO remna_users (
-			uuid, short_uuid, username, email, status,
+			uuid, id, short_uuid, username, email, status,
 			traffic_limit_bytes, used_traffic_bytes, lifetime_traffic_bytes,
 			traffic_limit_strategy, expire_at, online_at, first_connected_at,
 			hwid_device_limit, hwid_device_count, telegram_id, description, tag,
 			created_at, updated_at, synced_at,
 			real_name, phone, telegram_user, payment_info, plan
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(uuid) DO UPDATE SET
+			id = excluded.id,
 			short_uuid = excluded.short_uuid,
 			username = excluded.username,
 			email = excluded.email,
@@ -48,7 +49,7 @@ func (s *Storage) UpsertRemnaUser(ctx context.Context, user *remnawave.RemnaUser
 			plan = excluded.plan
 	`
 	_, err := s.db.ExecContext(ctx, query,
-		user.UUID, user.ShortUUID, user.Username, user.Email, user.Status,
+		user.UUID, user.ID, user.ShortUUID, user.Username, user.Email, user.Status,
 		user.TrafficLimitBytes, user.UsedTrafficBytes, user.LifetimeTrafficBytes,
 		user.TrafficLimitStrategy, user.ExpireAt, user.OnlineAt, user.FirstConnectedAt,
 		user.HwidDeviceLimit, user.HwidDeviceCount, user.TelegramID, user.Description, user.Tag,
