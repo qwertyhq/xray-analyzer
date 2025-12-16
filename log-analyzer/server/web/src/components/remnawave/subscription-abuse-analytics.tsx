@@ -316,10 +316,13 @@ export function SubscriptionAbuseAnalytics({
   // Combine IP and HWID abuse data
   const combinedAbusers = useMemo((): CombinedAbuseUser[] => {
     const userMap = new Map<string, CombinedAbuseUser>();
+    // Secondary index by username for merging
+    const usernameIndex = new Map<string, string>(); // username -> map key
 
     // First, add IP-based abusers
     for (const ipAbuser of ipAbusers) {
       const email = ipAbuser.user_email.toLowerCase();
+      const username = ipAbuser.username?.toLowerCase() || "";
       
       // Transform countries from string[] to proper format
       const countriesFormatted = ipAbuser.countries?.map((c) => ({
@@ -361,12 +364,21 @@ export function SubscriptionAbuseAnalytics({
         risk_factors: [],
         last_activity: ipAbuser.last_seen,
       });
+      
+      // Index by username for HWID merge lookup
+      if (username) {
+        usernameIndex.set(username, email);
+      }
     }
 
     // Then, merge HWID-based abusers
     for (const hwidAbuser of hwidAbusers) {
-      const email = hwidAbuser.email?.toLowerCase() || hwidAbuser.username?.toLowerCase() || "";
-      const existing = userMap.get(email);
+      const hwidUsername = hwidAbuser.username?.toLowerCase() || "";
+      const hwidEmail = hwidAbuser.email?.toLowerCase() || "";
+      
+      // Try to find existing entry by username first, then by email
+      let existingKey = usernameIndex.get(hwidUsername) || userMap.has(hwidEmail) ? hwidEmail : null;
+      const existing = existingKey ? userMap.get(existingKey) : null;
 
       if (existing) {
         // Merge HWID data into existing record
@@ -381,8 +393,9 @@ export function SubscriptionAbuseAnalytics({
           existing.last_activity = hwidAbuser.lastActivity;
         }
       } else {
-        // Add as new entry
-        userMap.set(email, {
+        // Add as new entry - use username as key since no IP data match found
+        const newKey = hwidUsername || hwidEmail;
+        userMap.set(newKey, {
           user_email: hwidAbuser.email || hwidAbuser.username || "",
           username: hwidAbuser.username,
           uuid: hwidAbuser.uuid,
