@@ -544,23 +544,24 @@ func (s *Server) handleSubscriptionAbuse(w http.ResponseWriter, r *http.Request)
 
 // enrichAbusersWithHWID adds HWID information from Remnawave to abuse records
 func (s *Server) enrichAbusersWithHWID(abusers []*models.SubscriptionAbuse) {
-	// Get user mapping from Remnawave (email -> uuid)
+	// Get user mapping from Remnawave
 	users := s.remnawave.GetAllUsers()
 	if users == nil {
 		return
 	}
 
-	// Build email to user mapping (by username which is the email)
-	emailToUser := make(map[string]*remnawave.User)
+	// Build ID to user mapping (UserEmail contains Remnawave numeric ID as string)
+	idToUser := make(map[string]*remnawave.User)
 	for _, user := range users {
-		if user != nil && user.Username != "" {
-			emailToUser[user.Username] = user
+		if user != nil {
+			// Map by string ID for lookup from UserEmail
+			idToUser[fmt.Sprintf("%d", user.ID)] = user
 		}
 	}
 
 	// For each abuser, try to get HWID devices
 	for _, abuser := range abusers {
-		user, ok := emailToUser[abuser.UserEmail]
+		user, ok := idToUser[abuser.UserEmail]
 		if !ok {
 			continue
 		}
