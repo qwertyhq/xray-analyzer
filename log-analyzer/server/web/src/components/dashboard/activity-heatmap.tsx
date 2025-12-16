@@ -38,7 +38,7 @@ export function ActivityHeatmap({ data, title = "Activity Heatmap", description 
     // Group by hour of day (0-23)
     const hourlyMap = new Map<number, { requests: number; blacklist: number; count: number }>();
     
-    data.forEach((item) => {
+    (data || []).forEach((item) => {
       const date = new Date(item.hour);
       const hour = date.getHours();
       

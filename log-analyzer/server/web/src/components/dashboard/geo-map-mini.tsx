@@ -40,15 +40,16 @@ function getCountryColor(count: number, max: number): string {
 
 export function GeoMapMini({ data, title = "Geographic Distribution", maxItems = 8 }: GeoMapMiniProps) {
   const sortedData = useMemo(() => {
+    if (!data || data.length === 0) return [];
     return [...data]
       .sort((a, b) => b.count - a.count)
       .slice(0, maxItems);
   }, [data, maxItems]);
 
-  const totalCount = useMemo(() => data.reduce((sum, d) => sum + d.count, 0), [data]);
+  const totalCount = useMemo(() => (data || []).reduce((sum, d) => sum + d.count, 0), [data]);
   const maxCount = sortedData[0]?.count || 1;
 
-  if (data.length === 0) {
+  if (!data || data.length === 0) {
     return (
       <Card>
         <CardHeader className="pb-3">

@@ -25,6 +25,7 @@ const COLORS = [
 
 export function TrafficDistribution({ nodes, title = "Traffic by Node" }: TrafficDistributionProps) {
   const chartData = useMemo(() => {
+    if (!nodes || nodes.length === 0) return [];
     return nodes
       .filter(n => n.total_requests > 0)
       .map(node => ({
