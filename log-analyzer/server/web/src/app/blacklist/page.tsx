@@ -138,6 +138,7 @@ export default function BlacklistPage() {
     
     matches.forEach(m => {
       if (!selectedDomains.has(m.destination)) return;
+      if (!m.user_email) return;
       
       const existing = userMap.get(m.user_email);
       if (existing) {
