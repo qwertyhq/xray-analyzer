@@ -98,6 +98,18 @@ type UserDetails struct {
 	TotalBlacklistHits int64                `json:"total_blacklist_hits"`
 	Nodes              []UserNodeStats      `json:"nodes"`
 	RecentMatches      []BlacklistMatchInfo `json:"recent_matches"`
+	// Remnawave data
+	RemnaUUID         string  `json:"remna_uuid,omitempty"`
+	RemnaStatus       string  `json:"remna_status,omitempty"`
+	RemnaUsedTraffic  int64   `json:"remna_used_traffic,omitempty"`
+	RemnaTrafficLimit int64   `json:"remna_traffic_limit,omitempty"`
+	RemnaTrafficPct   float64 `json:"remna_traffic_percent,omitempty"`
+	RemnaHwidCount    int     `json:"remna_hwid_count,omitempty"`
+	RemnaHwidLimit    *int    `json:"remna_hwid_limit,omitempty"`
+	RemnaOnlineAt     string  `json:"remna_online_at,omitempty"`
+	RemnaExpireAt     string  `json:"remna_expire_at,omitempty"`
+	RemnaTelegramID   *int64  `json:"remna_telegram_id,omitempty"`
+	RemnaDescription  string  `json:"remna_description,omitempty"`
 }
 
 // UserNodeStats represents user stats per node
