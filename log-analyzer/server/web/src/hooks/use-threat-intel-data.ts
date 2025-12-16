@@ -7,7 +7,6 @@ import {
   GeoSummary,
   AnomalySummary,
   UserRiskSummary,
-  DNSAnalysisSummary,
   ReportSummary,
   ReportConfig,
 } from "@/lib/types";
@@ -18,7 +17,6 @@ interface ThreatIntelData {
   geoStats: GeoSummary | null;
   anomalies: AnomalySummary | null;
   riskProfiles: UserRiskSummary | null;
-  dnsAnalysis: DNSAnalysisSummary | null;
   reports: ReportSummary | null;
 }
 
@@ -29,7 +27,6 @@ interface UseThreatIntelDataReturn extends ThreatIntelData {
   refreshFeeds: () => Promise<void>;
   refreshAnomalies: () => Promise<void>;
   refreshRiskProfiles: () => Promise<void>;
-  refreshDnsAnalysis: () => Promise<void>;
   refreshReports: () => Promise<void>;
   runAnomalyDetection: () => Promise<void>;
   recalculateRiskProfiles: () => Promise<void>;
@@ -43,7 +40,6 @@ const DEFAULT_REFRESH_INTERVALS = {
   geoStats: 60000,    // 1 min
   anomalies: 60000,   // 1 min
   riskProfiles: 120000, // 2 min
-  dnsAnalysis: 60000,   // 1 min
   reports: 60000,       // 1 min
 };
 
@@ -58,7 +54,6 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
     geoStats: null,
     anomalies: null,
     riskProfiles: null,
-    dnsAnalysis: null,
     reports: null,
   });
   const [loading, setLoading] = useState(true);
@@ -132,16 +127,6 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
     }
   }, [fetchWithError]);
 
-  const fetchDnsAnalysis = useCallback(async () => {
-    const dnsAnalysis = await fetchWithError<DNSAnalysisSummary>(
-      "/api/threatintel/dns-analysis",
-      "Failed to fetch DNS analysis"
-    );
-    if (dnsAnalysis) {
-      setData(prev => ({ ...prev, dnsAnalysis }));
-    }
-  }, [fetchWithError]);
-
   const fetchReports = useCallback(async () => {
     const reports = await fetchWithError<ReportSummary>(
       "/api/threatintel/reports",
@@ -161,7 +146,6 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
         fetchGeoStats(),
         fetchAnomalies(),
         fetchRiskProfiles(),
-        fetchDnsAnalysis(),
         fetchReports(),
       ]);
       setError(null);
@@ -171,7 +155,7 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
     } finally {
       setLoading(false);
     }
-  }, [fetchFeeds, fetchTimeStats, fetchGeoStats, fetchAnomalies, fetchRiskProfiles, fetchDnsAnalysis, fetchReports]);
+  }, [fetchFeeds, fetchTimeStats, fetchGeoStats, fetchAnomalies, fetchRiskProfiles, fetchReports]);
 
   const runAnomalyDetection = useCallback(async () => {
     try {
@@ -242,14 +226,13 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
       setInterval(fetchGeoStats, DEFAULT_REFRESH_INTERVALS.geoStats),
       setInterval(fetchAnomalies, DEFAULT_REFRESH_INTERVALS.anomalies),
       setInterval(fetchRiskProfiles, DEFAULT_REFRESH_INTERVALS.riskProfiles),
-      setInterval(fetchDnsAnalysis, DEFAULT_REFRESH_INTERVALS.dnsAnalysis),
       setInterval(fetchReports, DEFAULT_REFRESH_INTERVALS.reports),
     ];
 
     return () => {
       intervalsRef.current.forEach(clearInterval);
     };
-  }, [fetchFeeds, fetchTimeStats, fetchGeoStats, fetchAnomalies, fetchRiskProfiles, fetchDnsAnalysis, fetchReports]);
+  }, [fetchFeeds, fetchTimeStats, fetchGeoStats, fetchAnomalies, fetchRiskProfiles, fetchReports]);
 
   return {
     ...data,
@@ -259,7 +242,6 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
     refreshFeeds: fetchFeeds,
     refreshAnomalies: fetchAnomalies,
     refreshRiskProfiles: fetchRiskProfiles,
-    refreshDnsAnalysis: fetchDnsAnalysis,
     refreshReports: fetchReports,
     runAnomalyDetection,
     recalculateRiskProfiles,

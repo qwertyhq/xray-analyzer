@@ -19,11 +19,9 @@ export function ThreatIntelPage() {
     geoStats,
     anomalies,
     riskProfiles,
-    dnsAnalysis,
     reports,
     loading: apiLoading,
     refreshRiskProfiles,
-    refreshDnsAnalysis,
     refreshReports,
     generateReport,
     deleteReport,
@@ -101,10 +99,8 @@ export function ThreatIntelPage() {
             geoStats={geoStats}
             anomalies={anomalies}
             riskProfiles={riskProfiles}
-            dnsAnalysis={dnsAnalysis}
             reports={reports}
             onRiskRefresh={refreshRiskProfiles}
-            onDnsRefresh={refreshDnsAnalysis}
             onReportsRefresh={refreshReports}
             onGenerateReport={generateReport}
             onDeleteReport={deleteReport}

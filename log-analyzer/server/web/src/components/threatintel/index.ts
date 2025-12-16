@@ -9,7 +9,6 @@ export { TimeChart } from "./time-chart";
 export { GeoChart } from "./geo-chart";
 export { AnomalyPanel } from "./anomaly-panel";
 export { RiskProfilePanel } from "./risk-profile-panel";
-export { DNSAnalysisPanel } from "./dns-analysis-panel";
 export { ReportsPanel } from "./reports-panel";
 export { StatCard, StatCardGrid } from "./stat-card";
 export { threatTypeConfig, sourceLabels } from "./config";
