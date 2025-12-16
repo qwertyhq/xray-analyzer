@@ -156,7 +156,9 @@ func (s *Service) UpdateUserAIProfile(ctx context.Context, userEmail string) err
 
 	// Enrich with Remnawave data
 	if s.remnaSync != nil {
-		if remnaUser := s.remnaSync.GetUserByUsername(userEmail); remnaUser != nil {
+		// Try to find user by ID (if userEmail is numeric) or by username
+		if remnaUser := s.remnaSync.GetUserByIDOrUsername(userEmail); remnaUser != nil {
+			profile.RemnaUsername = remnaUser.Username
 			profile.RemnaUUID = remnaUser.UUID
 			profile.RemnaStatus = remnaUser.Status
 			profile.RemnaTrafficUsed = remnaUser.UsedTrafficBytes
