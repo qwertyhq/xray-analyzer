@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink, Wifi, WifiOff, UserX, Search } from "lucide-react";
+import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink, Wifi, WifiOff, Search } from "lucide-react";
 import { format } from "date-fns";
 import { TimeRange, BlacklistAnalytics } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
@@ -49,6 +49,8 @@ export default function BlacklistPage() {
   const [domainSearch, setDomainSearch] = useState("");
   const [matchSearch, setMatchSearch] = useState("");
   const [nodeFilter, setNodeFilter] = useState<string>("all");
+  const [selectedDomains, setSelectedDomains] = useState<Set<string>>(new Set());
+  const [userDomainSearch, setUserDomainSearch] = useState("");
 
   // For 24h, use WebSocket; for other ranges, fetch via HTTP
   const use24hWebSocket = timeRange === "24h";
@@ -116,10 +118,62 @@ export default function BlacklistPage() {
     return matches;
   }, [analytics?.recent_matches, matchSearch, nodeFilter]);
 
+  // All unique domains for filter
+  const allDomains = useMemo(() => {
+    return (analytics?.top_domains || []).map(d => d.domain).sort();
+  }, [analytics?.top_domains]);
+
+  // Users filtered by selected domains
+  const usersByDomains = useMemo(() => {
+    if (selectedDomains.size === 0) return [];
+    
+    const matches = analytics?.recent_matches || [];
+    const userMap = new Map<string, {
+      user_email: string;
+      username: string;
+      domains: Set<string>;
+      hit_count: number;
+      last_ip: string;
+    }>();
+    
+    matches.forEach(m => {
+      if (!selectedDomains.has(m.destination)) return;
+      
+      const existing = userMap.get(m.user_email);
+      if (existing) {
+        existing.domains.add(m.destination);
+        existing.hit_count++;
+        if (m.source_ip) existing.last_ip = m.source_ip;
+      } else {
+        // Try to find username from top_users
+        const topUser = analytics?.top_users?.find(u => u.user_email === m.user_email);
+        userMap.set(m.user_email, {
+          user_email: m.user_email,
+          username: topUser?.username || m.user_email,
+          domains: new Set([m.destination]),
+          hit_count: 1,
+          last_ip: m.source_ip || "",
+        });
+      }
+    });
+    
+    return Array.from(userMap.values())
+      .map(u => ({ ...u, domains: Array.from(u.domains) }))
+      .sort((a, b) => b.hit_count - a.hit_count);
+  }, [analytics?.recent_matches, analytics?.top_users, selectedDomains]);
+
+  // Filter domains for the domain selector
+  const filteredDomainSelector = useMemo(() => {
+    if (!userDomainSearch.trim()) return allDomains.slice(0, 50);
+    const search = userDomainSearch.toLowerCase();
+    return allDomains.filter(d => d.toLowerCase().includes(search)).slice(0, 50);
+  }, [allDomains, userDomainSearch]);
+
   // Pagination for tables - must be called before any early returns
   const domainsPagination = usePagination(filteredDomains, 15);
   const topUsersPagination = usePagination(analytics?.top_users || [], 15);
   const matchesPagination = usePagination(filteredMatches, 20);
+  const usersByDomainsPagination = usePagination(usersByDomains, 15);
 
   if (loading || !analytics) {
     return (
@@ -277,9 +331,13 @@ export default function BlacklistPage() {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="abuse" className="text-xs sm:text-sm whitespace-nowrap">
-              <UserX className="h-3 w-3 mr-1" />
-              Subscription Abuse
+            <TabsTrigger value="by-domain" className="text-xs sm:text-sm whitespace-nowrap">
+              🔍 По домену
+              {selectedDomains.size > 0 && (
+                <Badge variant="default" className="ml-1 sm:ml-2">
+                  {selectedDomains.size}
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="recent" className="text-xs sm:text-sm whitespace-nowrap">
               Recent Matches
@@ -388,7 +446,7 @@ export default function BlacklistPage() {
                           href={`/users/${encodeURIComponent(user.user_email)}`}
                           className="hover:underline text-primary flex items-center gap-1 truncate"
                         >
-                          <span className="truncate">{user.user_email}</span>
+                          <span className="truncate">{user.username || user.user_email}</span>
                           <ExternalLink className="h-3 w-3 flex-shrink-0" />
                         </Link>
                       </TableCell>
@@ -434,34 +492,144 @@ export default function BlacklistPage() {
           </Card>
         </TabsContent>
 
-        {/* Subscription Abuse Tab - Redirect to Remnawave */}
-        <TabsContent value="abuse">
+        {/* Users by Domain Tab */}
+        <TabsContent value="by-domain">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <UserX className="h-5 w-5 text-destructive" />
-                Subscription Abuse Detection
+                🔍 Кто посещает определённые домены
               </CardTitle>
               <CardDescription>
-                Комплексный анализ злоупотреблений теперь доступен в Remnawave Analytics
+                Выберите домены для фильтрации и увидьте, какие пользователи их посещают
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <UserX className="h-16 w-16 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Перенесено в Remnawave</h3>
-                <p className="text-muted-foreground mb-6 max-w-md">
-                  Функционал обнаружения злоупотреблений подписками был значительно расширен 
-                  и перенесен в раздел Remnawave Analytics, где объединены IP и HWID данные 
-                  для более точного анализа.
-                </p>
-                <Link href="/remnawave">
-                  <Badge variant="default" className="cursor-pointer hover:bg-primary/90 px-4 py-2 text-sm">
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Открыть Remnawave Analytics
-                  </Badge>
-                </Link>
+            <CardContent className="space-y-4">
+              {/* Domain selector */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Поиск домена..."
+                      value={userDomainSearch}
+                      onChange={(e) => setUserDomainSearch(e.target.value)}
+                      className="pl-8"
+                    />
+                  </div>
+                  {selectedDomains.size > 0 && (
+                    <Badge 
+                      variant="destructive" 
+                      className="cursor-pointer self-start sm:self-auto"
+                      onClick={() => setSelectedDomains(new Set())}
+                    >
+                      Сбросить ({selectedDomains.size})
+                    </Badge>
+                  )}
+                </div>
+                
+                {/* Quick domain selection */}
+                <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto p-2 border rounded-md bg-muted/30">
+                  {filteredDomainSelector.length === 0 ? (
+                    <span className="text-muted-foreground text-sm p-2">Нет доменов для отображения</span>
+                  ) : (
+                    filteredDomainSelector.map(domain => (
+                      <Badge
+                        key={domain}
+                        variant={selectedDomains.has(domain) ? "default" : "outline"}
+                        className="cursor-pointer text-xs truncate max-w-[200px] hover:bg-primary/80 transition-colors"
+                        onClick={() => {
+                          const newSet = new Set(selectedDomains);
+                          if (newSet.has(domain)) {
+                            newSet.delete(domain);
+                          } else {
+                            newSet.add(domain);
+                          }
+                          setSelectedDomains(newSet);
+                        }}
+                      >
+                        {domain}
+                      </Badge>
+                    ))
+                  )}
+                </div>
               </div>
+
+              {/* Results */}
+              {selectedDomains.size === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Globe className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>Выберите один или несколько доменов выше</p>
+                </div>
+              ) : (
+                <>
+                  <div className="text-sm text-muted-foreground">
+                    Найдено {usersByDomains.length} пользователей, посещавших выбранные домены
+                  </div>
+                  <div className="overflow-auto max-h-[400px] border rounded-md">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10">
+                        <TableRow>
+                          <TableHead className="w-[40px]">#</TableHead>
+                          <TableHead className="whitespace-nowrap">Пользователь</TableHead>
+                          <TableHead className="whitespace-nowrap hidden lg:table-cell">Last IP</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Hits</TableHead>
+                          <TableHead className="hidden md:table-cell">Посещённые домены</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {usersByDomainsPagination.paginatedData.map((user, idx) => (
+                          <TableRow key={user.user_email}>
+                            <TableCell className="text-muted-foreground">
+                              {usersByDomainsPagination.startIndex + idx + 1}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              <Link 
+                                href={`/users/${encodeURIComponent(user.user_email)}`}
+                                className="hover:underline text-primary flex items-center gap-1"
+                              >
+                                <span className="truncate max-w-[150px]">{user.username}</span>
+                                <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                              </Link>
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell">
+                              {user.last_ip ? (
+                                <IPInfoBadge ip={user.last_ip} />
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant="destructive">{user.hit_count}</Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[300px] hidden md:table-cell">
+                              <div className="flex flex-wrap gap-1">
+                                {user.domains.slice(0, 3).map((domain) => (
+                                  <Badge key={domain} variant="outline" className="text-xs truncate max-w-[150px]">
+                                    {domain}
+                                  </Badge>
+                                ))}
+                                {user.domains.length > 3 && (
+                                  <Badge variant="outline" className="text-xs">
+                                    +{user.domains.length - 3}
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {usersByDomainsPagination.paginatedData.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-muted-foreground">
+                              Нет пользователей, посещавших выбранные домены
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <PaginationControls {...usersByDomainsPagination} />
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

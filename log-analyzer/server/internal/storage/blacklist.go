@@ -105,11 +105,13 @@ func (s *Storage) loadTopUsers(ctx context.Context, sinceStr string, analytics *
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT 
 			bm.user_email, 
+			COALESCE(r.username, bm.user_email) as display_name,
 			COUNT(*) as hits, 
 			COUNT(DISTINCT bm.destination) as domains,
 			GROUP_CONCAT(DISTINCT bm.destination) as top_domains,
 			COALESCE(MAX(bm.source_ip), '') as last_ip
 		FROM blacklist_matches bm
+		LEFT JOIN remna_users r ON CAST(r.id AS TEXT) = bm.user_email
 		WHERE bm.timestamp > ?
 		GROUP BY bm.user_email
 		ORDER BY hits DESC
@@ -123,9 +125,11 @@ func (s *Storage) loadTopUsers(ctx context.Context, sinceStr string, analytics *
 	for rows.Next() {
 		var u models.UserBlacklistStats
 		var topDomainsStr string
-		if err := rows.Scan(&u.UserEmail, &u.HitCount, &u.UniqueDomains, &topDomainsStr, &u.LastIP); err != nil {
+		var displayName string
+		if err := rows.Scan(&u.UserEmail, &displayName, &u.HitCount, &u.UniqueDomains, &topDomainsStr, &u.LastIP); err != nil {
 			return fmt.Errorf("scan user: %w", err)
 		}
+		u.Username = displayName
 		if topDomainsStr != "" {
 			domains := strings.Split(topDomainsStr, ",")
 			if len(domains) > 5 {

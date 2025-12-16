@@ -132,6 +132,7 @@ export interface DomainStats {
 
 export interface UserBlacklistStats {
   user_email: string;
+  username: string;
   hit_count: number;
   unique_domains: number;
   top_domains: string[];

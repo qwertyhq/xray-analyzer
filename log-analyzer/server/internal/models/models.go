@@ -156,6 +156,7 @@ type DomainStats struct {
 // UserBlacklistStats represents a user's blacklist activity
 type UserBlacklistStats struct {
 	UserEmail     string   `json:"user_email"`
+	Username      string   `json:"username"`
 	HitCount      int64    `json:"hit_count"`
 	UniqueDomains int      `json:"unique_domains"`
 	TopDomains    []string `json:"top_domains"`
