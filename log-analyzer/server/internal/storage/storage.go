@@ -539,8 +539,6 @@ func (s *Storage) migrate() error {
 		plan TEXT,
 		us_id TEXT
 	);
-	CREATE INDEX IF NOT EXISTS idx_remna_users_id ON remna_users(id);
-	CREATE INDEX IF NOT EXISTS idx_remna_users_us_id ON remna_users(us_id);
 	CREATE INDEX IF NOT EXISTS idx_remna_users_username ON remna_users(username);
 	CREATE INDEX IF NOT EXISTS idx_remna_users_email ON remna_users(email);
 	CREATE INDEX IF NOT EXISTS idx_remna_users_status ON remna_users(status);
