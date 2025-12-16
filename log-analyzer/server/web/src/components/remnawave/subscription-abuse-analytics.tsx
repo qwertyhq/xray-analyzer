@@ -529,14 +529,30 @@ export function SubscriptionAbuseAnalytics({
       });
     }
 
-    // Sort - maintains all items, just orders them
+    // Sort with composite criteria - primary by selected, secondary by score
     result.sort((a, b) => {
+      let diff = 0;
       switch (sortBy) {
-        case "ips": return b.unique_ips - a.unique_ips;
-        case "hwids": return b.unique_hwids - a.unique_hwids;
-        case "requests": return b.total_requests - a.total_requests;
-        default: return b.abuse_score - a.abuse_score;
+        case "ips":
+          diff = b.unique_ips - a.unique_ips;
+          if (diff === 0) diff = b.abuse_score - a.abuse_score;
+          if (diff === 0) diff = b.unique_hwids - a.unique_hwids;
+          break;
+        case "hwids":
+          diff = b.unique_hwids - a.unique_hwids;
+          if (diff === 0) diff = b.abuse_score - a.abuse_score;
+          if (diff === 0) diff = b.unique_ips - a.unique_ips;
+          break;
+        case "requests":
+          diff = b.total_requests - a.total_requests;
+          if (diff === 0) diff = b.abuse_score - a.abuse_score;
+          break;
+        default: // score
+          diff = b.abuse_score - a.abuse_score;
+          if (diff === 0) diff = b.unique_ips - a.unique_ips;
+          if (diff === 0) diff = b.unique_hwids - a.unique_hwids;
       }
+      return diff;
     });
 
     return result;
