@@ -597,3 +597,33 @@ func splitAndTrim(s, sep string) []string {
 	}
 	return parts
 }
+
+// DebugGetAllUserEmails returns all unique user_email values from the database
+func (s *Storage) DebugGetAllUserEmails(ctx context.Context, search string, limit int) ([]string, error) {
+	query := `SELECT DISTINCT user_email FROM user_stats`
+	args := []interface{}{}
+	
+	if search != "" {
+		query += ` WHERE user_email LIKE ?`
+		args = append(args, "%"+search+"%")
+	}
+	
+	query += ` ORDER BY user_email LIMIT ?`
+	args = append(args, limit)
+	
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var emails []string
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			continue
+		}
+		emails = append(emails, email)
+	}
+	return emails, nil
+}

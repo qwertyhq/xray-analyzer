@@ -161,6 +161,9 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/ai/sessions", s.handleAIChatSessions)
 	mux.HandleFunc("/api/ai/sessions/", s.handleAIChatSession)
 
+	// Debug endpoints
+	mux.HandleFunc("/api/debug/users", s.handleDebugUsers)
+
 	// User-specific endpoints (must be registered before /api/users/)
 	mux.HandleFunc("/api/users/", s.handleUserRouter)
 
