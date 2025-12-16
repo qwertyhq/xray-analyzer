@@ -927,7 +927,7 @@ export function SubscriptionAbuseAnalytics({
                           </div>
 
                           <div className="flex items-center gap-2 sm:gap-3">
-                            {/* Stats badges */}
+                            {/* Stats badges - always show both IP and HWID */}
                             <div className="hidden sm:flex gap-1.5">
                               <TooltipProvider>
                                 <Tooltip>
@@ -937,30 +937,28 @@ export function SubscriptionAbuseAnalytics({
                                       {user.unique_ips}
                                     </Badge>
                                   </TooltipTrigger>
-                                  <TooltipContent>Unique IPs</TooltipContent>
+                                  <TooltipContent>Уникальных IP</TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
 
-                              {user.unique_hwids > 0 && (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <Badge 
-                                        variant={user.excess_devices && user.excess_devices > 0 ? "destructive" : "outline"} 
-                                        className="gap-1"
-                                      >
-                                        <Smartphone className="h-3 w-3" />
-                                        {user.unique_hwids}
-                                        {user.device_limit && `/${user.device_limit}`}
-                                      </Badge>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      HWID устройств
-                                      {user.excess_devices && user.excess_devices > 0 && ` (превышение на ${user.excess_devices})`}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              )}
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <Badge 
+                                      variant={user.excess_devices && user.excess_devices > 0 ? "destructive" : "outline"} 
+                                      className="gap-1"
+                                    >
+                                      <Smartphone className="h-3 w-3" />
+                                      {user.unique_hwids}
+                                      {user.device_limit && `/${user.device_limit}`}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    HWID устройств
+                                    {user.excess_devices && user.excess_devices > 0 && ` (превышение на ${user.excess_devices})`}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
 
                               {user.unique_nodes > 0 && (
                                 <TooltipProvider>
