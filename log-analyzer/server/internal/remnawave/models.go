@@ -5,6 +5,7 @@ import "time"
 // User represents a Remnawave user
 type User struct {
 	UUID                   string          `json:"uuid"`
+	ID                     int64           `json:"id"`
 	ShortUUID              string          `json:"shortUuid"`
 	Username               string          `json:"username"`
 	Status                 string          `json:"status"` // ACTIVE, DISABLED, LIMITED, EXPIRED
