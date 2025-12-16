@@ -536,9 +536,11 @@ func (s *Storage) migrate() error {
 		phone TEXT,
 		telegram_user TEXT,
 		payment_info TEXT,
-		plan TEXT
+		plan TEXT,
+		us_id TEXT
 	);
 	CREATE INDEX IF NOT EXISTS idx_remna_users_id ON remna_users(id);
+	CREATE INDEX IF NOT EXISTS idx_remna_users_us_id ON remna_users(us_id);
 	CREATE INDEX IF NOT EXISTS idx_remna_users_username ON remna_users(username);
 	CREATE INDEX IF NOT EXISTS idx_remna_users_email ON remna_users(email);
 	CREATE INDEX IF NOT EXISTS idx_remna_users_status ON remna_users(status);
@@ -622,6 +624,10 @@ func (s *Storage) migrate() error {
 	// Migration: add latitude/longitude columns to user_ip_history
 	s.db.Exec("ALTER TABLE user_ip_history ADD COLUMN latitude REAL")
 	s.db.Exec("ALTER TABLE user_ip_history ADD COLUMN longitude REAL")
+
+	// Migration: add us_id column to remna_users (Xray log user ID from US_ID: in description)
+	s.db.Exec("ALTER TABLE remna_users ADD COLUMN us_id TEXT")
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_remna_users_us_id ON remna_users(us_id)")
 
 	return nil
 }

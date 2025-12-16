@@ -70,6 +70,7 @@ type ParsedNote struct {
 	Plan         string            `json:"plan,omitempty"`
 	ExpiryDate   string            `json:"expiry_date,omitempty"`
 	Notes        string            `json:"notes,omitempty"`
+	USID         string            `json:"us_id,omitempty"` // Xray log user ID from US_ID: <number>
 	Custom       map[string]string `json:"custom,omitempty"`
 	RawText      string            `json:"raw_text,omitempty"`
 }

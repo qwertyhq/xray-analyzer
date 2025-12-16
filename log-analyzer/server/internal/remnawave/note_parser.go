@@ -16,6 +16,9 @@ var (
 	// Match telegram usernames
 	telegramPattern = regexp.MustCompile(`@[a-zA-Z][a-zA-Z0-9_]{4,31}`)
 
+	// Match US_ID: <number> pattern (Xray log user ID)
+	usIDPattern = regexp.MustCompile(`(?i)US_ID[:\s]*(\d+)`)
+
 	// Common key aliases
 	keyAliases = map[string]string{
 		"name":       "real_name",
@@ -54,6 +57,11 @@ func ParseNote(note string) *ParsedNote {
 	parsed := &ParsedNote{
 		RawText: note,
 		Custom:  make(map[string]string),
+	}
+
+	// Extract US_ID from anywhere in the note
+	if matches := usIDPattern.FindStringSubmatch(note); len(matches) == 2 {
+		parsed.USID = matches[1]
 	}
 
 	// Split by newlines and process each line

@@ -44,6 +44,7 @@ type RemnaUserData struct {
 	TelegramUser         *string
 	PaymentInfo          *string
 	Plan                 *string
+	USID                 *string // Xray log user ID from US_ID: <number> in description
 }
 
 // RemnaHwidData represents HWID device data for storage
@@ -267,6 +268,9 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 				}
 				if user.ParsedNote.Plan != "" {
 					userData.Plan = &user.ParsedNote.Plan
+				}
+				if user.ParsedNote.USID != "" {
+					userData.USID = &user.ParsedNote.USID
 				}
 			}
 

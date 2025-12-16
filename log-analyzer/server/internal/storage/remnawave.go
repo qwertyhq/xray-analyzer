@@ -20,8 +20,8 @@ func (s *Storage) UpsertRemnaUser(ctx context.Context, user *remnawave.RemnaUser
 			traffic_limit_strategy, expire_at, online_at, first_connected_at,
 			hwid_device_limit, hwid_device_count, telegram_id, description, tag,
 			created_at, updated_at, synced_at,
-			real_name, phone, telegram_user, payment_info, plan
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			real_name, phone, telegram_user, payment_info, plan, us_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(uuid) DO UPDATE SET
 			id = excluded.id,
 			short_uuid = excluded.short_uuid,
@@ -46,7 +46,8 @@ func (s *Storage) UpsertRemnaUser(ctx context.Context, user *remnawave.RemnaUser
 			phone = excluded.phone,
 			telegram_user = excluded.telegram_user,
 			payment_info = excluded.payment_info,
-			plan = excluded.plan
+			plan = excluded.plan,
+			us_id = excluded.us_id
 	`
 	_, err := s.db.ExecContext(ctx, query,
 		user.UUID, user.ID, user.ShortUUID, user.Username, user.Email, user.Status,
@@ -54,7 +55,7 @@ func (s *Storage) UpsertRemnaUser(ctx context.Context, user *remnawave.RemnaUser
 		user.TrafficLimitStrategy, user.ExpireAt, user.OnlineAt, user.FirstConnectedAt,
 		user.HwidDeviceLimit, user.HwidDeviceCount, user.TelegramID, user.Description, user.Tag,
 		user.CreatedAt, user.UpdatedAt, user.SyncedAt,
-		user.RealName, user.Phone, user.TelegramUser, user.PaymentInfo, user.Plan,
+		user.RealName, user.Phone, user.TelegramUser, user.PaymentInfo, user.Plan, user.USID,
 	)
 	return err
 }
