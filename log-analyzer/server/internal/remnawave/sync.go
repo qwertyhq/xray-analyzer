@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -91,6 +92,7 @@ type SyncService struct {
 	users           map[string]*User        // by UUID
 	usersByEmail    map[string]*User        // by email (lowercase)
 	usersByUsername map[string]*User        // by username
+	usersByID       map[int64]*User         // by numeric ID
 	hwidDevices     map[string][]HwidDevice // by user UUID
 	lastSync        time.Time
 
@@ -106,6 +108,7 @@ func NewSyncService(client *Client, syncInterval time.Duration) *SyncService {
 		users:           make(map[string]*User),
 		usersByEmail:    make(map[string]*User),
 		usersByUsername: make(map[string]*User),
+		usersByID:       make(map[int64]*User),
 		hwidDevices:     make(map[string][]HwidDevice),
 	}
 	svc.idCache = NewIDCache(client)
@@ -204,6 +207,7 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 	users := make(map[string]*User)
 	usersByEmail := make(map[string]*User)
 	usersByUsername := make(map[string]*User)
+	usersByID := make(map[int64]*User)
 	now := time.Now()
 
 	for i := range resp.Users {
@@ -224,6 +228,9 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 		}
 		if user.Username != "" {
 			usersByUsername[user.Username] = user
+		}
+		if user.ID > 0 {
+			usersByID[user.ID] = user
 		}
 
 		// Persist to storage if configured
@@ -284,6 +291,7 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 	s.users = users
 	s.usersByEmail = usersByEmail
 	s.usersByUsername = usersByUsername
+	s.usersByID = usersByID
 	s.mu.Unlock()
 
 	return nil
@@ -434,6 +442,29 @@ func (s *SyncService) GetUserByUsername(username string) *User {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.usersByUsername[username]
+}
+
+// GetUserByID returns a cached user by numeric ID
+func (s *SyncService) GetUserByID(id int64) *User {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.usersByID[id]
+}
+
+// GetUserByIDOrUsername returns a user by numeric ID (if input is numeric) or username
+func (s *SyncService) GetUserByIDOrUsername(idOrUsername string) *User {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Try as numeric ID first
+	if id, err := strconv.ParseInt(idOrUsername, 10, 64); err == nil {
+		if user := s.usersByID[id]; user != nil {
+			return user
+		}
+	}
+
+	// Try as username
+	return s.usersByUsername[idOrUsername]
 }
 
 // ResolveUsername resolves a numeric ID or username to the actual username
