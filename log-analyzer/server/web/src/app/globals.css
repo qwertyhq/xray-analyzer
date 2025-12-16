@@ -311,12 +311,6 @@
     height: 100dvh;
     max-height: 100dvh;
   }
-  
-  /* Ensure proper keyboard behavior */
-  html, body {
-    height: 100dvh;
-    overflow: hidden;
-  }
 }
 
 /* Chat keyboard support for iOS */
