@@ -625,6 +625,10 @@ func (s *Storage) migrate() error {
 	s.db.Exec("ALTER TABLE user_ip_history ADD COLUMN latitude REAL")
 	s.db.Exec("ALTER TABLE user_ip_history ADD COLUMN longitude REAL")
 
+	// Migration: add id column to remna_users (Remnawave numeric user ID)
+	s.db.Exec("ALTER TABLE remna_users ADD COLUMN id INTEGER")
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_remna_users_id ON remna_users(id)")
+
 	// Migration: add us_id column to remna_users (Xray log user ID from US_ID: in description)
 	s.db.Exec("ALTER TABLE remna_users ADD COLUMN us_id TEXT")
 	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_remna_users_us_id ON remna_users(us_id)")
