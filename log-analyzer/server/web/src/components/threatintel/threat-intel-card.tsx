@@ -15,7 +15,8 @@ interface ThreatIntelCardProps {
 
 export function ThreatIntelCard({ className }: ThreatIntelCardProps) {
   const { threatIntel, loading } = useWsThreatIntel();
-  const { stats, matches } = threatIntel;
+  const { stats, matches: matchesRaw } = threatIntel;
+  const matches = matchesRaw || [];
 
   if (loading) {
     return (
