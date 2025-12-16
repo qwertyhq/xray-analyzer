@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
@@ -50,10 +51,15 @@ func (s *Storage) SaveUserLocation(ctx context.Context, userEmail, countryCode, 
 	return err
 }
 
-// GetGeoStats returns geographic threat statistics
+// GetGeoStats returns geographic threat statistics (cached)
 func (s *Storage) GetGeoStats(ctx context.Context, limit int) ([]*threatintel.GeoStats, error) {
 	if limit <= 0 {
 		limit = 20
+	}
+
+	cacheKey := fmt.Sprintf("geo_stats_%d", limit)
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]*threatintel.GeoStats), nil
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -81,11 +87,17 @@ func (s *Storage) GetGeoStats(ctx context.Context, limit int) ([]*threatintel.Ge
 		result = append(result, stat)
 	}
 
+	s.cache.Set(cacheKey, result, CacheTTLMedium)
 	return result, nil
 }
 
-// GetGeoSummary returns aggregated geographic analysis
+// GetGeoSummary returns aggregated geographic analysis (cached)
 func (s *Storage) GetGeoSummary(ctx context.Context) (*threatintel.GeoSummary, error) {
+	cacheKey := "geo_summary"
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.(*threatintel.GeoSummary), nil
+	}
+
 	summary := &threatintel.GeoSummary{
 		TopCountries: []*threatintel.CountryStats{},
 		ByThreatType: make(map[string][]*threatintel.GeoStats),
@@ -148,6 +160,7 @@ func (s *Storage) GetGeoSummary(ctx context.Context) (*threatintel.GeoSummary, e
 		}
 	}
 
+	s.cache.Set(cacheKey, summary, CacheTTLMedium)
 	return summary, nil
 }
 

@@ -81,8 +81,14 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 }
 
 // GetAllUsers gets all users sorted by requests (aggregated across nodes)
-// Joins with remna_users to get display names for numeric user IDs
+// Joins with remna_users to get display names for numeric user IDs (cached)
 func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserStats, error) {
+	cacheKey := fmt.Sprintf("all_users_%d", limit)
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]*models.UserStats), nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		WITH user_agg AS (
 			SELECT 
@@ -133,6 +139,8 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 		u.LastBlacklistHit = parseDateTime(lastHitStr)
 		users = append(users, u)
 	}
+
+	s.cache.Set(cacheKey, users, CacheTTLShort)
 	return users, nil
 }
 
@@ -489,8 +497,14 @@ func (s *Storage) GetUserBlacklistCount(ctx context.Context, nodeID, userEmail s
 	return count, err
 }
 
-// GetGlobalStats gets aggregated stats across all nodes
+// GetGlobalStats gets aggregated stats across all nodes (cached)
 func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, error) {
+	cacheKey := "global_stats"
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.(*models.GlobalStats), nil
+	}
+
 	stats := &models.GlobalStats{}
 
 	// Get node stats and sum online users from nodes (same 1-minute window as GetNodeStats)
@@ -520,6 +534,7 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 		return nil, err
 	}
 
+	s.cache.Set(cacheKey, stats, CacheTTLShort)
 	return stats, nil
 }
 

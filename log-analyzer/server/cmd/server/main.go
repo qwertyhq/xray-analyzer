@@ -135,16 +135,24 @@ func main() {
 
 	// Initialize Remnawave client and sync service
 	var remnaSvc *remnawave.SyncService
+	var remnaClient *remnawave.Client
 	if cfg.RemnawaveEnabled && cfg.RemnawaveURL != "" && cfg.RemnawaveAPIToken != "" {
-		remnaClient := remnawave.NewClient(cfg.RemnawaveURL, cfg.RemnawaveAPIToken)
+		remnaClient = remnawave.NewClient(cfg.RemnawaveURL, cfg.RemnawaveAPIToken)
 		remnaSvc = remnawave.NewSyncService(remnaClient, cfg.RemnawaveSyncInterval)
 		remnaSvc.SetStorage(store) // Persist data to SQLite
+		// Warm cache after each sync for fast page loads
+		remnaSvc.OnSyncComplete(func() {
+			store.WarmCache(ctx)
+		})
 		srv.SetRemnawave(remnaSvc)
 		go remnaSvc.Start(ctx)
 		log.Printf("remnawave: enabled, sync interval: %v, storage: enabled", cfg.RemnawaveSyncInterval)
 	} else {
 		log.Println("remnawave: disabled (no URL/token configured)")
 	}
+
+	// Initial cache warm-up
+	go store.WarmCache(ctx)
 
 	// Initialize correlation service for user analysis
 	correlationSvc := correlation.NewService(store, remnaSvc)
@@ -155,6 +163,10 @@ func main() {
 	// Initialize Aleria AI service
 	if cfg.AleriaAPIKey != "" {
 		aleriaSvc := aleria.NewService(cfg.AleriaAPIKey, store)
+		// Give AI access to Remnawave API for real-time data
+		if remnaClient != nil {
+			aleriaSvc.SetRemnaClient(remnaClient)
+		}
 		srv.SetAleria(aleriaSvc)
 		log.Println("aleria: AI service initialized")
 	} else {

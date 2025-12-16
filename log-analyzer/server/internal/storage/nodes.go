@@ -34,8 +34,14 @@ func (s *Storage) UpdateNodeUniqueUsers(ctx context.Context, nodeID string) erro
 	return err
 }
 
-// GetNodeStats gets statistics for all nodes
+// GetNodeStats gets statistics for all nodes (cached)
 func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error) {
+	cacheKey := "node_stats"
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.([]*models.NodeStats), nil
+	}
+
 	// Calculate 1 minute ago in RFC3339 format to match stored data
 	oneMinAgo := time.Now().UTC().Add(-1 * time.Minute).Format(time.RFC3339)
 
@@ -76,6 +82,8 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 		n.LastBatchTime = parseDateTime(lastBatchStr)
 		nodes = append(nodes, n)
 	}
+
+	s.cache.Set(cacheKey, nodes, CacheTTLShort)
 	return nodes, nil
 }
 

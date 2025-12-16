@@ -19,8 +19,16 @@ func (s *Storage) RecordBlacklistMatch(ctx context.Context, match *models.Blackl
 	return err
 }
 
-// GetBlacklistAnalytics returns detailed blacklist analytics for a time period
+// GetBlacklistAnalytics returns detailed blacklist analytics for a time period (cached)
 func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*models.BlacklistAnalytics, error) {
+	// Cache key based on hours since epoch (cache per hour window)
+	hours := int(time.Since(since).Hours())
+	cacheKey := fmt.Sprintf("blacklist_analytics_%d", hours)
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		return cached.(*models.BlacklistAnalytics), nil
+	}
+
 	analytics := &models.BlacklistAnalytics{
 		TopDomains:    []models.DomainStats{},
 		TopUsers:      []models.UserBlacklistStats{},
@@ -74,6 +82,7 @@ func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*
 		return nil, err
 	}
 
+	s.cache.Set(cacheKey, analytics, CacheTTLMedium)
 	return analytics, nil
 }
 

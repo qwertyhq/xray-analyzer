@@ -9,13 +9,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xray-log-analyzer/server/internal/remnawave"
 	"github.com/xray-log-analyzer/server/internal/storage"
 )
 
 // Service provides AI-powered analytics with smart database queries
 type Service struct {
-	client  *Client
-	storage *storage.Storage
+	client      *Client
+	storage     *storage.Storage
+	remnaClient *remnawave.Client
 }
 
 // NewService creates a new Aleria AI service
@@ -24,6 +26,11 @@ func NewService(apiKey string, store *storage.Storage) *Service {
 		client:  NewClient(apiKey),
 		storage: store,
 	}
+}
+
+// SetRemnaClient sets the Remnawave API client for direct API access
+func (s *Service) SetRemnaClient(client *remnawave.Client) {
+	s.remnaClient = client
 }
 
 // IsConfigured returns true if the service is properly configured
@@ -387,6 +394,35 @@ var tools = []map[string]interface{}{
 			},
 		},
 	},
+	{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "get_remnawave_system_stats",
+			"description": "Get real-time VPN system statistics from Remnawave: CPU, memory, online users right now, nodes status. Use this for current state monitoring.",
+			"parameters": map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+				"required":   []string{},
+			},
+		},
+	},
+	{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "get_user_subscription_history",
+			"description": "Get subscription download history for a specific user: when they downloaded configs, from which IPs",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"user_uuid": map[string]interface{}{
+						"type":        "string",
+						"description": "User UUID from Remnawave",
+					},
+				},
+				"required": []string{"user_uuid"},
+			},
+		},
+	},
 }
 
 // Query processes a user query using text-based function calling
@@ -407,8 +443,18 @@ func (s *Service) Query(ctx context.Context, req *ChatQueryRequest) (*ChatQueryR
 2. Не пиши "я запрошу" или "подожди" - просто вызови функцию
 3. После получения данных - анализируй их и отвечай конкретно с цифрами
 4. Если данных нет - так и скажи
+5. ВАЖНО: Используй username (remna_username) вместо user_email когда показываешь пользователей. user_email часто содержит числовой ID, а remna_username - читаемое имя
+6. Для ссылок на профили пользователей используй формат: [имя_пользователя](/users/ID) где ID это user_email из данных
+7. Структурируй ответы с использованием markdown: заголовки (##), списки, таблицы, жирный текст
 
-Отвечай на русском языке. Будь конкретным.`, functionsHelp)
+ФОРМАТ ОТВЕТА:
+- Используй ## для заголовков разделов
+- Используй таблицы для списков пользователей
+- Вставляй ссылки на профили: [username](/users/user_email)
+- Выделяй важные цифры жирным: **123**
+- Добавляй эмодзи для категорий: 🔴 критично, 🟡 внимание, 🟢 норма
+
+Отвечай на русском языке. Будь конкретным и полезным.`, functionsHelp)
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
@@ -563,6 +609,8 @@ func (s *Service) buildFunctionsHelp() string {
 		{"get_remnawave_traffic_abusers", "Пользователи превышающие лимит трафика", `{"threshold_percent": число}`},
 		{"get_remnawave_nodes", "Статус VPN нод", "нет аргументов"},
 		{"search_remnawave_users", "Поиск VPN пользователей", `{"query": "текст", "limit": число}`},
+		{"get_remnawave_system_stats", "Статистика системы в реальном времени: CPU, память, онлайн сейчас", "нет аргументов"},
+		{"get_user_subscription_history", "История скачиваний подписки пользователя", `{"user_uuid": "uuid"}`},
 	}
 
 	var sb strings.Builder
@@ -685,6 +733,22 @@ func (s *Service) executeFunction(ctx context.Context, name string, argsJSON str
 		limit := getIntArg(args, "limit", 20)
 		result, err = s.storage.SearchRemnaUsers(ctx, query, limit)
 
+	case "get_remnawave_system_stats":
+		if s.remnaClient == nil || !s.remnaClient.IsConfigured() {
+			return "", fmt.Errorf("remnawave client not configured")
+		}
+		result, err = s.remnaClient.GetSystemStats(ctx)
+
+	case "get_user_subscription_history":
+		userUUID, ok := args["user_uuid"].(string)
+		if !ok || userUUID == "" {
+			return "", fmt.Errorf("user_uuid is required")
+		}
+		if s.remnaClient == nil || !s.remnaClient.IsConfigured() {
+			return "", fmt.Errorf("remnawave client not configured")
+		}
+		result, err = s.remnaClient.GetUserSubscriptionHistory(ctx, userUUID)
+
 	default:
 		return "", fmt.Errorf("unknown function: %s", name)
 	}
@@ -784,8 +848,18 @@ func (s *Service) QueryStream(ctx context.Context, req *ChatQueryRequest, onChun
 2. Не пиши "я запрошу" или "подожди" - просто вызови функцию
 3. После получения данных - анализируй их и отвечай конкретно с цифрами
 4. Если данных нет - так и скажи
+5. ВАЖНО: Используй username (remna_username) вместо user_email когда показываешь пользователей. user_email часто содержит числовой ID, а remna_username - читаемое имя
+6. Для ссылок на профили пользователей используй формат: [имя_пользователя](/users/ID) где ID это user_email из данных
+7. Структурируй ответы с использованием markdown: заголовки (##), списки, таблицы, жирный текст
 
-Отвечай на русском языке. Будь конкретным.`, functionsHelp)
+ФОРМАТ ОТВЕТА:
+- Используй ## для заголовков разделов
+- Используй таблицы для списков пользователей
+- Вставляй ссылки на профили: [username](/users/user_email)
+- Выделяй важные цифры жирным: **123**
+- Добавляй эмодзи для категорий: 🔴 критично, 🟡 внимание, 🟢 норма
+
+Отвечай на русском языке. Будь конкретным и полезным.`, functionsHelp)
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
