@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import Link from "next/link";
 import {
   Table,
@@ -91,7 +92,7 @@ export function SubscriptionAbuseTable({
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/api/blacklist/abuse?period=${period}&min_ips=${minIPs}`);
+      const res = await authFetch(`/api/blacklist/abuse?period=${period}&min_ips=${minIPs}`);
       if (!res.ok) throw new Error("Failed to fetch data");
       const data = await res.json();
       // Sort by abuse_score descending
@@ -110,7 +111,7 @@ export function SubscriptionAbuseTable({
   const handleForceSync = useCallback(async () => {
     try {
       setSyncing(true);
-      const res = await fetch("/api/remnawave/sync", { method: "POST" });
+      const res = await authFetch("/api/remnawave/sync", { method: "POST" });
       if (!res.ok) throw new Error("Failed to sync");
       // Refetch data after sync
       await fetchData();
@@ -125,7 +126,7 @@ export function SubscriptionAbuseTable({
   const handleClearHwid = useCallback(async (userUuid: string) => {
     setClearingHwid(userUuid);
     try {
-      const response = await fetch("/api/remnawave/hwid-clear", {
+      const response = await authFetch("/api/remnawave/hwid-clear", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userUuid }),

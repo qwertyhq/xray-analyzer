@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import Link from "next/link";
 import { useWsBlacklist } from "@/contexts/websocket-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -64,7 +65,7 @@ export default function BlacklistPage() {
     const fetchAnalytics = async () => {
       setHttpLoading(true);
       try {
-        const res = await fetch(`/api/blacklist/analytics?period=${timeRange}`);
+        const res = await authFetch(`/api/blacklist/analytics?period=${timeRange}`);
         if (res.ok) {
           setHttpAnalytics(await res.json());
         }

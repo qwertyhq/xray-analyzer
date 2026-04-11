@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -29,7 +30,7 @@ export function IPInfoBadge({ ip, showFull = false, className }: IPInfoBadgeProp
 
     const fetchInfo = async () => {
       try {
-        const res = await fetch(`/api/ipinfo?ip=${encodeURIComponent(ip)}`);
+        const res = await authFetch(`/api/ipinfo?ip=${encodeURIComponent(ip)}`);
         if (res.ok) {
           const data: IPInfo = await res.json();
           ipInfoCache.set(ip, data);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -226,7 +227,7 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
   const handleRecalculate = async () => {
     setRecalculating(true);
     try {
-      await fetch("/api/threatintel/risk-profiles", { method: "POST" });
+      await authFetch("/api/threatintel/risk-profiles", { method: "POST" });
       onRecalculate?.();
     } finally {
       setRecalculating(false);

@@ -130,8 +130,19 @@ func main() {
 	}()
 
 	// Initialize and start server
-	srv := server.New(cfg.ListenAddr, cfg.AllowedOrigins, anal, store, bl)
+	srv := server.New(cfg.ListenAddr, cfg.AllowedOrigins, cfg.APIToken, cfg.AgentToken, anal, store, bl)
 	srv.SetThreatIntel(threatIntelSvc)
+
+	if cfg.APIToken != "" {
+		log.Println("auth: API token authentication enabled")
+	} else {
+		log.Println("auth: WARNING - no API_TOKEN set, API is unprotected!")
+	}
+	if cfg.AgentToken != "" {
+		log.Println("auth: agent token authentication enabled")
+	} else {
+		log.Println("auth: WARNING - no AGENT_TOKEN set, agent WebSocket is unprotected!")
+	}
 
 	// Initialize Remnawave client and sync service
 	var remnaSvc *remnawave.SyncService

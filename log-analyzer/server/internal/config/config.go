@@ -14,6 +14,10 @@ type Config struct {
 	DBPath         string
 	AllowedOrigins []string // Allowed origins for WebSocket CORS (empty = allow all for dev)
 
+	// Authentication
+	APIToken   string // Bearer token for API/dashboard access (empty = no auth)
+	AgentToken string // Token for agent WebSocket connections (empty = no auth)
+
 	// Analysis settings
 	BlacklistPath      string
 	BlacklistReload    time.Duration
@@ -44,6 +48,8 @@ func Load() *Config {
 		ListenAddr:             getEnv("LISTEN_ADDR", ":8080"),
 		DBPath:                 getEnv("DB_PATH", "./data/analyzer.db"),
 		AllowedOrigins:         getStringSliceEnv("ALLOWED_ORIGINS", nil),
+		APIToken:               getEnv("API_TOKEN", ""),
+		AgentToken:             getEnv("AGENT_TOKEN", ""),
 		BlacklistPath:          getEnv("BLACKLIST_PATH", "./blacklist.txt"),
 		BlacklistReload:        getDurationEnv("BLACKLIST_RELOAD", 5*time.Minute),
 		BlacklistRemoteURL:     getEnv("BLACKLIST_REMOTE_URL", ""),

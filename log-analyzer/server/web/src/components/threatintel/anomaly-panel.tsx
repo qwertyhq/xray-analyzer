@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -96,7 +97,7 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
   const handleResolve = async (id: string) => {
     setResolving(id);
     try {
-      await fetch(`/api/threatintel/anomalies?id=${id}`, { method: "DELETE" });
+      await authFetch(`/api/threatintel/anomalies?id=${id}`, { method: "DELETE" });
       onResolve?.(id);
     } finally {
       setResolving(null);

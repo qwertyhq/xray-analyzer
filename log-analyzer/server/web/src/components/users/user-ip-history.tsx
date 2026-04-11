@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import {
   Table,
   TableBody,
@@ -38,7 +39,7 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
     async function fetchHistory() {
       try {
         setLoading(true);
-        const res = await fetch(`/api/users/${encodeURIComponent(email)}/ip-history`);
+        const res = await authFetch(`/api/users/${encodeURIComponent(email)}/ip-history`);
         if (!res.ok) throw new Error("Failed to fetch IP history");
         const data = await res.json();
         setHistory(data || []);

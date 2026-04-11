@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -238,8 +239,8 @@ export function SubscriptionAbuseAnalytics({
       }
 
       const [ipRes, hwidRes] = await Promise.all([
-        fetch(`/api/blacklist/abuse?period=${period}&min_ips=${minIPs}`, { headers }),
-        fetch("/api/remnawave/abuse", { headers }),
+        authFetch(`/api/blacklist/abuse?period=${period}&min_ips=${minIPs}`, { headers }),
+        authFetch("/api/remnawave/abuse", { headers }),
       ]);
 
       if (!ipRes.ok && ipRes.status !== 404) {
@@ -272,7 +273,7 @@ export function SubscriptionAbuseAnalytics({
   const handleForceSync = useCallback(async () => {
     try {
       setSyncing(true);
-      const res = await fetch("/api/remnawave/sync", { method: "POST" });
+      const res = await authFetch("/api/remnawave/sync", { method: "POST" });
       if (!res.ok) throw new Error("Failed to sync");
       if (isExternalData && onHwidCleared) {
         onHwidCleared();
@@ -290,7 +291,7 @@ export function SubscriptionAbuseAnalytics({
   const handleClearHwid = useCallback(async (userUuid: string) => {
     setClearingHwid(userUuid);
     try {
-      const response = await fetch("/api/remnawave/hwid-clear", {
+      const response = await authFetch("/api/remnawave/hwid-clear", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userUuid }),

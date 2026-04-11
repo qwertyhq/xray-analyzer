@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import {
   FeedStatus,
   TimeStats,
@@ -159,7 +160,7 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
 
   const runAnomalyDetection = useCallback(async () => {
     try {
-      const res = await fetch("/api/threatintel/anomalies", { method: "POST" });
+      const res = await authFetch("/api/threatintel/anomalies", { method: "POST" });
       if (res.ok) {
         await fetchAnomalies();
       } else {
@@ -172,7 +173,7 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
 
   const recalculateRiskProfiles = useCallback(async () => {
     try {
-      const res = await fetch("/api/threatintel/risk-profiles", { method: "POST" });
+      const res = await authFetch("/api/threatintel/risk-profiles", { method: "POST" });
       if (res.ok) {
         await fetchRiskProfiles();
       } else {
@@ -185,7 +186,7 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
 
   const generateReport = useCallback(async (config: ReportConfig) => {
     try {
-      const res = await fetch("/api/threatintel/reports", {
+      const res = await authFetch("/api/threatintel/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
@@ -202,7 +203,7 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
 
   const deleteReport = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/api/threatintel/reports?id=${id}`, { method: "DELETE" });
+      const res = await authFetch(`/api/threatintel/reports?id=${id}`, { method: "DELETE" });
       if (res.ok) {
         await fetchReports();
       } else {

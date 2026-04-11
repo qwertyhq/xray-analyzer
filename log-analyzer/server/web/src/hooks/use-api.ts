@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Stats, NodeStats, UserStats, HourlyStats, UserDetails, Anomaly, Alert, TimeRange, BlacklistAnalytics } from "@/lib/types";
+import { authFetch } from "@/contexts/auth-context";
 
 interface ApiState {
   stats: Stats;
@@ -32,9 +33,9 @@ export function useApi(refreshInterval = 5000) {
   const fetchData = useCallback(async () => {
     try {
       const [statsRes, nodesRes, usersRes] = await Promise.all([
-        fetch("/api/stats"),
-        fetch("/api/nodes"),
-        fetch("/api/users/all"),
+        authFetch("/api/stats"),
+        authFetch("/api/nodes"),
+        authFetch("/api/users/all"),
       ]);
 
       const [stats, nodes, users] = await Promise.all([
@@ -61,7 +62,7 @@ export function useApi(refreshInterval = 5000) {
 
   const deleteNode = useCallback(async (nodeId: string) => {
     try {
-      const res = await fetch("/api/nodes/delete", {
+      const res = await authFetch("/api/nodes/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ node_id: nodeId }),
@@ -93,7 +94,7 @@ export function useStats(refreshInterval = 5000) {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await fetch("/api/stats");
+        const res = await authFetch("/api/stats");
         if (res.ok) setStats(await res.json());
       } catch {
         // ignore
@@ -116,7 +117,7 @@ export function useNodes(refreshInterval = 5000) {
 
   const fetchNodes = useCallback(async () => {
     try {
-      const res = await fetch("/api/nodes");
+      const res = await authFetch("/api/nodes");
       if (res.ok) setNodes(await res.json());
     } catch {
       // ignore
@@ -127,7 +128,7 @@ export function useNodes(refreshInterval = 5000) {
 
   const deleteNode = useCallback(async (nodeId: string) => {
     try {
-      const res = await fetch("/api/nodes/delete", {
+      const res = await authFetch("/api/nodes/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ node_id: nodeId }),
@@ -158,7 +159,7 @@ export function useUsers(refreshInterval = 5000) {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const res = await fetch("/api/users/all");
+        const res = await authFetch("/api/users/all");
         if (res.ok) setUsers(await res.json());
       } catch {
         // ignore
@@ -182,7 +183,7 @@ export function useHourlyStats(hours = 24) {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await fetch(`/api/hourly?hours=${hours}`);
+        const res = await authFetch(`/api/hourly?hours=${hours}`);
         if (res.ok) {
           const data = await res.json();
           setStats(data || []);
@@ -216,7 +217,7 @@ export function useUserDetails(userEmail: string) {
       }
 
       try {
-        const res = await fetch(`/api/users/${encodeURIComponent(userEmail)}`);
+        const res = await authFetch(`/api/users/${encodeURIComponent(userEmail)}`);
         if (res.ok) {
           setDetails(await res.json());
           setError(null);
@@ -271,7 +272,7 @@ export function useHourlyStatsWithRange(range: TimeRange = "24h") {
         if (params.from) searchParams.set("from", params.from);
         if (params.to) searchParams.set("to", params.to);
         
-        const res = await fetch(`/api/hourly?${searchParams.toString()}`);
+        const res = await authFetch(`/api/hourly?${searchParams.toString()}`);
         if (res.ok) {
           const data = await res.json();
           setStats(data || []);
@@ -298,7 +299,7 @@ export function useAnomalies(refreshInterval = 30000) {
   useEffect(() => {
     const fetchAnomalies = async () => {
       try {
-        const res = await fetch("/api/anomalies");
+        const res = await authFetch("/api/anomalies");
         if (res.ok) {
           const data = await res.json();
           setAnomalies(data || []);
@@ -325,7 +326,7 @@ export function useAlerts(limit = 50) {
   useEffect(() => {
     const fetchAlerts = async () => {
       try {
-        const res = await fetch(`/api/alerts?limit=${limit}`);
+        const res = await authFetch(`/api/alerts?limit=${limit}`);
         if (res.ok) {
           const data = await res.json();
           setAlerts(data || []);
@@ -352,7 +353,7 @@ export function useBlacklistAnalytics(period: TimeRange = "24h", refreshInterval
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const res = await fetch(`/api/blacklist/analytics?period=${period}`);
+        const res = await authFetch(`/api/blacklist/analytics?period=${period}`);
         if (res.ok) {
           const data = await res.json();
           setAnalytics(data);

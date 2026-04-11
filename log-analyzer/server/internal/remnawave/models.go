@@ -180,7 +180,7 @@ type Node struct {
 	UsersOnline       *int       `json:"usersOnline"`
 	XrayVersion       *string    `json:"xrayVersion"`
 	NodeVersion       *string    `json:"nodeVersion"`
-	XrayUptime        string     `json:"xrayUptime"`
+	XrayUptime        any        `json:"xrayUptime"`
 	LastStatusChange  *time.Time `json:"lastStatusChange"`
 	LastStatusMessage *string    `json:"lastStatusMessage"`
 	ViewPosition      int        `json:"viewPosition"`

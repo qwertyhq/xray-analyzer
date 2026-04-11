@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -53,8 +54,8 @@ export default function RemnavewavePage() {
       }
 
       const [statsRes, onlineRes] = await Promise.all([
-        fetch("/api/remnawave/stats", { headers }),
-        fetch("/api/remnawave/online", { headers })
+        authFetch("/api/remnawave/stats", { headers }),
+        authFetch("/api/remnawave/online", { headers })
       ]);
 
       // All endpoints now return JSON even when Remnawave is not configured

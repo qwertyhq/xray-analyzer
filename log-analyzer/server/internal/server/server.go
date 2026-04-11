@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,8 @@ import (
 type Server struct {
 	addr           string
 	allowedOrigins []string
+	apiToken       string // Bearer token for API/dashboard (empty = no auth)
+	agentToken     string // Token for agent WebSocket (empty = no auth)
 	analyzer       *analyzer.Analyzer
 	storage        *storage.Storage
 	blacklist      *blacklist.Blacklist
@@ -68,10 +71,12 @@ type DashboardUpdate struct {
 }
 
 // New creates a new Server
-func New(addr string, allowedOrigins []string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl *blacklist.Blacklist) *Server {
+func New(addr string, allowedOrigins []string, apiToken, agentToken string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl *blacklist.Blacklist) *Server {
 	s := &Server{
 		addr:             addr,
 		allowedOrigins:   allowedOrigins,
+		apiToken:         apiToken,
+		agentToken:       agentToken,
 		analyzer:         analyzer,
 		storage:          storage,
 		blacklist:        bl,
@@ -103,69 +108,130 @@ func (s *Server) SetAleria(a *aleria.Service) {
 	s.aleria = a
 }
 
+// requireAPIToken wraps a handler with Bearer token authentication
+func (s *Server) requireAPIToken(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.apiToken == "" {
+			next(w, r)
+			return
+		}
+		// Trust requests from localhost (Next.js SSR in same container)
+		if isLocalRequest(r) {
+			next(w, r)
+			return
+		}
+		token := extractToken(r)
+		if token != s.apiToken {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// isLocalRequest checks if the request comes from localhost
+func isLocalRequest(r *http.Request) bool {
+	host := r.RemoteAddr
+	return strings.HasPrefix(host, "127.0.0.1:") || strings.HasPrefix(host, "[::1]:") || strings.HasPrefix(host, "localhost:")
+}
+
+// requireAgentToken wraps a handler with agent token authentication
+func (s *Server) requireAgentToken(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.agentToken == "" {
+			next(w, r)
+			return
+		}
+		token := extractToken(r)
+		if token != s.agentToken {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// extractToken gets token from Authorization header or query param
+func extractToken(r *http.Request) string {
+	// Check Authorization: Bearer <token>
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		const prefix = "Bearer "
+		if len(auth) > len(prefix) && auth[:len(prefix)] == prefix {
+			return auth[len(prefix):]
+		}
+	}
+	// Check ?token=<token> query param (for WebSocket connections from browser)
+	if token := r.URL.Query().Get("token"); token != "" {
+		return token
+	}
+	return ""
+}
+
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 
 	// WebSocket endpoints
-	mux.HandleFunc("/ws", s.handleWebSocket)
-	mux.HandleFunc("/ws/dashboard", s.handleDashboardWebSocket)
+	mux.HandleFunc("/ws", s.requireAgentToken(s.handleWebSocket))
+	mux.HandleFunc("/ws/dashboard", s.requireAPIToken(s.handleDashboardWebSocket))
 
-	// API endpoints (keep for backwards compatibility)
-	mux.HandleFunc("/api/stats", s.handleStats)
-	mux.HandleFunc("/api/nodes", s.handleNodes)
-	mux.HandleFunc("/api/nodes/delete", s.handleDeleteNode)
-	mux.HandleFunc("/api/users", s.handleUsers)
-	mux.HandleFunc("/api/users/all", s.handleAllUsers)
-	mux.HandleFunc("/api/hourly", s.handleHourlyStats)
-	mux.HandleFunc("/api/anomalies", s.handleAnomalies)
-	mux.HandleFunc("/api/alerts", s.handleAlerts)
-	mux.HandleFunc("/api/blacklist/stats", s.handleBlacklistStats)
-	mux.HandleFunc("/api/blacklist/analytics", s.handleBlacklistAnalytics)
-	mux.HandleFunc("/api/blacklist/abuse", s.handleSubscriptionAbuse)
-	mux.HandleFunc("/api/threatintel/stats", s.handleThreatIntelStats)
-	mux.HandleFunc("/api/threatintel/matches", s.handleThreatIntelMatches)
-	mux.HandleFunc("/api/threatintel/feeds", s.handleThreatIntelFeeds)
-	mux.HandleFunc("/api/threatintel/top-users", s.handleThreatIntelTopUsers)
-	mux.HandleFunc("/api/threatintel/time-stats", s.handleThreatIntelTimeStats)
-	mux.HandleFunc("/api/threatintel/geo-stats", s.handleThreatIntelGeoStats)
-	mux.HandleFunc("/api/threatintel/anomalies", s.handleThreatIntelAnomalies)
-	mux.HandleFunc("/api/threatintel/risk-profiles", s.handleUserRiskProfiles)
-	mux.HandleFunc("/api/threatintel/dns-analysis", s.handleDNSAnalysis)
-	mux.HandleFunc("/api/threatintel/reports", s.handleReports)
-	mux.HandleFunc("/api/threatintel/clear", s.handleThreatIntelClear)
-	mux.HandleFunc("/api/ipinfo", s.handleIPInfo)
+	// Health (no auth)
 	mux.HandleFunc("/health", s.handleHealth)
 
+	// API endpoints (require API token)
+	mux.HandleFunc("/api/stats", s.requireAPIToken(s.handleStats))
+	mux.HandleFunc("/api/nodes", s.requireAPIToken(s.handleNodes))
+	mux.HandleFunc("/api/nodes/delete", s.requireAPIToken(s.handleDeleteNode))
+	mux.HandleFunc("/api/users", s.requireAPIToken(s.handleUsers))
+	mux.HandleFunc("/api/users/all", s.requireAPIToken(s.handleAllUsers))
+	mux.HandleFunc("/api/hourly", s.requireAPIToken(s.handleHourlyStats))
+	mux.HandleFunc("/api/anomalies", s.requireAPIToken(s.handleAnomalies))
+	mux.HandleFunc("/api/alerts", s.requireAPIToken(s.handleAlerts))
+	mux.HandleFunc("/api/blacklist/stats", s.requireAPIToken(s.handleBlacklistStats))
+	mux.HandleFunc("/api/blacklist/analytics", s.requireAPIToken(s.handleBlacklistAnalytics))
+	mux.HandleFunc("/api/blacklist/abuse", s.requireAPIToken(s.handleSubscriptionAbuse))
+	mux.HandleFunc("/api/threatintel/stats", s.requireAPIToken(s.handleThreatIntelStats))
+	mux.HandleFunc("/api/threatintel/matches", s.requireAPIToken(s.handleThreatIntelMatches))
+	mux.HandleFunc("/api/threatintel/feeds", s.requireAPIToken(s.handleThreatIntelFeeds))
+	mux.HandleFunc("/api/threatintel/top-users", s.requireAPIToken(s.handleThreatIntelTopUsers))
+	mux.HandleFunc("/api/threatintel/time-stats", s.requireAPIToken(s.handleThreatIntelTimeStats))
+	mux.HandleFunc("/api/threatintel/geo-stats", s.requireAPIToken(s.handleThreatIntelGeoStats))
+	mux.HandleFunc("/api/threatintel/anomalies", s.requireAPIToken(s.handleThreatIntelAnomalies))
+	mux.HandleFunc("/api/threatintel/risk-profiles", s.requireAPIToken(s.handleUserRiskProfiles))
+	mux.HandleFunc("/api/threatintel/dns-analysis", s.requireAPIToken(s.handleDNSAnalysis))
+	mux.HandleFunc("/api/threatintel/reports", s.requireAPIToken(s.handleReports))
+	mux.HandleFunc("/api/threatintel/clear", s.requireAPIToken(s.handleThreatIntelClear))
+	mux.HandleFunc("/api/ipinfo", s.requireAPIToken(s.handleIPInfo))
+
 	// Remnawave API endpoints
-	mux.HandleFunc("/api/remnawave/stats", s.handleRemnawaveStats)
-	mux.HandleFunc("/api/remnawave/users", s.handleRemnawaveUsers)
-	mux.HandleFunc("/api/remnawave/user/", s.handleRemnawaveUser)
-	mux.HandleFunc("/api/remnawave/hwid/", s.handleRemnawaveHwid)
-	mux.HandleFunc("/api/remnawave/hwid-top", s.handleRemnawaveHwidTop)
-	mux.HandleFunc("/api/remnawave/hwid-clear", s.handleRemnawavelClearHwid)
-	mux.HandleFunc("/api/remnawave/abuse", s.handleRemnawaveAbuse)
-	mux.HandleFunc("/api/remnawave/online", s.handleRemnawaveOnline)
-	mux.HandleFunc("/api/remnawave/sync", s.handleRemnawaveSync)
+	mux.HandleFunc("/api/remnawave/stats", s.requireAPIToken(s.handleRemnawaveStats))
+	mux.HandleFunc("/api/remnawave/users", s.requireAPIToken(s.handleRemnawaveUsers))
+	mux.HandleFunc("/api/remnawave/user/", s.requireAPIToken(s.handleRemnawaveUser))
+	mux.HandleFunc("/api/remnawave/hwid/", s.requireAPIToken(s.handleRemnawaveHwid))
+	mux.HandleFunc("/api/remnawave/hwid-top", s.requireAPIToken(s.handleRemnawaveHwidTop))
+	mux.HandleFunc("/api/remnawave/hwid-clear", s.requireAPIToken(s.handleRemnawavelClearHwid))
+	mux.HandleFunc("/api/remnawave/abuse", s.requireAPIToken(s.handleRemnawaveAbuse))
+	mux.HandleFunc("/api/remnawave/online", s.requireAPIToken(s.handleRemnawaveOnline))
+	mux.HandleFunc("/api/remnawave/sync", s.requireAPIToken(s.handleRemnawaveSync))
 
 	// Correlation API endpoints
-	mux.HandleFunc("/api/correlation/stats", s.handleCorrelationStats)
-	mux.HandleFunc("/api/correlation/profiles", s.handleCorrelationProfiles)
-	mux.HandleFunc("/api/correlation/user/", s.handleCorrelationUser)
-	mux.HandleFunc("/api/correlation/shared-ips", s.handleCorrelationSharedIPs)
-	mux.HandleFunc("/api/correlation/shared-hwids", s.handleCorrelationSharedHWIDs)
+	mux.HandleFunc("/api/correlation/stats", s.requireAPIToken(s.handleCorrelationStats))
+	mux.HandleFunc("/api/correlation/profiles", s.requireAPIToken(s.handleCorrelationProfiles))
+	mux.HandleFunc("/api/correlation/user/", s.requireAPIToken(s.handleCorrelationUser))
+	mux.HandleFunc("/api/correlation/shared-ips", s.requireAPIToken(s.handleCorrelationSharedIPs))
+	mux.HandleFunc("/api/correlation/shared-hwids", s.requireAPIToken(s.handleCorrelationSharedHWIDs))
 
 	// AI Chat endpoints
-	mux.HandleFunc("/api/ai/chat", s.handleAIChat)
-	mux.HandleFunc("/api/ai/chat/stream", s.handleAIChatStream)
-	mux.HandleFunc("/api/ai/sessions", s.handleAIChatSessions)
-	mux.HandleFunc("/api/ai/sessions/", s.handleAIChatSession)
+	mux.HandleFunc("/api/ai/chat", s.requireAPIToken(s.handleAIChat))
+	mux.HandleFunc("/api/ai/chat/stream", s.requireAPIToken(s.handleAIChatStream))
+	mux.HandleFunc("/api/ai/sessions", s.requireAPIToken(s.handleAIChatSessions))
+	mux.HandleFunc("/api/ai/sessions/", s.requireAPIToken(s.handleAIChatSession))
 
 	// Debug endpoints
-	mux.HandleFunc("/api/debug/users", s.handleDebugUsers)
+	mux.HandleFunc("/api/debug/users", s.requireAPIToken(s.handleDebugUsers))
 
 	// User-specific endpoints (must be registered before /api/users/)
-	mux.HandleFunc("/api/users/", s.handleUserRouter)
+	mux.HandleFunc("/api/users/", s.requireAPIToken(s.handleUserRouter))
 
 	// Start background jobs
 	go s.startCleanupJob(ctx)

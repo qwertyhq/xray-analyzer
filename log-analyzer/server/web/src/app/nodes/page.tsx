@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { useWsNodes } from "@/contexts/websocket-context";
 import { NodesTable } from "@/components/nodes/nodes-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -26,7 +27,7 @@ export default function NodesPage() {
 
   const deleteNode = useCallback(async (nodeId: string) => {
     try {
-      const res = await fetch("/api/nodes/delete", {
+      const res = await authFetch("/api/nodes/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ node_id: nodeId }),

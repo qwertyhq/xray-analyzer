@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import {
   Table,
   TableBody,
@@ -83,7 +84,7 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
   const handleClearHwid = async (userUuid: string) => {
     setClearingHwid(userUuid);
     try {
-      const response = await fetch("/api/remnawave/hwid-clear", {
+      const response = await authFetch("/api/remnawave/hwid-clear", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userUuid }),

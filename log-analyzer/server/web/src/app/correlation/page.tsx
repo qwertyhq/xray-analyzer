@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -115,7 +116,7 @@ export default function CorrelationPage() {
       }
 
       // Phase 1: Load stats first (fast, shows immediately)
-      const statsRes = await fetch("/api/correlation/stats", { headers });
+      const statsRes = await authFetch("/api/correlation/stats", { headers });
       if (statsRes.ok) {
         const statsData = await statsRes.json();
         setStats(statsData);
@@ -125,11 +126,11 @@ export default function CorrelationPage() {
 
       // Phase 2: Load heavy data in parallel (background)
       const [profilesRes, sharedIPsRes, sharedHWIDsRes, ipAbuseRes, hwidAbuseRes] = await Promise.all([
-        fetch(`/api/correlation/profiles?limit=100&min_risk=${minRiskScore}`, { headers }),
-        fetch("/api/correlation/shared-ips?limit=50", { headers }),
-        fetch("/api/correlation/shared-hwids?limit=50", { headers }),
-        fetch("/api/blacklist/abuse", { headers }),
-        fetch("/api/remnawave/abuse", { headers })
+        authFetch(`/api/correlation/profiles?limit=100&min_risk=${minRiskScore}`, { headers }),
+        authFetch("/api/correlation/shared-ips?limit=50", { headers }),
+        authFetch("/api/correlation/shared-hwids?limit=50", { headers }),
+        authFetch("/api/blacklist/abuse", { headers }),
+        authFetch("/api/remnawave/abuse", { headers })
       ]);
 
       const [profilesData, sharedIPsData, sharedHWIDsData, ipAbuseData, hwidAbuseData] = await Promise.all([

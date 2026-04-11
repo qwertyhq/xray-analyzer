@@ -2,7 +2,7 @@
 
 import { useState, FormEvent, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth, authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,12 +10,11 @@ import { Label } from "@/components/ui/label";
 import { ShieldAlert, Eye, EyeOff, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [token, setToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   const { login, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
@@ -31,14 +30,20 @@ export default function LoginPage() {
     setError("");
     setIsSubmitting(true);
 
-    // Small delay for UX
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    const success = login(username, password);
-    if (success) {
-      router.replace("/dashboard");
-    } else {
-      setError("Неверный логин или пароль");
+    // Verify token against API
+    try {
+      const res = await fetch("/api/stats", {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (res.ok) {
+        login(token);
+        router.replace("/dashboard");
+      } else {
+        setError("Неверны�� токен");
+        setIsSubmitting(false);
+      }
+    } catch {
+      setError("Ошибка подключения к серверу");
       setIsSubmitting(false);
     }
   };
@@ -59,44 +64,31 @@ export default function LoginPage() {
             <ShieldAlert className="h-8 w-8 text-primary" />
           </div>
           <CardTitle className="text-2xl">Xray Log Analyzer</CardTitle>
-          <CardDescription>Войдите для доступа к панели</CardDescription>
+          <CardDescription>Введите API токен для доступа</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Логин</Label>
-              <Input
-                id="username"
-                type="text"
-                placeholder="Введите логин"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={isSubmitting}
-                autoComplete="username"
-                autoFocus
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="password">Пароль</Label>
+              <Label htmlFor="token">API Token</Label>
               <div className="relative">
                 <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Введите пароль"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  id="token"
+                  type={showToken ? "text" : "password"}
+                  placeholder="Введите токен"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
                   disabled={isSubmitting}
-                  autoComplete="current-password"
+                  autoComplete="off"
+                  autoFocus
                   className="pr-10"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={() => setShowToken(!showToken)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   tabIndex={-1}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
@@ -107,15 +99,15 @@ export default function LoginPage() {
               </div>
             )}
 
-            <Button 
-              type="submit" 
-              className="w-full" 
-              disabled={isSubmitting || !username || !password}
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isSubmitting || !token}
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Вход...
+                  Проверка...
                 </>
               ) : (
                 "Войти"

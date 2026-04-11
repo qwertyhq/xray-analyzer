@@ -5,58 +5,39 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 interface AuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => boolean;
+  token: string;
+  login: (token: string) => boolean;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// Credentials (in production, use environment variables or backend auth)
-const VALID_USERNAME = "qwertyhq";
-const VALID_PASSWORD = "e237237!";
-
 // Session storage key
-const AUTH_KEY = "xray_auth_session";
-const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-
-interface Session {
-  authenticated: boolean;
-  expiresAt: number;
-}
+const AUTH_KEY = "xray_auth_token";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [token, setToken] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
   // Check session on mount
   useEffect(() => {
-    const checkSession = () => {
-      try {
-        const stored = localStorage.getItem(AUTH_KEY);
-        if (stored) {
-          const session: Session = JSON.parse(stored);
-          if (session.authenticated && session.expiresAt > Date.now()) {
-            setIsAuthenticated(true);
-          } else {
-            localStorage.removeItem(AUTH_KEY);
-          }
-        }
-      } catch {
-        localStorage.removeItem(AUTH_KEY);
+    try {
+      const stored = localStorage.getItem(AUTH_KEY);
+      if (stored) {
+        setToken(stored);
+        setIsAuthenticated(true);
       }
-      setIsLoading(false);
-    };
-
-    checkSession();
+    } catch {
+      localStorage.removeItem(AUTH_KEY);
+    }
+    setIsLoading(false);
   }, []);
 
-  const login = useCallback((username: string, password: string): boolean => {
-    if (username === VALID_USERNAME && password === VALID_PASSWORD) {
-      const session: Session = {
-        authenticated: true,
-        expiresAt: Date.now() + SESSION_DURATION,
-      };
-      localStorage.setItem(AUTH_KEY, JSON.stringify(session));
+  const login = useCallback((inputToken: string): boolean => {
+    if (inputToken) {
+      localStorage.setItem(AUTH_KEY, inputToken);
+      setToken(inputToken);
       setIsAuthenticated(true);
       return true;
     }
@@ -65,11 +46,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem(AUTH_KEY);
+    setToken("");
     setIsAuthenticated(false);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, isLoading, token, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -81,4 +63,20 @@ export function useAuth(): AuthContextValue {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
+}
+
+// Helper to get token for fetch calls (works outside React components)
+export function getAuthToken(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(AUTH_KEY) || "";
+}
+
+// Authenticated fetch helper
+export async function authFetch(url: string, options?: RequestInit): Promise<Response> {
+  const token = getAuthToken();
+  const headers = new Headers(options?.headers);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return fetch(url, { ...options, headers });
 }

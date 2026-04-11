@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { useWebSocket, useWsThreatIntel } from "@/contexts/websocket-context";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { ActivityChart } from "@/components/dashboard/activity-chart";
@@ -49,7 +50,7 @@ export default function DashboardPage() {
         }
 
         // Fetch geo stats (use type=connections to get ALL connections, not just threats)
-        const geoRes = await fetch("/api/threatintel/geo-stats?type=connections&limit=50", { headers });
+        const geoRes = await authFetch("/api/threatintel/geo-stats?type=connections&limit=50", { headers });
         if (geoRes.ok) {
           const data = await geoRes.json();
           // Transform top_countries to match GeoMap format
@@ -63,7 +64,7 @@ export default function DashboardPage() {
         }
 
         // Fetch city-level geo stats with coordinates
-        const citiesRes = await fetch("/api/threatintel/geo-stats?type=cities&limit=200", { headers });
+        const citiesRes = await authFetch("/api/threatintel/geo-stats?type=cities&limit=200", { headers });
         if (citiesRes.ok) {
           const data = await citiesRes.json();
           const cities: CityData[] = data.cities?.map((c: { city: string; country_code: string; country_name: string; latitude: number; longitude: number; connections: number; unique_users: number }) => ({
@@ -79,7 +80,7 @@ export default function DashboardPage() {
         }
 
         // Fetch top offenders (API returns array directly, sorted by blacklist_hits)
-        const offendersRes = await fetch("/api/users", { headers });
+        const offendersRes = await authFetch("/api/users", { headers });
         if (offendersRes.ok) {
           const data = await offendersRes.json();
           // Filter users with blacklist hits and take top 5
@@ -94,7 +95,7 @@ export default function DashboardPage() {
         }
 
         // Check Remnawave status
-        const remnawaveRes = await fetch("/api/remnawave/stats", { headers });
+        const remnawaveRes = await authFetch("/api/remnawave/stats", { headers });
         if (remnawaveRes.ok) {
           const data = await remnawaveRes.json();
           setRemnawaveEnabled(data.enabled ?? false);
@@ -111,7 +112,7 @@ export default function DashboardPage() {
         }
 
         // Fetch real alerts from database
-        const alertsRes = await fetch("/api/alerts?limit=20", { headers });
+        const alertsRes = await authFetch("/api/alerts?limit=20", { headers });
         if (alertsRes.ok) {
           const alertsData = await alertsRes.json();
           const mappedAlerts: Alert[] = (alertsData || []).map((a: { id: number; type: string; user_email: string; destination: string; count: number; message: string; created_at: string; sent: boolean }) => ({
@@ -247,7 +248,7 @@ export default function DashboardPage() {
   const handleSyncRemnawave = useCallback(async () => {
     try {
       const token = localStorage.getItem("auth_token");
-      await fetch("/api/remnawave/sync", {
+      await authFetch("/api/remnawave/sync", {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -259,7 +260,7 @@ export default function DashboardPage() {
   const handleRefreshBlacklist = useCallback(async () => {
     try {
       const token = localStorage.getItem("auth_token");
-      await fetch("/api/threatintel/refresh", {
+      await authFetch("/api/threatintel/refresh", {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });

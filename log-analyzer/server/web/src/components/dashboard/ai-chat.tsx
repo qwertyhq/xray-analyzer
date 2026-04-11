@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -66,7 +67,7 @@ export function AIChat({ className }: AIChatProps) {
         content: m.content,
       }));
 
-      const response = await fetch("/api/ai/chat", {
+      const response = await authFetch("/api/ai/chat", {
         method: "POST",
         headers,
         body: JSON.stringify({

@@ -53,20 +53,24 @@ interface DashboardUpdate {
   data: unknown;
 }
 
+import { getAuthToken } from "@/contexts/auth-context";
+
 // Get WebSocket URL based on environment
 function getWebSocketUrl(): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const hostname = window.location.hostname;
   const port = window.location.port;
-  
+  const token = getAuthToken();
+  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
+
   // Development: Next.js on port 3925, Go backend on 8237 (same host)
   if (port === "3925") {
-    return `ws://${hostname}:8237/ws/dashboard`;
+    return `ws://${hostname}:8237/ws/dashboard${tokenParam}`;
   }
-  
+
   // Production with Caddy/nginx: WebSocket proxied through same host
   // Caddy handles /ws/* routing to backend
-  return `${protocol}//${window.location.host}/ws/dashboard`;
+  return `${protocol}//${window.location.host}/ws/dashboard${tokenParam}`;
 }
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {

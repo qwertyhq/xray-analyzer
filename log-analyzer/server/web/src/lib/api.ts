@@ -1,7 +1,7 @@
 import { Stats, NodeStats, UserStats } from './types';
 
-// Server-side uses internal URL, client uses relative path
-const API_BASE = process.env.INTERNAL_API_URL || '';
+// Server-side uses internal URL (localhost in same container), client uses relative path
+const API_BASE = process.env.INTERNAL_API_URL || 'http://localhost:8237';
 
 async function fetchAPI<T>(endpoint: string): Promise<T> {
   const url = `${API_BASE}${endpoint}`;

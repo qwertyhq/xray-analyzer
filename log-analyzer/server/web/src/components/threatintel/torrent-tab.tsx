@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
-      const res = await fetch(`/api/threatintel/top-users?category=torrent&page=${page}&page_size=${pageSize}`, { headers });
+      const res = await authFetch(`/api/threatintel/top-users?category=torrent&page=${page}&page_size=${pageSize}`, { headers });
       if (res.ok) {
         const data: PaginatedUsersResponse = await res.json();
         setPaginatedUsers(data.users || []);
@@ -65,7 +66,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
-      const res = await fetch("/api/threatintel/matches?type=torrent&limit=20", { headers });
+      const res = await authFetch("/api/threatintel/matches?type=torrent&limit=20", { headers });
       if (res.ok) {
         const data = await res.json();
         setMatches(data || []);

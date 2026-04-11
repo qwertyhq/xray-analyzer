@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { formatDistanceToNow } from "date-fns";
 import {
   Card,
@@ -86,8 +87,8 @@ export function RemnawaveUsersTable() {
   const fetchData = useCallback(async () => {
     try {
       const [statsRes, usersRes] = await Promise.all([
-        fetch("/api/remnawave/stats"),
-        fetch("/api/remnawave/users"),
+        authFetch("/api/remnawave/stats"),
+        authFetch("/api/remnawave/users"),
       ]);
 
       if (statsRes.ok) {

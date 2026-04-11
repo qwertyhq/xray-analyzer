@@ -1,6 +1,7 @@
 "use client";
 
 import {
+import { authFetch } from "@/contexts/auth-context";
   useState,
   useRef,
   useEffect,
@@ -144,7 +145,7 @@ export function FloatingAIChat() {
       const headers: HeadersInit = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const res = await fetch("/api/ai/sessions", { headers });
+      const res = await authFetch("/api/ai/sessions", { headers });
       const data = await res.json();
       if (Array.isArray(data)) {
         setSessions(data);
@@ -169,7 +170,7 @@ export function FloatingAIChat() {
       const headers: HeadersInit = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const res = await fetch(`/api/ai/sessions/${sessionId}`, { headers });
+      const res = await authFetch(`/api/ai/sessions/${sessionId}`, { headers });
       if (!res.ok) throw new Error("Failed to load session");
       
       const data = await res.json();
@@ -203,7 +204,7 @@ export function FloatingAIChat() {
       const headers: HeadersInit = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const res = await fetch("/api/ai/sessions", {
+      const res = await authFetch("/api/ai/sessions", {
         method: "POST",
         headers,
         body: JSON.stringify({ title: "Новый чат" }),
@@ -229,7 +230,7 @@ export function FloatingAIChat() {
         const headers: HeadersInit = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
 
-        await fetch(`/api/ai/sessions/${sessionId}`, {
+        await authFetch(`/api/ai/sessions/${sessionId}`, {
           method: "DELETE",
           headers,
         });
@@ -253,7 +254,7 @@ export function FloatingAIChat() {
       const headers: HeadersInit = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      await fetch("/api/ai/sessions", {
+      await authFetch("/api/ai/sessions", {
         method: "DELETE",
         headers,
       });
@@ -320,7 +321,7 @@ export function FloatingAIChat() {
         content: m.content,
       }));
 
-      const response = await fetch("/api/ai/chat/stream", {
+      const response = await authFetch("/api/ai/chat/stream", {
         method: "POST",
         headers,
         body: JSON.stringify({
