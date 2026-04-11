@@ -11,9 +11,9 @@ services:
     restart: unless-stopped
     ports:
       # API port (for agents WebSocket)
-      - "127.0.0.1:8237:8237"
+      - "8237:8237"
       # Web UI port (for Caddy)
-      - "127.0.0.1:3925:3925"
+      - "3925:3925"
     volumes:
       - analyzer-data:/app/data
       - ./server/blacklist.txt:/app/blacklist.txt:ro
