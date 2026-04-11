@@ -1,13 +1,13 @@
 "use client";
 
 import {
-import { authFetch } from "@/contexts/auth-context";
   useState,
   useRef,
   useEffect,
   useCallback,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { authFetch } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
