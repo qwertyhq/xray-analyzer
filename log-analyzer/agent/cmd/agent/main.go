@@ -38,7 +38,7 @@ func main() {
 	// Create components
 	logTailer := tailer.New(cfg.LogFilePath, entryCh)
 	logBatcher := batcher.New(cfg.NodeID, cfg.BatchSize, cfg.BatchTimeout, entryCh, batchCh)
-	wsClient := websocket.New(cfg.ServerURL, cfg.NodeID, batchCh)
+	wsClient := websocket.New(cfg.ServerURL, cfg.NodeID, cfg.AuthToken, batchCh)
 
 	// WaitGroup for proper shutdown
 	var wg sync.WaitGroup

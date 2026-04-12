@@ -25,6 +25,8 @@ services:
       - BATCH_SIZE=${BATCH_SIZE:-1000}
       # Таймаут батча
       - BATCH_TIMEOUT=${BATCH_TIMEOUT:-5s}
+      # Токен аутентификации (должен совпадать с AGENT_TOKEN на сервере)
+      - AUTH_TOKEN=${AUTH_TOKEN:-}
     # Для работы с inotify нужен доступ к fs
     security_opt:
       - no-new-privileges:true

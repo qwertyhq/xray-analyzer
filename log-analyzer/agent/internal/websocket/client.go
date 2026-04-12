@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 type Client struct {
 	serverURL      string
 	nodeID         string
+	authToken      string
 	batchCh        chan *models.LogBatch
 	conn           *websocket.Conn
 	mu             sync.Mutex
@@ -25,10 +27,11 @@ type Client struct {
 }
 
 // New creates a new WebSocket client
-func New(serverURL, nodeID string, batchCh chan *models.LogBatch) *Client {
+func New(serverURL, nodeID, authToken string, batchCh chan *models.LogBatch) *Client {
 	return &Client{
 		serverURL:      serverURL,
 		nodeID:         nodeID,
+		authToken:      authToken,
 		batchCh:        batchCh,
 		reconnectDelay: 5 * time.Second,
 		maxRetries:     0, // 0 = infinite retries
@@ -63,7 +66,12 @@ func (c *Client) connect(ctx context.Context) error {
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	conn, _, err := dialer.DialContext(ctx, c.serverURL, nil)
+	headers := http.Header{}
+	if c.authToken != "" {
+		headers.Set("Authorization", "Bearer "+c.authToken)
+	}
+
+	conn, _, err := dialer.DialContext(ctx, c.serverURL, headers)
 	if err != nil {
 		return err
 	}
