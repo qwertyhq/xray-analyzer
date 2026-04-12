@@ -30,6 +30,11 @@ services:
     # Для работы с inotify нужен доступ к fs
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     # Ограничение ресурсов
     deploy:
       resources:
