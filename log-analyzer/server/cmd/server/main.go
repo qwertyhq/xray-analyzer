@@ -198,6 +198,54 @@ func main() {
 		}
 	}()
 
+	// Anomaly detection — runs every 10 minutes.
+	// Detects activity spikes, night activity, threat bursts, multi-country access, etc.
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		// Run once shortly after startup so dashboard isn't empty
+		time.AfterFunc(60*time.Second, func() {
+			if found, err := store.DetectAnomalies(ctx); err == nil && len(found) > 0 {
+				log.Printf("anomaly: detected %d anomalies", len(found))
+			}
+		})
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if found, err := store.DetectAnomalies(ctx); err != nil {
+					log.Printf("anomaly: detection error: %v", err)
+				} else if len(found) > 0 {
+					log.Printf("anomaly: detected %d anomalies", len(found))
+				}
+			}
+		}
+	}()
+
+	// User risk profile recalculation — runs every 30 minutes.
+	// Aggregates threat matches, anomalies, geo, and activity into a per-user risk score.
+	go func() {
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		// Initial run after 2 minutes (let threat matches accumulate)
+		time.AfterFunc(2*time.Minute, func() {
+			if err := store.RecalculateAllUserRiskProfiles(ctx); err != nil {
+				log.Printf("risk: recalculation error: %v", err)
+			}
+		})
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := store.RecalculateAllUserRiskProfiles(ctx); err != nil {
+					log.Printf("risk: recalculation error: %v", err)
+				}
+			}
+		}
+	}()
+
 	go func() {
 		if err := srv.Start(ctx); err != nil {
 			log.Printf("server error: %v", err)
