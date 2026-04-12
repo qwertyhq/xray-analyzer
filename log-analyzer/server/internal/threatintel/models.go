@@ -73,21 +73,30 @@ const (
 	SourceBlockListRansomware ThreatSource = "blocklist-ransomware"
 	// Cryptomining pools
 	SourceMiningPools ThreatSource = "mining-pools"
+	// Tor relay list (Onionoo — all relays, not just exits)
+	SourceTorRelays ThreatSource = "tor-relays"
+	// AlienVault OTX reputation (public generic feed)
+	SourceAlienVaultOTX ThreatSource = "alienvault-otx"
+	// PhishTank community phishing URLs
+	SourcePhishTank ThreatSource = "phishtank"
+	// Spamhaus DROP list (hijacked networks)
+	SourceSpamhaus ThreatSource = "spamhaus"
 )
 
 // ThreatIndicator represents an indicator of compromise (IOC)
 type ThreatIndicator struct {
-	ID          int64        `json:"id"`
-	Indicator   string       `json:"indicator"` // domain, IP, or URL
-	Type        string       `json:"type"`      // domain, ip, url
-	ThreatType  ThreatType   `json:"threat_type"`
-	Source      ThreatSource `json:"source"`
-	Confidence  int          `json:"confidence"` // 0-100
-	Description string       `json:"description,omitempty"`
-	Tags        []string     `json:"tags,omitempty"`
-	FirstSeen   time.Time    `json:"first_seen"`
-	LastSeen    time.Time    `json:"last_seen"`
-	CreatedAt   time.Time    `json:"created_at"`
+	ID          int64          `json:"id"`
+	Indicator   string         `json:"indicator"` // domain, IP, or URL
+	Type        string         `json:"type"`      // domain, ip, url
+	ThreatType  ThreatType     `json:"threat_type"`
+	Source      ThreatSource   `json:"source"`        // primary (first/highest-confidence) source
+	Sources     []ThreatSource `json:"sources"`       // all sources that reported this indicator
+	Confidence  int            `json:"confidence"`    // 0-100, boosted when multiple sources agree
+	Description string         `json:"description,omitempty"`
+	Tags        []string       `json:"tags,omitempty"`
+	FirstSeen   time.Time      `json:"first_seen"`
+	LastSeen    time.Time      `json:"last_seen"`
+	CreatedAt   time.Time      `json:"created_at"`
 }
 
 // ThreatMatch represents a match between user traffic and threat intel

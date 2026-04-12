@@ -77,11 +77,7 @@ func (f *FeedLoader) loadMiningPools(ctx context.Context) (int, error) {
 	count := 0
 	now := time.Now()
 	for _, domain := range miningPoolDomains {
-		if f.isWhitelisted(domain) {
-			continue
-		}
-		// Always set — this is a curated list with high confidence.
-		f.indicators[domain] = &ThreatIndicator{
+		if f.upsertIndicator(&ThreatIndicator{
 			Indicator:   domain,
 			Type:        "domain",
 			ThreatType:  ThreatTypeMining,
@@ -91,8 +87,9 @@ func (f *FeedLoader) loadMiningPools(ctx context.Context) (int, error) {
 			FirstSeen:   now,
 			LastSeen:    now,
 			CreatedAt:   now,
+		}) {
+			count++
 		}
-		count++
 	}
 	return count, nil
 }

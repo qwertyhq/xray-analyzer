@@ -70,17 +70,7 @@ func (f *FeedLoader) loadBlockListProjectHosts(ctx context.Context, listName str
 			continue
 		}
 
-		// Skip whitelisted (CDNs, big-tech)
-		if f.isWhitelisted(domain) {
-			continue
-		}
-
-		// Skip if already exists
-		if _, exists := f.indicators[domain]; exists {
-			continue
-		}
-
-		indicator := &ThreatIndicator{
+		if f.upsertIndicator(&ThreatIndicator{
 			Indicator:   domain,
 			Type:        "domain",
 			ThreatType:  threatType,
@@ -90,10 +80,9 @@ func (f *FeedLoader) loadBlockListProjectHosts(ctx context.Context, listName str
 			FirstSeen:   time.Now(),
 			LastSeen:    time.Now(),
 			CreatedAt:   time.Now(),
+		}) {
+			count++
 		}
-
-		f.indicators[indicator.Indicator] = indicator
-		count++
 	}
 
 	if err := scanner.Err(); err != nil && err != io.EOF {

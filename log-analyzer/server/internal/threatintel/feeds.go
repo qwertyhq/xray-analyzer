@@ -111,6 +111,49 @@ func NewFeedLoader() *FeedLoader {
 	}
 }
 
+// upsertIndicator adds or merges a threat indicator into the map.
+// When the same indicator comes from multiple sources, we keep the highest
+// ThreatType priority source as primary but record all contributing sources
+// and boost confidence (+5 per additional source, capped at 99).
+// Caller must hold f.mu.
+func (f *FeedLoader) upsertIndicator(ind *ThreatIndicator) bool {
+	if f.isWhitelisted(ind.Indicator) {
+		return false
+	}
+	existing, ok := f.indicators[ind.Indicator]
+	if !ok {
+		if ind.Sources == nil {
+			ind.Sources = []ThreatSource{ind.Source}
+		}
+		f.indicators[ind.Indicator] = ind
+		return true
+	}
+	// Same source reporting again — just refresh LastSeen
+	for _, s := range existing.Sources {
+		if s == ind.Source {
+			existing.LastSeen = ind.LastSeen
+			return false
+		}
+	}
+	// Different source — record it and boost confidence
+	existing.Sources = append(existing.Sources, ind.Source)
+	existing.LastSeen = ind.LastSeen
+	// Upgrade primary source to higher-confidence entry
+	if ind.Confidence > existing.Confidence {
+		existing.Source = ind.Source
+		existing.ThreatType = ind.ThreatType
+		existing.Description = ind.Description
+		existing.Confidence = ind.Confidence
+	}
+	// Multi-source boost: +5 per additional source, up to 99
+	boost := existing.Confidence + 5
+	if boost > 99 {
+		boost = 99
+	}
+	existing.Confidence = boost
+	return false
+}
+
 // isWhitelisted checks if a domain (or its parent) is whitelisted.
 // Caller must hold f.mu.
 func (f *FeedLoader) isWhitelisted(indicator string) bool {
@@ -193,6 +236,10 @@ func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 		{SourceURLhaus, f.loadURLhaus},
 		{SourceFeodoTracker, f.loadFeodoTracker},
 		{SourceThreatFox, f.loadThreatFox},
+		// Reputation-based (high signal)
+		{SourceAlienVaultOTX, f.loadAlienVaultOTX},
+		{SourcePhishTank, f.loadPhishTank},
+		{SourceSpamhaus, f.loadSpamhausDROP},
 		// Content category blocklists (StevenBlack extensions — categories without BlockList Project equivalents)
 		{SourceGambling, f.loadGamblingBlocklist},
 		{SourceSocial, f.loadSocialBlocklist},
@@ -200,6 +247,7 @@ func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 		// P2P / Anonymization
 		{SourceTorrent, f.loadTorrentTrackers},
 		{SourceTor, f.loadTorExitNodes},
+		{SourceTorRelays, f.loadTorRelays},
 		// Cryptomining pools (hardcoded list)
 		{SourceMiningPools, f.loadMiningPools},
 		// BlockList Project — comprehensive category blocklists
@@ -335,11 +383,8 @@ func (f *FeedLoader) loadURLhaus(ctx context.Context) (int, error) {
 		if host == "" {
 			continue
 		}
-		if f.isWhitelisted(host) {
-			continue
-		}
 
-		indicator := &ThreatIndicator{
+		if f.upsertIndicator(&ThreatIndicator{
 			Indicator:   host,
 			Type:        "domain",
 			ThreatType:  ThreatTypeMalware,
@@ -349,10 +394,9 @@ func (f *FeedLoader) loadURLhaus(ctx context.Context) (int, error) {
 			FirstSeen:   time.Now(),
 			LastSeen:    time.Now(),
 			CreatedAt:   time.Now(),
+		}) {
+			count++
 		}
-
-		f.indicators[indicator.Indicator] = indicator
-		count++
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -387,9 +431,6 @@ func (f *FeedLoader) loadFeodoTracker(ctx context.Context) (int, error) {
 		if entry.IPAddress == "" {
 			continue
 		}
-		if f.isWhitelisted(entry.IPAddress) {
-			continue
-		}
 
 		// Determine threat type from malware name
 		threatType := ThreatTypeC2
@@ -398,7 +439,7 @@ func (f *FeedLoader) loadFeodoTracker(ctx context.Context) (int, error) {
 			threatType = ThreatTypeBotnet
 		}
 
-		indicator := &ThreatIndicator{
+		if f.upsertIndicator(&ThreatIndicator{
 			Indicator:   entry.IPAddress,
 			Type:        "ip",
 			ThreatType:  threatType,
@@ -409,10 +450,9 @@ func (f *FeedLoader) loadFeodoTracker(ctx context.Context) (int, error) {
 			FirstSeen:   time.Now(),
 			LastSeen:    time.Now(),
 			CreatedAt:   time.Now(),
+		}) {
+			count++
 		}
-
-		f.indicators[indicator.Indicator] = indicator
-		count++
 	}
 
 	return count, nil
@@ -487,10 +527,7 @@ func (f *FeedLoader) loadThreatFox(ctx context.Context) (int, error) {
 		}
 
 		iocValueLower := strings.ToLower(iocValue)
-		if f.isWhitelisted(iocValueLower) {
-			continue
-		}
-		indicator := &ThreatIndicator{
+		if f.upsertIndicator(&ThreatIndicator{
 			Indicator:   iocValueLower,
 			Type:        indicatorType,
 			ThreatType:  threat,
@@ -500,10 +537,9 @@ func (f *FeedLoader) loadThreatFox(ctx context.Context) (int, error) {
 			FirstSeen:   time.Now(),
 			LastSeen:    time.Now(),
 			CreatedAt:   time.Now(),
+		}) {
+			count++
 		}
-
-		f.indicators[indicator.Indicator] = indicator
-		count++
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -751,17 +787,7 @@ func (f *FeedLoader) loadCategoryHosts(ctx context.Context, url string, source T
 			continue
 		}
 
-		// Skip whitelisted domains (CDNs, big-tech infrastructure) to reduce false positives
-		if f.isWhitelisted(domain) {
-			continue
-		}
-
-		// Skip if already in indicators with higher confidence
-		if existing, ok := f.indicators[domain]; ok && existing.Confidence >= confidence {
-			continue
-		}
-
-		indicator := &ThreatIndicator{
+		if f.upsertIndicator(&ThreatIndicator{
 			Indicator:   domain,
 			Type:        "domain",
 			ThreatType:  threatType,
@@ -771,10 +797,9 @@ func (f *FeedLoader) loadCategoryHosts(ctx context.Context, url string, source T
 			FirstSeen:   time.Now(),
 			LastSeen:    time.Now(),
 			CreatedAt:   time.Now(),
+		}) {
+			count++
 		}
-
-		f.indicators[indicator.Indicator] = indicator
-		count++
 	}
 
 	if err := scanner.Err(); err != nil && err != io.EOF {
