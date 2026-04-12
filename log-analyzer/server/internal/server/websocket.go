@@ -322,29 +322,50 @@ func (s *Server) BroadcastDashboardUpdate() {
 	}
 }
 
-// startBroadcastLoop handles broadcasting updates to dashboard clients
+// startBroadcastLoop handles broadcasting updates to dashboard clients with throttling.
+// Broadcasts are triggered by events (incoming batches) but rate-limited to avoid
+// hammering the DB when many nodes send batches at once.
 func (s *Server) startBroadcastLoop(ctx context.Context) {
+	const minInterval = 3 * time.Second // throttle window
+	const maxInterval = 10 * time.Second // keepalive (send even if no events)
+
+	var lastBroadcast time.Time
+	pending := false
+	timer := time.NewTimer(maxInterval)
+	defer timer.Stop()
+
+	broadcast := func() {
+		// Skip if no dashboard clients connected
+		s.dashboardClientsMu.RLock()
+		hasClients := len(s.dashboardClients) > 0
+		s.dashboardClientsMu.RUnlock()
+		if !hasClients {
+			pending = false
+			return
+		}
+		s.broadcastToDashboards()
+		lastBroadcast = time.Now()
+		pending = false
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.broadcastChan:
-			s.broadcastToDashboards()
-		}
-	}
-}
-
-// startPeriodicBroadcast sends updates every second
-func (s *Server) startPeriodicBroadcast(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.broadcastToDashboards()
+			// Event received — broadcast if enough time passed, otherwise mark pending
+			if time.Since(lastBroadcast) >= minInterval {
+				broadcast()
+				timer.Reset(maxInterval)
+			} else {
+				pending = true
+			}
+		case <-timer.C:
+			// Timer fired — flush pending or send keepalive
+			if pending || time.Since(lastBroadcast) >= maxInterval {
+				broadcast()
+			}
+			timer.Reset(minInterval)
 		}
 	}
 }

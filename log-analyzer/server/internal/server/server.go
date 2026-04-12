@@ -236,7 +236,6 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start background jobs
 	go s.startCleanupJob(ctx)
 	go s.startBroadcastLoop(ctx)
-	go s.startPeriodicBroadcast(ctx)
 
 	server := &http.Server{
 		Addr:    s.addr,

@@ -77,6 +77,16 @@ func (s *Service) triggerProfileUpdate(ctx context.Context, userEmail string) {
 		return
 	}
 	s.lastUpdates[userEmail] = time.Now()
+	// Opportunistic cleanup: remove stale entries (avoid unbounded growth).
+	// Only sweep when map grows large to avoid repeated O(n) scans.
+	if len(s.lastUpdates) > 10000 {
+		cutoff := time.Now().Add(-2 * s.updateInterval)
+		for k, v := range s.lastUpdates {
+			if v.Before(cutoff) {
+				delete(s.lastUpdates, k)
+			}
+		}
+	}
 	s.mu.Unlock()
 
 	// Update in background

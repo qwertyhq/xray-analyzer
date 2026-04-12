@@ -141,22 +141,24 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 			_ = err
 		}
 
-		// Record user IP history with geo enrichment
+		// Record user IP history with geo enrichment.
+		// GeoIP lookup is async to avoid blocking batch processing on network I/O.
 		if lastIP != "" {
-			var countryCode, countryName, city string
-			if a.ipInfo != nil {
-				// Try to get geo info (with short timeout to not block processing)
-				geoCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-				if ipData, err := a.ipInfo.Lookup(geoCtx, lastIP); err == nil && ipData != nil {
-					countryCode = ipData.CountryCode
-					countryName = ipData.Country
-					city = ipData.City
-				}
-				cancel()
-			}
-			if err := a.storage.RecordUserIP(ctx, user, lastIP, batch.NodeID, countryCode, countryName, city); err != nil {
-				// log.Printf("analyzer: failed to record user IP history: %v", err)
+			// Record immediately without geo — RecordUserIP upserts, so geo can be added later.
+			if err := a.storage.RecordUserIP(ctx, user, lastIP, batch.NodeID, "", "", ""); err != nil {
 				_ = err
+			}
+			if a.ipInfo != nil {
+				u, ip, nodeID := user, lastIP, batch.NodeID
+				go func() {
+					geoCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					ipData, err := a.ipInfo.Lookup(geoCtx, ip)
+					if err != nil || ipData == nil {
+						return
+					}
+					_ = a.storage.RecordUserIP(geoCtx, u, ip, nodeID, ipData.CountryCode, ipData.Country, ipData.City)
+				}()
 			}
 		}
 

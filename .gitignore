@@ -24,3 +24,18 @@ api-remna.json
 .playwright-mcp/users-all.png
 .playwright-mcp/users-flagged.png
 .playwright-mcp/users.png
+
+# Build artifacts
+log-analyzer/server/server.exe
+log-analyzer/server/log-analyzer.exe
+log-analyzer/server/server
+log-analyzer/agent/agent
+
+# SQLite data
+log-analyzer/server/data/*.db
+log-analyzer/server/data/*.db-shm
+log-analyzer/server/data/*.db-wal
+
+# Env files
+log-analyzer/.env
+log-analyzer/.env.agent
