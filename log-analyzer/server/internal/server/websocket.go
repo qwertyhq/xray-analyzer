@@ -131,28 +131,36 @@ func (s *Server) handleClient(client *Client) {
 			return
 		}
 
-		if messageType == websocket.BinaryMessage {
-			// Decompress gzip
-			gz, err := gzip.NewReader(bytes.NewReader(message))
-			if err != nil {
-				log.Printf("server: gzip error from %s: %v", client.NodeID, err)
-				continue
-			}
-
-			data, err := io.ReadAll(gz)
-			gz.Close()
-			if err != nil {
-				log.Printf("server: decompress error from %s: %v", client.NodeID, err)
-				continue
-			}
-			message = data
+		if messageType != websocket.BinaryMessage {
+			// Text messages are control messages (pong, etc.) — ignore
+			continue
 		}
+
+		// Decompress gzip
+		gz, err := gzip.NewReader(bytes.NewReader(message))
+		if err != nil {
+			log.Printf("server: gzip error from %s: %v", client.NodeID, err)
+			continue
+		}
+
+		data, err := io.ReadAll(gz)
+		gz.Close()
+		if err != nil {
+			log.Printf("server: decompress error from %s: %v", client.NodeID, err)
+			continue
+		}
+		message = data
 
 		// Parse batch
 		var batch models.LogBatch
 		if err := json.Unmarshal(message, &batch); err != nil {
 			log.Printf("server: parse error from %s: %v", client.NodeID, err)
 			continue
+		}
+
+		// Safety: ignore batches without node_id (shouldn't happen after handshake)
+		if batch.NodeID == "" {
+			batch.NodeID = client.NodeID
 		}
 
 		client.LastBatch = time.Now()

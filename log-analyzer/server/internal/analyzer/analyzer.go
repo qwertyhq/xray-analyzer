@@ -60,6 +60,9 @@ func (a *Analyzer) SetCorrelation(c *correlation.Service) {
 
 // ProcessBatch processes a batch of log entries
 func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (processed int, blacklistHits int, err error) {
+	if batch.NodeID == "" {
+		return 0, 0, fmt.Errorf("empty node_id in batch")
+	}
 	// Track per-user stats in this batch
 	userRequests := make(map[string]int)
 	userBlacklist := make(map[string]int)

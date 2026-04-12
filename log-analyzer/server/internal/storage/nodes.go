@@ -10,6 +10,9 @@ import (
 
 // UpdateNodeStats updates statistics for a node
 func (s *Storage) UpdateNodeStats(ctx context.Context, nodeID string, requests int, blacklistHits int, batchCount int) error {
+	if nodeID == "" {
+		return fmt.Errorf("empty node_id")
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO node_stats (node_id, total_requests, blacklist_hits, last_seen, last_batch_time, last_batch_count)
