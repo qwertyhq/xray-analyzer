@@ -9,11 +9,15 @@ import (
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
-// MaxThreatMatchesPerCategory is the maximum number of recent threat matches to keep per category.
-// Aggregated counters (threat_type_stats, threat_hourly_stats, user_threat_stats) keep full history —
-// this limit only bounds the `threat_matches` table used for the recent-matches UI list.
-// Raised from 100 to 1000 so active categories don't lose visible history within seconds.
-const MaxThreatMatchesPerCategory = 1000
+// MaxThreatMatchesPerUserCategory is the cap on recent threat_matches kept
+// for each (user, category) combination. Aggregated counters (threat_type_stats,
+// threat_hourly_stats, user_threat_stats) keep full history — this limit only
+// bounds the `threat_matches` table used for recent-matches UI.
+//
+// Partitioning by (user, category) instead of just category prevents active
+// categories (social, ads) across all users from evicting a specific user's
+// older matches in quieter categories they care about.
+const MaxThreatMatchesPerUserCategory = 100
 
 // MaxThreatMatches is the total maximum for display queries (legacy, used in GetThreatMatches)
 const MaxThreatMatches = 500
@@ -106,18 +110,23 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 			unique_users = (SELECT COUNT(*) FROM threat_daily_users WHERE day = ? AND threat_type = ?)
 	`, dayKey, string(match.ThreatType), dayKey, string(match.ThreatType))
 
-	// Delete old recent records keeping only MaxThreatMatchesPerCategory most recent PER CATEGORY
-	// This ensures each category maintains its own history without being displaced by other categories
+	// Trim recent records: keep only the most recent MaxThreatMatchesPerUserCategory
+	// per (user_email, threat_type). This preserves each user's per-category history
+	// independently, so a quiet-category user doesn't lose matches when a loud
+	// category (social/ads) pushes them out globally.
 	_, err = s.db.ExecContext(ctx, `
-		DELETE FROM threat_matches 
+		DELETE FROM threat_matches
 		WHERE id NOT IN (
 			SELECT id FROM (
-				SELECT id, ROW_NUMBER() OVER (PARTITION BY threat_type ORDER BY matched_at DESC) as rn
+				SELECT id, ROW_NUMBER() OVER (
+					PARTITION BY user_email, threat_type
+					ORDER BY matched_at DESC
+				) as rn
 				FROM threat_matches
 			) ranked
 			WHERE rn <= ?
 		)
-	`, MaxThreatMatchesPerCategory)
+	`, MaxThreatMatchesPerUserCategory)
 
 	return err
 }
