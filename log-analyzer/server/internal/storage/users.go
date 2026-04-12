@@ -507,15 +507,23 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		aggRows.Close()
 	}
 
-	// Recent threat matches (last 50) — the visible audit trail.
+	// Recent threat matches — top 30 per category so active categories (social/ads)
+	// don't push quieter ones (tor/malware) out of the visible list.
 	threatQuery := fmt.Sprintf(`
+		WITH ranked AS (
+			SELECT node_id, destination, threat_type, source, confidence,
+			       COALESCE(description, '') as description,
+			       COALESCE(source_ip, '') as source_ip,
+			       COALESCE(matched_at, '') as matched_at,
+			       ROW_NUMBER() OVER (PARTITION BY threat_type ORDER BY matched_at DESC) AS rn
+			FROM threat_matches
+			WHERE user_email IN (%s)
+		)
 		SELECT node_id, destination, threat_type, source, confidence,
-		       COALESCE(description, ''), COALESCE(source_ip, ''),
-		       COALESCE(matched_at, '')
-		FROM threat_matches
-		WHERE user_email IN (%s)
+		       description, source_ip, matched_at
+		FROM ranked
+		WHERE rn <= 30
 		ORDER BY matched_at DESC
-		LIMIT 50
 	`, placeholders)
 	if tRows, err := s.db.QueryContext(ctx, threatQuery, args...); err == nil {
 		for tRows.Next() {

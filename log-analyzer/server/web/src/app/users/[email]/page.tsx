@@ -21,6 +21,7 @@ import { isValidDate } from "@/lib/utils/date";
 import { UserDestinationsTable } from "@/components/users/user-destinations-table";
 import { UserBlacklistMatches } from "@/components/users/user-blacklist-matches";
 import { UserIPHistoryTable } from "@/components/users/user-ip-history";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function UserDetailsPage() {
   const params = useParams();
@@ -155,75 +156,95 @@ export default function UserDetailsPage() {
         </Card>
       </div>
 
-      {details.threats_by_type && Object.keys(details.threats_by_type).length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
-              Threat Intelligence
-            </CardTitle>
-            <CardDescription className="text-xs sm:text-sm">
-              Categorized threat matches for this user
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(details.threats_by_type)
-                .sort(([,a], [,b]) => b - a)
-                .map(([type, count]) => (
-                  <Badge key={type} variant="outline" className="font-mono">
-                    <span className="uppercase">{type}</span>
-                    <span className="ml-2 text-muted-foreground">{count}</span>
-                  </Badge>
-                ))}
-            </div>
-            {details.recent_threats && details.recent_threats.length > 0 && (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Destination</TableHead>
-                      <TableHead className="hidden md:table-cell">Source</TableHead>
-                      <TableHead className="text-right hidden sm:table-cell">Conf</TableHead>
-                      <TableHead className="hidden lg:table-cell">Node</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {details.recent_threats.slice(0, 30).map((t, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                          {isValidDate(t.matched_at)
-                            ? formatDistanceToNow(new Date(t.matched_at), { addSuffix: true })
-                            : "—"}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="uppercase text-xs">{t.threat_type}</Badge>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs max-w-[260px] truncate" title={t.destination}>
-                          {t.destination}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground hidden md:table-cell">
-                          {t.source}
-                        </TableCell>
-                        <TableCell className="text-right hidden sm:table-cell">
-                          <span className={t.confidence >= 90 ? "text-destructive" : t.confidence >= 75 ? "text-orange-500" : ""}>
-                            {t.confidence}
-                          </span>
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell">
-                          <Badge variant="outline" className="text-xs">{t.node_id}</Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {details.threats_by_type && Object.keys(details.threats_by_type).length > 0 && (() => {
+        // Group threats by category. Aggregate counts come from
+        // threats_by_type (full history); recent_threats gives the last N matches
+        // per category (subject to the 1000/category recent-matches cap).
+        const sortedCats = Object.entries(details.threats_by_type)
+          .sort(([, a], [, b]) => b - a)
+          .map(([type]) => type);
+        const byCat: Record<string, typeof details.recent_threats> = {};
+        (details.recent_threats ?? []).forEach(t => {
+          (byCat[t.threat_type] ??= []).push(t);
+        });
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-orange-500" />
+                Threat Intelligence
+              </CardTitle>
+              <CardDescription className="text-xs sm:text-sm">
+                Threats grouped by category. Counts are lifetime (aggregated);
+                tables show last 50 recent matches per category.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue={sortedCats[0]} className="w-full">
+                <TabsList className="flex flex-wrap h-auto justify-start gap-1">
+                  {sortedCats.map(cat => (
+                    <TabsTrigger key={cat} value={cat} className="font-mono text-xs">
+                      <span className="uppercase">{cat}</span>
+                      <span className="ml-2 opacity-70">{details.threats_by_type?.[cat] ?? 0}</span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                {sortedCats.map(cat => {
+                  const rows = byCat[cat] ?? [];
+                  return (
+                    <TabsContent key={cat} value={cat} className="mt-4">
+                      {rows.length === 0 ? (
+                        <p className="text-sm text-muted-foreground py-4">
+                          No recent matches in this category (older matches trimmed).
+                        </p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="whitespace-nowrap">Time</TableHead>
+                                <TableHead>Destination</TableHead>
+                                <TableHead className="hidden md:table-cell">Source</TableHead>
+                                <TableHead className="text-right hidden sm:table-cell">Conf</TableHead>
+                                <TableHead className="hidden lg:table-cell">Node</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {rows.map((t, i) => (
+                                <TableRow key={i}>
+                                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                    {isValidDate(t.matched_at)
+                                      ? formatDistanceToNow(new Date(t.matched_at), { addSuffix: true })
+                                      : "—"}
+                                  </TableCell>
+                                  <TableCell className="font-mono text-xs max-w-[260px] truncate" title={t.destination}>
+                                    {t.destination}
+                                  </TableCell>
+                                  <TableCell className="text-xs text-muted-foreground hidden md:table-cell">
+                                    {t.source}
+                                  </TableCell>
+                                  <TableCell className="text-right hidden sm:table-cell">
+                                    <span className={t.confidence >= 90 ? "text-destructive" : t.confidence >= 75 ? "text-orange-500" : ""}>
+                                      {t.confidence}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="hidden lg:table-cell">
+                                    <Badge variant="outline" className="text-xs">{t.node_id}</Badge>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </TabsContent>
+                  );
+                })}
+              </Tabs>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       <Card>
         <CardHeader>
