@@ -70,6 +70,11 @@ func (f *FeedLoader) loadBlockListProjectHosts(ctx context.Context, listName str
 			continue
 		}
 
+		// Skip whitelisted (CDNs, big-tech)
+		if f.isWhitelisted(domain) {
+			continue
+		}
+
 		// Skip if already exists
 		if _, exists := f.indicators[domain]; exists {
 			continue

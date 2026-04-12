@@ -62,7 +62,7 @@ func NewService(storage Storage, ipInfoSvc *ipinfo.Service) *Service {
 		loader:         NewFeedLoader(),
 		storage:        storage,
 		ipInfo:         ipInfoSvc,
-		updateInterval: 6 * time.Hour,
+		updateInterval: 3 * time.Hour,
 		stopChan:       make(chan struct{}),
 	}
 }

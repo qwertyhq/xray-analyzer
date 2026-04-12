@@ -33,6 +33,8 @@ const (
 	ThreatTypeRedirect ThreatType = "redirect"
 	ThreatTypeTikTok   ThreatType = "tiktok"
 	ThreatTypeTracking ThreatType = "tracking"
+	// Cryptomining pools
+	ThreatTypeMining ThreatType = "mining"
 )
 
 // ThreatSource represents the source of threat data
@@ -69,6 +71,8 @@ const (
 	SourceBlockListTorrent    ThreatSource = "blocklist-torrent"
 	SourceBlockListTracking   ThreatSource = "blocklist-tracking"
 	SourceBlockListRansomware ThreatSource = "blocklist-ransomware"
+	// Cryptomining pools
+	SourceMiningPools ThreatSource = "mining-pools"
 )
 
 // ThreatIndicator represents an indicator of compromise (IOC)

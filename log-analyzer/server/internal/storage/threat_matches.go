@@ -9,8 +9,11 @@ import (
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
-// MaxThreatMatchesPerCategory is the maximum number of recent threat matches to keep per category
-const MaxThreatMatchesPerCategory = 100
+// MaxThreatMatchesPerCategory is the maximum number of recent threat matches to keep per category.
+// Aggregated counters (threat_type_stats, threat_hourly_stats, user_threat_stats) keep full history —
+// this limit only bounds the `threat_matches` table used for the recent-matches UI list.
+// Raised from 100 to 1000 so active categories don't lose visible history within seconds.
+const MaxThreatMatchesPerCategory = 1000
 
 // MaxThreatMatches is the total maximum for display queries (legacy, used in GetThreatMatches)
 const MaxThreatMatches = 500

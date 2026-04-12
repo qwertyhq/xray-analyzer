@@ -26,11 +26,75 @@ type FeedLoader struct {
 	client     *http.Client
 	mu         sync.RWMutex
 	indicators map[string]*ThreatIndicator // key: indicator value (domain/ip)
+	whitelist  map[string]bool             // domains/IPs to exclude (false positives)
 	feedStatus map[ThreatSource]*FeedStatus
+}
+
+// defaultWhitelist contains domains that popular blocklists often flag as "ads/tracking"
+// but are legitimate infrastructure (CDNs, analytics required for sites to function, etc.)
+// These would create false-positive noise in threat matches.
+var defaultWhitelist = []string{
+	// Major CDNs
+	"cloudfront.net",
+	"akamaihd.net",
+	"akamai.net",
+	"akamaiedge.net",
+	"akamaitechnologies.com",
+	"fastly.net",
+	"fastlylb.net",
+	"cloudflare.com",
+	"cdn.cloudflare.net",
+	// Big tech infrastructure (shared with apps)
+	"googleapis.com",
+	"gstatic.com",
+	"google.com",
+	"googleusercontent.com",
+	"ggpht.com",
+	"gvt1.com",
+	"gvt2.com",
+	"youtube.com",
+	"ytimg.com",
+	"apple.com",
+	"icloud.com",
+	"mzstatic.com",
+	"microsoft.com",
+	"msftconnecttest.com",
+	"windows.com",
+	"windowsupdate.com",
+	"office.com",
+	"office365.com",
+	"live.com",
+	"outlook.com",
+	"skype.com",
+	"amazon.com",
+	"amazonaws.com",
+	"aws.amazon.com",
+	"facebook.com",
+	"fbcdn.net",
+	"instagram.com",
+	"whatsapp.com",
+	"whatsapp.net",
+	"telegram.org",
+	"telegram.me",
+	"t.me",
+	"cdn-telegram.org",
+	// Developer tools often in ad-blocklists
+	"github.com",
+	"githubusercontent.com",
+	"githubassets.com",
+	"gitlab.com",
+	"stackoverflow.com",
+	"npmjs.com",
+	"jsdelivr.net",
+	"unpkg.com",
 }
 
 // NewFeedLoader creates a new feed loader
 func NewFeedLoader() *FeedLoader {
+	wl := make(map[string]bool, len(defaultWhitelist))
+	for _, d := range defaultWhitelist {
+		wl[strings.ToLower(d)] = true
+	}
 	return &FeedLoader{
 		client: &http.Client{
 			Timeout: 120 * time.Second, // Increased timeout for large feeds
@@ -42,8 +106,31 @@ func NewFeedLoader() *FeedLoader {
 			},
 		},
 		indicators: make(map[string]*ThreatIndicator),
+		whitelist:  wl,
 		feedStatus: make(map[ThreatSource]*FeedStatus),
 	}
+}
+
+// isWhitelisted checks if a domain (or its parent) is whitelisted.
+// Caller must hold f.mu.
+func (f *FeedLoader) isWhitelisted(indicator string) bool {
+	if f.whitelist[indicator] {
+		return true
+	}
+	// Check parent domains
+	if strings.Contains(indicator, ".") && !isIP(indicator) {
+		parts := strings.Split(indicator, ".")
+		for i := 1; i < len(parts); i++ {
+			parent := strings.Join(parts[i:], ".")
+			if !strings.Contains(parent, ".") {
+				continue
+			}
+			if f.whitelist[parent] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // doRequest performs an HTTP GET request with proper headers
@@ -102,20 +189,20 @@ func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 		source ThreatSource
 		loader func(context.Context) (int, error)
 	}{
+		// Specialized malware/C2/botnet
 		{SourceURLhaus, f.loadURLhaus},
 		{SourceFeodoTracker, f.loadFeodoTracker},
 		{SourceThreatFox, f.loadThreatFox},
-		{SourceStevenBlack, f.loadStevenBlack},
-		// Content category blocklists
-		{SourcePorn, f.loadPornBlocklist},
+		// Content category blocklists (StevenBlack extensions — categories without BlockList Project equivalents)
 		{SourceGambling, f.loadGamblingBlocklist},
 		{SourceSocial, f.loadSocialBlocklist},
 		{SourceFakeNews, f.loadFakeNewsBlocklist},
-		// P2P
+		// P2P / Anonymization
 		{SourceTorrent, f.loadTorrentTrackers},
-		// Anonymization
 		{SourceTor, f.loadTorExitNodes},
-		// BlockList Project - comprehensive category blocklists
+		// Cryptomining pools (hardcoded list)
+		{SourceMiningPools, f.loadMiningPools},
+		// BlockList Project — comprehensive category blocklists
 		{SourceBlockListAbuse, f.loadBlockListAbuse},
 		{SourceBlockListAds, f.loadBlockListAds},
 		{SourceBlockListCrypto, f.loadBlockListCrypto},
@@ -244,13 +331,16 @@ func (f *FeedLoader) loadURLhaus(ctx context.Context) (int, error) {
 			continue
 		}
 
-		host := u.Hostname()
+		host := strings.ToLower(u.Hostname())
 		if host == "" {
+			continue
+		}
+		if f.isWhitelisted(host) {
 			continue
 		}
 
 		indicator := &ThreatIndicator{
-			Indicator:   strings.ToLower(host),
+			Indicator:   host,
 			Type:        "domain",
 			ThreatType:  ThreatTypeMalware,
 			Source:      SourceURLhaus,
@@ -295,6 +385,9 @@ func (f *FeedLoader) loadFeodoTracker(ctx context.Context) (int, error) {
 
 	for _, entry := range entries {
 		if entry.IPAddress == "" {
+			continue
+		}
+		if f.isWhitelisted(entry.IPAddress) {
 			continue
 		}
 
@@ -393,8 +486,12 @@ func (f *FeedLoader) loadThreatFox(ctx context.Context) (int, error) {
 			threat = ThreatTypeMalware
 		}
 
+		iocValueLower := strings.ToLower(iocValue)
+		if f.isWhitelisted(iocValueLower) {
+			continue
+		}
 		indicator := &ThreatIndicator{
-			Indicator:   strings.ToLower(iocValue),
+			Indicator:   iocValueLower,
 			Type:        indicatorType,
 			ThreatType:  threat,
 			Source:      SourceThreatFox,
@@ -411,79 +508,6 @@ func (f *FeedLoader) loadThreatFox(ctx context.Context) (int, error) {
 
 	if err := scanner.Err(); err != nil {
 		return count, fmt.Errorf("scan threatfox: %w", err)
-	}
-
-	return count, nil
-}
-
-// loadStevenBlack loads domains from StevenBlack hosts file
-func (f *FeedLoader) loadStevenBlack(ctx context.Context) (int, error) {
-	resp, err := f.doRequest("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts")
-	if err != nil {
-		return 0, fmt.Errorf("fetch stevenblack: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("stevenblack returned status %d", resp.StatusCode)
-	}
-
-	count := 0
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	scanner := bufio.NewScanner(resp.Body)
-	// Increase buffer size for long lines
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		// Skip comments and empty lines
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// Parse hosts file format: 0.0.0.0 domain.com
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-
-		// Skip localhost entries
-		domain := strings.ToLower(parts[1])
-		if domain == "localhost" || domain == "localhost.localdomain" ||
-			domain == "local" || strings.HasPrefix(domain, "broadcasthost") {
-			continue
-		}
-
-		// Determine threat type based on domain patterns
-		threatType := ThreatTypeAdware
-		domainLower := strings.ToLower(domain)
-		if strings.Contains(domainLower, "track") || strings.Contains(domainLower, "analytics") ||
-			strings.Contains(domainLower, "telemetry") || strings.Contains(domainLower, "metric") {
-			threatType = ThreatTypeTracker
-		}
-
-		indicator := &ThreatIndicator{
-			Indicator:   domain,
-			Type:        "domain",
-			ThreatType:  threatType,
-			Source:      SourceStevenBlack,
-			Confidence:  60, // Lower confidence for adware/tracking
-			Description: "Adware/Tracking domain",
-			FirstSeen:   time.Now(),
-			LastSeen:    time.Now(),
-			CreatedAt:   time.Now(),
-		}
-
-		f.indicators[indicator.Indicator] = indicator
-		count++
-	}
-
-	if err := scanner.Err(); err != nil && err != io.EOF {
-		return count, fmt.Errorf("scan stevenblack: %w", err)
 	}
 
 	return count, nil
@@ -727,6 +751,11 @@ func (f *FeedLoader) loadCategoryHosts(ctx context.Context, url string, source T
 			continue
 		}
 
+		// Skip whitelisted domains (CDNs, big-tech infrastructure) to reduce false positives
+		if f.isWhitelisted(domain) {
+			continue
+		}
+
 		// Skip if already in indicators with higher confidence
 		if existing, ok := f.indicators[domain]; ok && existing.Confidence >= confidence {
 			continue
@@ -753,18 +782,6 @@ func (f *FeedLoader) loadCategoryHosts(ctx context.Context, url string, source T
 	}
 
 	return count, nil
-}
-
-// loadPornBlocklist loads porn/adult content domains
-func (f *FeedLoader) loadPornBlocklist(ctx context.Context) (int, error) {
-	return f.loadCategoryHosts(
-		ctx,
-		"https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/porn/sinfonietta/hosts",
-		SourcePorn,
-		ThreatTypePorn,
-		"Adult/Porn content",
-		75,
-	)
 }
 
 // loadGamblingBlocklist loads gambling/casino domains
