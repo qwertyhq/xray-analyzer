@@ -49,8 +49,8 @@ type LocationWithoutCoords struct {
 
 // CategoryUserStats represents user stats for a content category
 type CategoryUserStats struct {
-	UserEmail   string   `json:"-"` // internal use only
-	DisplayName string   `json:"username"`
+	UserEmail   string   `json:"user_email"` // raw identifier from Xray logs (numeric id or username)
+	DisplayName string   `json:"username"`   // resolved username from Remnawave when available
 	Category    string   `json:"category"`
 	MatchCount  int64    `json:"match_count"`
 	Domains     []string `json:"domains"` // Top visited domains in this category

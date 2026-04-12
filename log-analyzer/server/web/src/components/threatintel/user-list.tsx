@@ -29,7 +29,7 @@ export function UserList({ users, maxHeight = "300px" }: UserListProps) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <Link
-                href={`/users/${encodeURIComponent(user.user_email)}`}
+                href={`/users/${encodeURIComponent(user.username || user.user_email || '')}`}
                 className="text-sm hover:underline truncate"
                 title={user.username || user.user_email}
               >

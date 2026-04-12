@@ -191,7 +191,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
                   </span>
                   <div className="flex-1 min-w-0">
                     <Link
-                      href={`/users/${encodeURIComponent(user.user_email)}`}
+                      href={`/users/${encodeURIComponent(user.username || user.user_email || '')}`}
                       className="font-medium hover:underline block truncate"
                     >
                       {user.username || user.user_email}

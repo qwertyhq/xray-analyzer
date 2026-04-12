@@ -102,7 +102,7 @@ type ThreatIndicator struct {
 // ThreatMatch represents a match between user traffic and threat intel
 type ThreatMatch struct {
 	ID          int64        `json:"id"`
-	UserEmail   string       `json:"-"` // internal use only
+	UserEmail   string       `json:"user_email"` // raw identifier from Xray logs
 	DisplayName string       `json:"username"`
 	NodeID      string       `json:"node_id"`
 	SourceIP    string       `json:"source_ip"`
