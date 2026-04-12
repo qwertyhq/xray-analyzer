@@ -47,6 +47,33 @@ export interface UserDetails {
   total_blacklist_hits: number;
   nodes: UserNodeStats[];
   recent_matches: BlacklistMatchInfo[];
+  total_threats?: number;
+  threats_by_type?: Record<string, number>;
+  recent_threats?: UserThreatInfo[];
+  risk_level?: string;
+  risk_score?: number;
+  remna_uuid?: string;
+  remna_status?: string;
+  remna_used_traffic?: number;
+  remna_traffic_limit?: number;
+  remna_traffic_percent?: number;
+  remna_hwid_count?: number;
+  remna_hwid_limit?: number;
+  remna_online_at?: string;
+  remna_expire_at?: string;
+  remna_telegram_id?: number;
+  remna_description?: string;
+}
+
+export interface UserThreatInfo {
+  node_id: string;
+  destination: string;
+  threat_type: string;
+  source: string;
+  confidence: number;
+  description?: string;
+  source_ip?: string;
+  matched_at: string;
 }
 
 export interface UserNodeStats {

@@ -98,6 +98,12 @@ type UserDetails struct {
 	TotalBlacklistHits int64                `json:"total_blacklist_hits"`
 	Nodes              []UserNodeStats      `json:"nodes"`
 	RecentMatches      []BlacklistMatchInfo `json:"recent_matches"`
+	// Threat intel
+	TotalThreats  int64            `json:"total_threats"`
+	ThreatsByType map[string]int64 `json:"threats_by_type,omitempty"`
+	RecentThreats []UserThreatInfo `json:"recent_threats,omitempty"`
+	RiskLevel     string           `json:"risk_level,omitempty"`
+	RiskScore     int              `json:"risk_score,omitempty"`
 	// Remnawave data
 	RemnaUUID         string  `json:"remna_uuid,omitempty"`
 	RemnaStatus       string  `json:"remna_status,omitempty"`
@@ -110,6 +116,18 @@ type UserDetails struct {
 	RemnaExpireAt     string  `json:"remna_expire_at,omitempty"`
 	RemnaTelegramID   *int64  `json:"remna_telegram_id,omitempty"`
 	RemnaDescription  string  `json:"remna_description,omitempty"`
+}
+
+// UserThreatInfo represents a threat match for the user profile view
+type UserThreatInfo struct {
+	NodeID      string    `json:"node_id"`
+	Destination string    `json:"destination"`
+	ThreatType  string    `json:"threat_type"`
+	Source      string    `json:"source"`
+	Confidence  int       `json:"confidence"`
+	Description string    `json:"description,omitempty"`
+	SourceIP    string    `json:"source_ip,omitempty"`
+	MatchedAt   time.Time `json:"matched_at"`
 }
 
 // UserNodeStats represents user stats per node

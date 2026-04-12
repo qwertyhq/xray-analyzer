@@ -484,6 +484,72 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		user.RecentMatches = append(user.RecentMatches, m)
 	}
 
+	// Threat matches aggregate (per-category counts) — survives the 1000-per-category
+	// recent-matches cap because it reads from user_threat_stats counters, not from
+	// threat_matches itself.
+	threatAggQuery := fmt.Sprintf(`
+		SELECT threat_type, SUM(match_count) as cnt
+		FROM user_threat_stats
+		WHERE user_email IN (%s)
+		GROUP BY threat_type
+		ORDER BY cnt DESC
+	`, placeholders)
+	if aggRows, err := s.db.QueryContext(ctx, threatAggQuery, args...); err == nil {
+		user.ThreatsByType = map[string]int64{}
+		for aggRows.Next() {
+			var tt string
+			var cnt int64
+			if err := aggRows.Scan(&tt, &cnt); err == nil {
+				user.ThreatsByType[tt] = cnt
+				user.TotalThreats += cnt
+			}
+		}
+		aggRows.Close()
+	}
+
+	// Recent threat matches (last 50) — the visible audit trail.
+	threatQuery := fmt.Sprintf(`
+		SELECT node_id, destination, threat_type, source, confidence,
+		       COALESCE(description, ''), COALESCE(source_ip, ''),
+		       COALESCE(matched_at, '')
+		FROM threat_matches
+		WHERE user_email IN (%s)
+		ORDER BY matched_at DESC
+		LIMIT 50
+	`, placeholders)
+	if tRows, err := s.db.QueryContext(ctx, threatQuery, args...); err == nil {
+		for tRows.Next() {
+			var t models.UserThreatInfo
+			var tsStr string
+			if err := tRows.Scan(&t.NodeID, &t.Destination, &t.ThreatType, &t.Source, &t.Confidence,
+				&t.Description, &t.SourceIP, &tsStr); err == nil {
+				t.MatchedAt = parseDateTime(tsStr)
+				user.RecentThreats = append(user.RecentThreats, t)
+			}
+		}
+		tRows.Close()
+	}
+
+	// Risk profile — populated by the RecalculateAllUserRiskProfiles job every 30 min.
+	// Query by any of the user's identifiers (Remnawave numeric id, us_id, username).
+	riskQuery := fmt.Sprintf(`
+		SELECT risk_level, risk_score
+		FROM user_risk_profiles
+		WHERE user_email IN (%s)
+		ORDER BY risk_score DESC
+		LIMIT 1
+	`, placeholders)
+	var rl sql.NullString
+	var rs sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, riskQuery, args...).Scan(&rl, &rs); err == nil {
+		if rl.Valid {
+			user.RiskLevel = rl.String
+		}
+		if rs.Valid {
+			user.RiskScore = int(rs.Int64)
+		}
+	}
+
 	return user, nil
 }
 

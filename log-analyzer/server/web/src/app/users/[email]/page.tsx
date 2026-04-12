@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, User, Activity, ShieldAlert, Globe, Wifi } from "lucide-react";
+import { ArrowLeft, User, Activity, ShieldAlert, Globe, Wifi, AlertTriangle, Gauge } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { isValidDate } from "@/lib/utils/date";
 import { UserDestinationsTable } from "@/components/users/user-destinations-table";
@@ -83,7 +83,7 @@ export default function UserDetailsPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 grid-cols-3">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs sm:text-sm font-medium">Requests</CardTitle>
@@ -110,6 +110,42 @@ export default function UserDetailsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">Threats</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-muted-foreground hidden sm:block" />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-lg sm:text-2xl font-bold ${(details.total_threats ?? 0) > 0 ? "text-orange-500" : ""}`}>
+              {details.total_threats ?? 0}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">Risk</CardTitle>
+            <Gauge className="h-4 w-4 text-muted-foreground hidden sm:block" />
+          </CardHeader>
+          <CardContent>
+            {details.risk_level ? (
+              <div className="flex items-baseline gap-2">
+                <div className={`text-lg sm:text-2xl font-bold ${
+                  details.risk_level === "critical" ? "text-destructive" :
+                  details.risk_level === "high" ? "text-orange-500" :
+                  details.risk_level === "medium" ? "text-yellow-500" :
+                  "text-green-500"
+                }`}>
+                  {details.risk_score ?? 0}
+                </div>
+                <span className="text-xs text-muted-foreground uppercase">{details.risk_level}</span>
+              </div>
+            ) : (
+              <div className="text-lg sm:text-2xl font-bold text-muted-foreground">—</div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs sm:text-sm font-medium">Nodes</CardTitle>
             <Globe className="h-4 w-4 text-muted-foreground hidden sm:block" />
           </CardHeader>
@@ -118,6 +154,76 @@ export default function UserDetailsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {details.threats_by_type && Object.keys(details.threats_by_type).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-orange-500" />
+              Threat Intelligence
+            </CardTitle>
+            <CardDescription className="text-xs sm:text-sm">
+              Categorized threat matches for this user
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(details.threats_by_type)
+                .sort(([,a], [,b]) => b - a)
+                .map(([type, count]) => (
+                  <Badge key={type} variant="outline" className="font-mono">
+                    <span className="uppercase">{type}</span>
+                    <span className="ml-2 text-muted-foreground">{count}</span>
+                  </Badge>
+                ))}
+            </div>
+            {details.recent_threats && details.recent_threats.length > 0 && (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Destination</TableHead>
+                      <TableHead className="hidden md:table-cell">Source</TableHead>
+                      <TableHead className="text-right hidden sm:table-cell">Conf</TableHead>
+                      <TableHead className="hidden lg:table-cell">Node</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {details.recent_threats.slice(0, 30).map((t, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {isValidDate(t.matched_at)
+                            ? formatDistanceToNow(new Date(t.matched_at), { addSuffix: true })
+                            : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="uppercase text-xs">{t.threat_type}</Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs max-w-[260px] truncate" title={t.destination}>
+                          {t.destination}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground hidden md:table-cell">
+                          {t.source}
+                        </TableCell>
+                        <TableCell className="text-right hidden sm:table-cell">
+                          <span className={t.confidence >= 90 ? "text-destructive" : t.confidence >= 75 ? "text-orange-500" : ""}>
+                            {t.confidence}
+                          </span>
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell">
+                          <Badge variant="outline" className="text-xs">{t.node_id}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
