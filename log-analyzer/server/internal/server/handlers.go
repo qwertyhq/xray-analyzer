@@ -14,6 +14,7 @@ import (
 
 	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/remnawave"
+	"github.com/xray-log-analyzer/server/internal/storage"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
@@ -1631,5 +1632,44 @@ func (s *Server) handleDebugUsers(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"count":  len(emails),
 		"emails": emails,
+	})
+}
+
+// handleBridgedFlows returns correlated bridge → exit flows.
+//
+// Query params (all optional):
+//   user   = exact user_email
+//   ip     = exact real_client_ip
+//   dest   = substring match against destination
+//   since  = duration like "1h", "30m" — flows newer than now-since
+//   limit  = max rows (default 200, max 1000)
+func (s *Server) handleBridgedFlows(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	filter := storage.BridgedFlowsFilter{
+		UserEmail:    q.Get("user"),
+		RealClientIP: q.Get("ip"),
+		Destination:  q.Get("dest"),
+	}
+	if v := q.Get("since"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			filter.Since = time.Now().Add(-d)
+		}
+	}
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			filter.Limit = n
+		}
+	}
+
+	flows, err := s.storage.GetBridgedFlows(r.Context(), filter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"count": len(flows),
+		"flows": flows,
 	})
 }

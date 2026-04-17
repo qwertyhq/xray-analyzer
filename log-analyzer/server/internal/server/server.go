@@ -186,6 +186,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/users/all", s.requireAPIToken(s.handleAllUsers))
 	mux.HandleFunc("/api/hourly", s.requireAPIToken(s.handleHourlyStats))
 	mux.HandleFunc("/api/anomalies", s.requireAPIToken(s.handleAnomalies))
+	mux.HandleFunc("/api/bridged-flows", s.requireAPIToken(s.handleBridgedFlows))
 	mux.HandleFunc("/api/alerts", s.requireAPIToken(s.handleAlerts))
 	mux.HandleFunc("/api/blacklist/stats", s.requireAPIToken(s.handleBlacklistStats))
 	mux.HandleFunc("/api/blacklist/analytics", s.requireAPIToken(s.handleBlacklistAnalytics))

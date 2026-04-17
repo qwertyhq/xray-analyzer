@@ -40,6 +40,23 @@ type Config struct {
 
 	// Aleria AI settings
 	AleriaAPIKey string
+
+	// Bridge filtering: regex matching inbound tags whose source IP is an
+	// infrastructure hop (another Xray bridge node), not a real client.
+	// When matched, the source IP is suppressed for IP-history / correlation
+	// tables. Empty string disables the filter.
+	BridgeInboundPattern string
+
+	// BridgeNodeIDs is the list of node_id values that act as bridge ingress
+	// (the upstream side of the BRIDGE_*_IN tunnel). Used to resolve the
+	// real client IP for an exit-node bridged flow. Empty disables Layer-3
+	// correlation.
+	BridgeNodeIDs []string
+
+	// BridgeCorrelationWindow controls how far back/forward the analyzer
+	// looks in user_ip_history (on bridge nodes) when resolving the real
+	// client IP for an exit-node bridged entry.
+	BridgeCorrelationWindow time.Duration
 }
 
 // Load loads configuration from environment variables
@@ -63,6 +80,9 @@ func Load() *Config {
 		RemnawaveAPIToken:      getEnv("REMNAWAVE_API_TOKEN", ""),
 		RemnawaveSyncInterval:  getDurationEnv("REMNAWAVE_SYNC_INTERVAL", 1*time.Minute), // More frequent for accurate online stats
 		AleriaAPIKey:           getEnv("ALERIA_API_KEY", ""),
+		BridgeInboundPattern:    getEnv("BRIDGE_INBOUND_PATTERN", `^BRIDGE_.*_IN(_\d+)?$`),
+		BridgeNodeIDs:           getStringSliceEnv("BRIDGE_NODE_IDS", []string{"ru-white", "ru-bride"}),
+		BridgeCorrelationWindow: getDurationEnv("BRIDGE_CORRELATION_WINDOW", 30*time.Second),
 	}
 }
 
