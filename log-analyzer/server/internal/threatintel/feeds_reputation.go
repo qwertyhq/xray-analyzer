@@ -94,18 +94,26 @@ func (f *FeedLoader) loadAlienVaultOTX(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-// loadPhishTank loads the PhishTank community phishing URL database.
-// The free feed is paginated CSV; no API key required for basic access.
+// loadPhishTank used to fetch http://data.phishtank.com/data/online-valid.csv
+// without an API key. As of 2024 that endpoint returns 404 — PhishTank now
+// requires a registered application_key in the URL. Until someone signs up
+// and wires a secret through, we pull OpenPhish's free feed instead
+// (https://openphish.com/feed.txt). It ships a smaller but actively-curated
+// list of phishing URLs with no auth required, and phishing is already
+// heavily covered by the blocklist-phishing feed (~180k domains), so this
+// is mostly about keeping the Threat Intel feed status green.
+//
+// Source constant stays SourcePhishTank so dashboards and the DB don't need
+// a migration; the Description makes the actual origin clear.
 func (f *FeedLoader) loadPhishTank(ctx context.Context) (int, error) {
-	// Plain CSV, no key required
-	resp, err := f.doRequest("http://data.phishtank.com/data/online-valid.csv")
+	resp, err := f.doRequest("https://openphish.com/feed.txt")
 	if err != nil {
-		return 0, fmt.Errorf("fetch phishtank: %w", err)
+		return 0, fmt.Errorf("fetch openphish: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("phishtank returned status %d", resp.StatusCode)
+		return 0, fmt.Errorf("openphish returned status %d", resp.StatusCode)
 	}
 
 	count := 0
@@ -118,19 +126,11 @@ func (f *FeedLoader) loadPhishTank(ctx context.Context) (int, error) {
 	buf := make([]byte, 0, 256*1024)
 	scanner.Buffer(buf, 2*1024*1024)
 
-	headerSkipped := false
 	for scanner.Scan() {
-		line := scanner.Text()
-		if !headerSkipped {
-			headerSkipped = true
+		rawURL := strings.TrimSpace(scanner.Text())
+		if rawURL == "" || strings.HasPrefix(rawURL, "#") {
 			continue
 		}
-		// CSV columns: phish_id, url, phish_detail_url, submission_time, verified, verification_time, online, target
-		fields := splitCSV(line)
-		if len(fields) < 2 {
-			continue
-		}
-		rawURL := strings.Trim(fields[1], `" `)
 		u, err := url.Parse(rawURL)
 		if err != nil {
 			continue
@@ -139,23 +139,13 @@ func (f *FeedLoader) loadPhishTank(ctx context.Context) (int, error) {
 		if host == "" {
 			continue
 		}
-
-		target := ""
-		if len(fields) >= 8 {
-			target = strings.Trim(fields[7], `" `)
-		}
-		desc := "PhishTank verified phishing"
-		if target != "" && target != "Other" {
-			desc = "PhishTank phishing targeting " + target
-		}
-
 		if f.upsertIndicator(&ThreatIndicator{
 			Indicator:   host,
 			Type:        "domain",
 			ThreatType:  ThreatTypePhishing,
 			Source:      SourcePhishTank,
-			Confidence:  85, // community-verified
-			Description: desc,
+			Confidence:  85,
+			Description: "OpenPhish verified phishing",
 			FirstSeen:   now,
 			LastSeen:    now,
 			CreatedAt:   now,
@@ -165,7 +155,7 @@ func (f *FeedLoader) loadPhishTank(ctx context.Context) (int, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return count, fmt.Errorf("scan phishtank: %w", err)
+		return count, fmt.Errorf("scan openphish: %w", err)
 	}
 	return count, nil
 }

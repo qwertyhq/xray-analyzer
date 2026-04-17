@@ -45,8 +45,13 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 		return cached.([]*models.NodeStats), nil
 	}
 
-	// Calculate 1 minute ago in RFC3339 format to match stored data
-	oneMinAgo := time.Now().UTC().Add(-1 * time.Minute).Format(time.RFC3339)
+	// 5-minute window instead of 1. Agents occasionally lose their
+	// WebSocket for 30-60s (NetBird/Caddy idle drops, DNS hiccups) and
+	// during those gaps user_stats.last_seen isn't updated — a 1-minute
+	// window would report 0 online users on a still-very-active node.
+	// 5 min is a better "who is still active" proxy; real UI latency is
+	// dominated by the 10s cache TTL, not this window.
+	windowAgo := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
 
 	// Use LEFT JOIN instead of correlated subquery to avoid N+1 problem
 	rows, err := s.db.QueryContext(ctx, `
@@ -67,7 +72,7 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 			GROUP BY node_id
 		) online ON online.node_id = n.node_id
 		ORDER BY n.total_requests DESC
-	`, oneMinAgo)
+	`, windowAgo)
 	if err != nil {
 		return nil, err
 	}
