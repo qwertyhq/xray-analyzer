@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { authFetch } from "@/contexts/auth-context";
 import { useWebSocket, useWsThreatIntel } from "@/contexts/websocket-context";
+import { useThreatIntelData } from "@/hooks/use-threat-intel-data";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { ActivityChart } from "@/components/dashboard/activity-chart";
 import { AnomaliesCard } from "@/components/dashboard/anomalies-card";
@@ -27,6 +28,11 @@ import { BlacklistMatchInfo, StatsAnomaly } from "@/lib/types";
 export default function DashboardPage() {
   const { stats, nodes, hourly, anomalies, blacklist, connected, loading } = useWebSocket();
   const { threatIntel } = useWsThreatIntel();
+  // HTTP-polled copy as a fallback: WS may take up to 10s to push the first
+  // threatintel frame after (re)connect, and the feed loader itself can be
+  // slow on cold start. The HTTP endpoint reads the same stats and
+  // guarantees SystemHealth sees live numbers within a refresh interval.
+  const { stats: tiStatsHTTP } = useThreatIntelData();
   
   // State for additional data
   const [geoData, setGeoData] = useState<Array<{ country: string; country_code: string; count: number; users: number }>>([]);
@@ -365,8 +371,8 @@ export default function DashboardPage() {
           remnawaveStatus={remnawaveStatus}
           remnawaveEnabled={remnawaveEnabled}
           remnawaveLastSync={remnawaveLastSync}
-          threatIntelIndicators={threatIntel.stats?.total_indicators || 0}
-          threatIntelLastUpdate={threatIntel.stats?.last_updated}
+          threatIntelIndicators={threatIntel.stats?.total_indicators ?? tiStatsHTTP?.total_indicators ?? null}
+          threatIntelLastUpdate={threatIntel.stats?.last_updated ?? tiStatsHTTP?.last_updated}
           websocketConnected={connected}
         />
         <PeriodComparison stats={periodStats} periodLabel="vs yesterday" />

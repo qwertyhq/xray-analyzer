@@ -28,7 +28,9 @@ interface SystemHealthProps {
   remnawaveEnabled?: boolean;
   remnawaveLastSync?: string;
   threatIntelLastUpdate?: string;
-  threatIntelIndicators?: number;
+  // null/undefined = still loading (no data yet). 0 = service reports 0 indicators
+  // (real warning). >0 = healthy.
+  threatIntelIndicators?: number | null;
   databaseStatus?: "online" | "offline";
   websocketConnected?: boolean;
 }
@@ -38,7 +40,7 @@ export function SystemHealth({
   remnawaveEnabled = true,
   remnawaveLastSync,
   threatIntelLastUpdate,
-  threatIntelIndicators = 0,
+  threatIntelIndicators,
   databaseStatus = "online",
   websocketConnected = true,
 }: SystemHealthProps) {
@@ -66,11 +68,21 @@ export function SystemHealth({
     },
     {
       name: "Threat Intel",
-      status: threatIntelIndicators > 0 ? "online" : "warning",
+      // null/undefined = haven't received any stats yet — show "loading" not "warning".
+      // Only flag warning when we KNOW indicator count is zero.
+      status:
+        threatIntelIndicators == null
+          ? "loading"
+          : threatIntelIndicators > 0
+            ? "online"
+            : "warning",
       lastUpdate: threatIntelLastUpdate,
-      details: threatIntelIndicators > 0 
-        ? `${threatIntelIndicators.toLocaleString()} indicators` 
-        : "Loading feeds...",
+      details:
+        threatIntelIndicators == null
+          ? "Loading feeds..."
+          : threatIntelIndicators > 0
+            ? `${threatIntelIndicators.toLocaleString()} indicators`
+            : "No indicators loaded",
     },
     {
       name: "Database",

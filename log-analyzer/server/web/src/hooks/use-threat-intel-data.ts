@@ -10,6 +10,7 @@ import {
   UserRiskSummary,
   ReportSummary,
   ReportConfig,
+  ThreatStats,
 } from "@/lib/types";
 
 interface ThreatIntelData {
@@ -19,6 +20,7 @@ interface ThreatIntelData {
   anomalies: AnomalySummary | null;
   riskProfiles: UserRiskSummary | null;
   reports: ReportSummary | null;
+  stats: ThreatStats | null;
 }
 
 interface UseThreatIntelDataReturn extends ThreatIntelData {
@@ -56,6 +58,7 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
     anomalies: null,
     riskProfiles: null,
     reports: null,
+    stats: null,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +141,19 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
     }
   }, [fetchWithError]);
 
+  const fetchStats = useCallback(async () => {
+    // HTTP fallback for total_indicators / last_updated — the WebSocket may
+    // not push a threatintel frame for 10s after (re)connect and until then
+    // SystemHealth would stay in "Loading feeds..." for no good reason.
+    const stats = await fetchWithError<ThreatStats>(
+      "/api/threatintel/stats",
+      "Failed to fetch threat intel stats"
+    );
+    if (stats) {
+      setData(prev => ({ ...prev, stats }));
+    }
+  }, [fetchWithError]);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
@@ -148,6 +164,7 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
         fetchAnomalies(),
         fetchRiskProfiles(),
         fetchReports(),
+        fetchStats(),
       ]);
       setError(null);
     } catch (err) {
@@ -156,7 +173,7 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
     } finally {
       setLoading(false);
     }
-  }, [fetchFeeds, fetchTimeStats, fetchGeoStats, fetchAnomalies, fetchRiskProfiles, fetchReports]);
+  }, [fetchFeeds, fetchTimeStats, fetchGeoStats, fetchAnomalies, fetchRiskProfiles, fetchReports, fetchStats]);
 
   const runAnomalyDetection = useCallback(async () => {
     try {
@@ -228,12 +245,13 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
       setInterval(fetchAnomalies, DEFAULT_REFRESH_INTERVALS.anomalies),
       setInterval(fetchRiskProfiles, DEFAULT_REFRESH_INTERVALS.riskProfiles),
       setInterval(fetchReports, DEFAULT_REFRESH_INTERVALS.reports),
+      setInterval(fetchStats, 30000), // 30 sec keeps SystemHealth honest
     ];
 
     return () => {
       intervalsRef.current.forEach(clearInterval);
     };
-  }, [fetchFeeds, fetchTimeStats, fetchGeoStats, fetchAnomalies, fetchRiskProfiles, fetchReports]);
+  }, [fetchFeeds, fetchTimeStats, fetchGeoStats, fetchAnomalies, fetchRiskProfiles, fetchReports, fetchStats]);
 
   return {
     ...data,
