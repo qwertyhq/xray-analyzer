@@ -64,6 +64,12 @@ type Config struct {
 	RedisAddr      string
 	RedisPassword  string
 	RedisKeyPrefix string
+
+	// NodeRemnaMap wires agent NODE_ID values to Remnawave node names so
+	// /api/nodes can surface the live online-user count Remnawave already
+	// tracks (XTLS active sessions) instead of inferring it from access-log
+	// recency. Format: "est-1=Estonia,poland-1=Poland,...". Empty disables.
+	NodeRemnaMap map[string]string
 }
 
 // Load loads configuration from environment variables
@@ -93,7 +99,41 @@ func Load() *Config {
 		RedisAddr:               getEnv("REDIS_ADDR", ""),
 		RedisPassword:           getEnv("REDIS_PASSWORD", ""),
 		RedisKeyPrefix:          getEnv("REDIS_KEY_PREFIX", "analyzer:"),
+		NodeRemnaMap: getMapEnv("NODE_REMNA_MAP", map[string]string{
+			"est-1":         "Estonia",
+			"poland-1":      "Poland",
+			"netherlands-1": "Netherlands",
+			"finland-1":     "Finland",
+			"usa-1":         "United States",
+			"germany-1":     "Germany",
+			"ru-white":      "RU-White Bride",
+			"ru-bride":      "RU Bride",
+		}),
 	}
+}
+
+// getMapEnv parses a "k1=v1,k2=v2" env var into a map.
+func getMapEnv(key string, defaultValue map[string]string) map[string]string {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return defaultValue
+	}
+	out := make(map[string]string)
+	for _, pair := range strings.Split(raw, ",") {
+		kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		k := strings.TrimSpace(kv[0])
+		v := strings.TrimSpace(kv[1])
+		if k != "" && v != "" {
+			out[k] = v
+		}
+	}
+	if len(out) == 0 {
+		return defaultValue
+	}
+	return out
 }
 
 func getStringSliceEnv(key string, defaultValue []string) []string {

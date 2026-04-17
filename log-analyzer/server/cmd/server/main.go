@@ -44,6 +44,13 @@ func main() {
 	defer store.Close()
 	log.Println("storage: initialized")
 
+	// Wire agent→Remnawave node-name mapping so /api/nodes can surface live
+	// XTLS-tracked online counts instead of the access-log heuristic.
+	if len(cfg.NodeRemnaMap) > 0 {
+		store.SetNodeRemnaMap(cfg.NodeRemnaMap)
+		log.Printf("storage: node remna map loaded (%d pairs)", len(cfg.NodeRemnaMap))
+	}
+
 	// Initialize Redis (L2 persistent cache). Optional — if it fails or the
 	// address is empty, everything still works with only the in-process L1.
 	var redisClient *rediscache.Client
