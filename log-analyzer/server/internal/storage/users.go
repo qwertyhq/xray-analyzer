@@ -599,17 +599,60 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 		return nil, err
 	}
 
-	// Use same time format as GetNodeStats for consistency
-	err = s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT user_email) FROM user_stats
-		WHERE last_seen > ?
-	`, oneMinAgo).Scan(&stats.OnlineUsers)
-	if err != nil {
-		return nil, err
+	// Prefer Remnawave's XTLS-tracked online count (sum across mapped nodes)
+	// — Xray reports real active sessions, so Dashboard's "Online Users" card
+	// matches /api/nodes and the Remnawave Web UI. Fall back to the access-log
+	// heuristic when Remnawave mapping isn't configured.
+	if len(s.nodeRemnaMap) > 0 {
+		var remnaTotal sql.NullInt64
+		err = s.db.QueryRowContext(ctx, `
+			SELECT COALESCE(SUM(users_online), 0)
+			FROM remna_nodes
+			WHERE name IN (`+placeholderList(len(s.nodeRemnaMap))+`)
+		`, remnaNamesAsArgs(s.nodeRemnaMap)...).Scan(&remnaTotal)
+		if err == nil && remnaTotal.Valid {
+			stats.OnlineUsers = int(remnaTotal.Int64)
+		}
+	}
+	if stats.OnlineUsers == 0 {
+		// Fallback: access-log heuristic.
+		err = s.db.QueryRowContext(ctx, `
+			SELECT COUNT(DISTINCT user_email) FROM user_stats
+			WHERE last_seen > ?
+		`, oneMinAgo).Scan(&stats.OnlineUsers)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	s.cache.Set(cacheKey, stats, CacheTTLShort)
 	return stats, nil
+}
+
+// placeholderList returns "?,?,?,?" for the given length — convenient for
+// IN (...) clauses.
+func placeholderList(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	s := make([]byte, 0, 2*n-1)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			s = append(s, ',')
+		}
+		s = append(s, '?')
+	}
+	return string(s)
+}
+
+// remnaNamesAsArgs flattens map values (Remnawave node names) to a []any
+// for use as SQL bind args.
+func remnaNamesAsArgs(m map[string]string) []interface{} {
+	out := make([]interface{}, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
 }
 
 // GetUserAnomalies finds users with unusual activity spikes
