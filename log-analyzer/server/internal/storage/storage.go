@@ -645,6 +645,17 @@ func (s *Storage) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_remna_nodes_connected ON remna_nodes(is_connected);
 	CREATE INDEX IF NOT EXISTS idx_remna_nodes_country ON remna_nodes(country_code);
 
+	-- Minute-resolution snapshots of total online users across the fleet.
+	-- Written by a 1/min cron that reads Remnawave users_online per node
+	-- and sums across the mapped nodes. Hourly/minutely aggregates for
+	-- dashboards come from here so rolling-window charts show real XTLS
+	-- session counts, not access-log proxies that vanish on WS flaps.
+	CREATE TABLE IF NOT EXISTS online_snapshots (
+		ts DATETIME PRIMARY KEY,
+		total_online INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_online_snapshots_ts ON online_snapshots(ts DESC);
+
 	-- Bridged flows: correlation between a bridge-node ingress (real client IP)
 	-- and an exit-node egress (final destination), joined by user_email and a
 	-- short time window. Populated by the analyzer when processing entries

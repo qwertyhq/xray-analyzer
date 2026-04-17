@@ -44,6 +44,7 @@ export default function DashboardPage() {
   const [remnawaveStatus, setRemnawaveStatus] = useState<"online" | "offline" | "unknown">("unknown");
   const [remnawaveEnabled, setRemnawaveEnabled] = useState<boolean>(true);
   const [remnawaveLastSync, setRemnawaveLastSync] = useState<string | undefined>();
+  const [onlineHistory, setOnlineHistory] = useState<Array<{hour: string; online_users: number}>>([]);
   
   // Fetch additional dashboard data
   useEffect(() => {
@@ -98,6 +99,14 @@ export default function DashboardPage() {
               blacklist_hits: u.blacklist_hits,
             }));
           setTopOffenders(topUsers);
+        }
+
+        // Pull the 24h online-user snapshot series (Remnawave-sourced, not
+        // access-log). activity-chart overlays this on top of hourly_stats.
+        const onlineRes = await authFetch("/api/online-history?since=24h", { headers });
+        if (onlineRes.ok) {
+          const data = await onlineRes.json();
+          setOnlineHistory(data.points || []);
         }
 
         // Check Remnawave status
@@ -386,8 +395,9 @@ export default function DashboardPage() {
       {/* Row 3: Activity Chart + Anomalies */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <ActivityChart 
-            data={hourly} 
+          <ActivityChart
+            data={hourly}
+            onlineHistory={onlineHistory}
             title="Activity (Last 24 Hours)"
             description="Requests and blacklist hits over time"
             loading={false}

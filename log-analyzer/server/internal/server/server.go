@@ -198,6 +198,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/users", s.cached(0, s.requireAPIToken(s.handleUsers)))
 	mux.HandleFunc("/api/users/all", s.cached(0, s.requireAPIToken(s.handleAllUsers)))
 	mux.HandleFunc("/api/hourly", s.cached(0, s.requireAPIToken(s.handleHourlyStats)))
+	mux.HandleFunc("/api/online-history", s.cached(0, s.requireAPIToken(s.handleOnlineHistory)))
 	mux.HandleFunc("/api/anomalies", s.cached(0, s.requireAPIToken(s.handleAnomalies)))
 	mux.HandleFunc("/api/bridged-flows", s.cached(0, s.requireAPIToken(s.handleBridgedFlows)))
 	mux.HandleFunc("/api/alerts", s.cached(0, s.requireAPIToken(s.handleAlerts)))
@@ -251,6 +252,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start background jobs
 	go s.startCleanupJob(ctx)
 	go s.startBroadcastLoop(ctx)
+	go s.startOnlineSnapshotJob(ctx)
 
 	server := &http.Server{
 		Addr:    s.addr,

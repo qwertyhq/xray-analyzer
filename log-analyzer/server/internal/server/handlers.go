@@ -1740,3 +1740,29 @@ func (s *Server) handleAttackAnomalies(w http.ResponseWriter, r *http.Request) {
 		"attacks": out,
 	})
 }
+
+// handleOnlineHistory returns hourly peak online-user counts for the chart.
+// Backed by online_snapshots (written by startOnlineSnapshotJob every minute
+// from Remnawave users_online). Unlike hourly_stats this doesn't dip when
+// agents flap their WebSocket.
+//
+// Query: ?since=24h (default) — supports "1h".."7d" duration strings.
+func (s *Server) handleOnlineHistory(w http.ResponseWriter, r *http.Request) {
+	since := 24 * time.Hour
+	if v := r.URL.Query().Get("since"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			since = d
+		}
+	}
+	points, err := s.storage.GetOnlineHistoryHourly(r.Context(), since)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"since":  since.String(),
+		"count":  len(points),
+		"points": points,
+	})
+}
