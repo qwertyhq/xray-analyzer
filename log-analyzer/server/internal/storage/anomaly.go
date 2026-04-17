@@ -114,6 +114,7 @@ func (s *Storage) DetectAnomalies(ctx context.Context) ([]*threatintel.Anomaly, 
 		s.detectThreatBursts,
 		s.detectMultipleCountries,
 		s.detectPortScan,
+		s.detectAbusePortFlood,
 	}
 
 	for _, detect := range detectors {
@@ -344,31 +345,45 @@ func (s *Storage) detectMultipleCountries(ctx context.Context, now time.Time) ([
 	return anomalies, nil
 }
 
-// detectPortScan flags users who hit many distinct IPv4 destinations on the
-// same port within a short window — the signature of a service sweep. Filter
-// to IPv4-shaped destinations (GLOB) to avoid false positives from normal
-// browsing on :443 / :80.
+// detectPortScan flags masscan-style sweeps: many unique IPv4 destinations
+// inside a single /16 from one user, on any port, within a short window.
 //
-// Threshold: ≥30 unique IPs on one port within the last 5 minutes.
+// Why "same /16" instead of a port whitelist: a targeted scan always hits a
+// single network range (the thing the scanner is enumerating). Normal
+// browsing — even the worst WhatsApp/CDN chatter — scatters across many
+// providers' /16s. Concentration in one /16 is what distinguishes the two,
+// and it works regardless of whether the target port is :443 or :8317.
+//
+// We drop known-infra ports to cut residual noise: :80/:443/:53/:8080 are
+// the web/DNS that still account for most multi-IP sessions.
+//
+// Threshold: ≥20 unique IPs in the same /16 in the last 5 minutes.
 func (s *Storage) detectPortScan(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
 	const (
-		minUniqueDests = 30
-		windowMinutes  = 5
+		minUniqueIPs  = 20
+		windowMinutes = 5
 	)
 
 	rows, err := s.db.QueryContext(ctx, `
+		WITH parsed AS (
+			SELECT user_email,
+			       SUBSTR(destination, 1, INSTR(destination, ':') - 1) AS ip,
+			       SUBSTR(destination, INSTR(destination, ':') + 1) AS port
+			FROM user_destinations
+			WHERE last_seen > datetime('now', ?)
+			  AND destination GLOB '[0-9]*.[0-9]*.[0-9]*.[0-9]*:[0-9]*'
+		)
 		SELECT user_email,
-		       SUBSTR(destination, INSTR(destination, ':')+1) AS port_str,
-		       COUNT(DISTINCT destination) AS uniq_dst,
-		       MAX(last_seen) AS last_hit
-		FROM user_destinations
-		WHERE last_seen > datetime('now', ?)
-		  AND destination GLOB '[0-9]*.[0-9]*.[0-9]*.[0-9]*:[0-9]*'
-		GROUP BY user_email, port_str
-		HAVING uniq_dst >= ?
-		ORDER BY uniq_dst DESC
+		       SUBSTR(ip, 1, INSTR(ip, '.') + INSTR(SUBSTR(ip, INSTR(ip, '.') + 1), '.') - 1) AS slash16,
+		       port,
+		       COUNT(DISTINCT ip) AS uniq_ips
+		FROM parsed
+		WHERE port NOT IN ('80', '443', '53', '8080')
+		GROUP BY user_email, slash16, port
+		HAVING uniq_ips >= ?
+		ORDER BY uniq_ips DESC
 		LIMIT 50
-	`, fmt.Sprintf("-%d minutes", windowMinutes), minUniqueDests)
+	`, fmt.Sprintf("-%d minutes", windowMinutes), minUniqueIPs)
 	if err != nil {
 		return nil, err
 	}
@@ -377,24 +392,100 @@ func (s *Storage) detectPortScan(ctx context.Context, now time.Time) ([]*threati
 	var out []*threatintel.Anomaly
 	for rows.Next() {
 		var (
-			email, port, lastHit string
-			uniq                 int
+			email, subnet, port string
+			uniq                int
 		)
-		if err := rows.Scan(&email, &port, &uniq, &lastHit); err != nil {
+		if err := rows.Scan(&email, &subnet, &port, &uniq); err != nil {
 			continue
 		}
 		out = append(out, &threatintel.Anomaly{
-			ID:       fmt.Sprintf("portscan_%s_%s_%d", email, port, now.Unix()),
-			Type:     threatintel.AnomalyPortScan,
-			Severity: threatintel.SeverityHigh,
+			ID:        fmt.Sprintf("portscan_%s_%s_%s_%d", email, subnet, port, now.Unix()),
+			Type:      threatintel.AnomalyPortScan,
+			Severity:  threatintel.SeverityHigh,
 			UserEmail: email,
-			Description: fmt.Sprintf("Port scan: %d unique IPv4 destinations on port %s in last %d min",
+			Description: fmt.Sprintf("Port scan: %d IPs in %s.0.0/16 on port %s in last %d min",
+				uniq, subnet, port, windowMinutes),
+			Details: map[string]any{
+				"unique_ips":     uniq,
+				"target_subnet":  subnet + ".0.0/16",
+				"port":           port,
+				"window_minutes": windowMinutes,
+			},
+			DetectedAt: now,
+		})
+	}
+	return out, nil
+}
+
+// abusePortList is the set of destination ports where a flood of distinct
+// destinations is almost always malicious from a VPN user: ssh/telnet/smtp
+// (credential stuffing, spam), SMB/RDP/VNC (brute force), database ports
+// (exposed-DB scanning), memcache/redis/mongo (open-instance looting).
+var abusePortList = []string{
+	"22", "23", "25", "135", "139", "445", "465", "587",
+	"1433", "3306", "3389", "5432", "5900", "6379", "11211", "27017",
+}
+
+// detectAbusePortFlood flags brute-force / spam patterns: many distinct
+// destinations on one abuse port within 10 min. Unlike port_scan this one
+// does NOT require /16 concentration — a campaign against random SMTP
+// servers or an SSH dictionary sweep naturally hits scattered networks.
+//
+// Threshold: ≥15 unique destinations (IP or domain) on one port.
+func (s *Storage) detectAbusePortFlood(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
+	const (
+		minUniqueDests = 15
+		windowMinutes  = 10
+	)
+
+	placeholders := make([]string, len(abusePortList))
+	args := make([]interface{}, 0, len(abusePortList)+2)
+	args = append(args, fmt.Sprintf("-%d minutes", windowMinutes))
+	for i, p := range abusePortList {
+		placeholders[i] = "?"
+		args = append(args, p)
+	}
+	args = append(args, minUniqueDests)
+
+	query := fmt.Sprintf(`
+		SELECT user_email,
+		       SUBSTR(destination, INSTR(destination, ':') + 1) AS port,
+		       COUNT(DISTINCT destination) AS uniq_dst
+		FROM user_destinations
+		WHERE last_seen > datetime('now', ?)
+		  AND SUBSTR(destination, INSTR(destination, ':') + 1) IN (%s)
+		GROUP BY user_email, port
+		HAVING uniq_dst >= ?
+		ORDER BY uniq_dst DESC
+		LIMIT 50
+	`, strings.Join(placeholders, ","))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*threatintel.Anomaly
+	for rows.Next() {
+		var (
+			email, port string
+			uniq        int
+		)
+		if err := rows.Scan(&email, &port, &uniq); err != nil {
+			continue
+		}
+		out = append(out, &threatintel.Anomaly{
+			ID:        fmt.Sprintf("abuseport_%s_%s_%d", email, port, now.Unix()),
+			Type:      threatintel.AnomalyAbusePortFlood,
+			Severity:  threatintel.SeverityHigh,
+			UserEmail: email,
+			Description: fmt.Sprintf("Abuse-port flood: %d destinations on port %s in last %d min",
 				uniq, port, windowMinutes),
 			Details: map[string]any{
 				"unique_destinations": uniq,
 				"port":                port,
 				"window_minutes":      windowMinutes,
-				"last_hit":            lastHit,
 			},
 			DetectedAt: now,
 		})
