@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/xray-log-analyzer/server/internal/rediscache"
 )
 
 // StorageWriter interface for writing Remnawave data to storage
@@ -118,6 +120,14 @@ func NewSyncService(client *Client, syncInterval time.Duration) *SyncService {
 // SetStorage sets the storage writer for persisting data
 func (s *SyncService) SetStorage(storage StorageWriter) {
 	s.storage = storage
+}
+
+// SetIDCacheRedis wires the persistent L2 cache into the id cache. Nil is
+// allowed and disables L2 (the L1 map keeps working).
+func (s *SyncService) SetIDCacheRedis(r *rediscache.Client) {
+	if s.idCache != nil {
+		s.idCache.SetRedis(r)
+	}
 }
 
 // OnSyncComplete sets a callback to be called when sync completes

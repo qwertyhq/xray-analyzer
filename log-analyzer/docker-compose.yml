@@ -35,6 +35,12 @@ services:
       - ALERIA_API_KEY=${ALERIA_API_KEY:-}
       - API_TOKEN=${API_TOKEN:-}
       - AGENT_TOKEN=${AGENT_TOKEN:-}
+      - REDIS_ADDR=analyzer-redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-analyzer:}
+    depends_on:
+      analyzer-redis:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8237/health"]
       interval: 10s
@@ -50,8 +56,37 @@ services:
       - analyzer-net
       - remnawave-network
 
+  # Persistent L2 cache for analyzer (id→username resolve, API warmup, etc.)
+  # 512 MB AOF-free LRU is enough for us; bump maxmemory if eviction shows
+  # up in redis-cli INFO stats.
+  analyzer-redis:
+    image: redis:7-alpine
+    container_name: analyzer-redis
+    restart: unless-stopped
+    command: >-
+      redis-server
+      --appendonly no
+      --save ""
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - analyzer-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - analyzer-net
+
 volumes:
   analyzer-data:
+  analyzer-redis-data:
 
 networks:
   analyzer-net:

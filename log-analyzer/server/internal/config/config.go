@@ -58,6 +58,12 @@ type Config struct {
 	// the single-digit-seconds range — NTP-synced nodes have sub-second drift,
 	// and a wider window fans each destination out to too many candidates.
 	BridgeCorrelationWindow time.Duration
+
+	// Redis for persistent L2 cache. Empty RedisAddr disables it (the
+	// in-memory L1 still works; startup just means a cold warm-up from SQL).
+	RedisAddr      string
+	RedisPassword  string
+	RedisKeyPrefix string
 }
 
 // Load loads configuration from environment variables
@@ -84,6 +90,9 @@ func Load() *Config {
 		BridgeInboundPattern:    getEnv("BRIDGE_INBOUND_PATTERN", `^BRIDGE_.*_IN(_\d+)?$`),
 		BridgeNodeIDs:           getStringSliceEnv("BRIDGE_NODE_IDS", []string{"ru-white", "ru-bride"}),
 		BridgeCorrelationWindow: getDurationEnv("BRIDGE_CORRELATION_WINDOW", 15*time.Second),
+		RedisAddr:               getEnv("REDIS_ADDR", ""),
+		RedisPassword:           getEnv("REDIS_PASSWORD", ""),
+		RedisKeyPrefix:          getEnv("REDIS_KEY_PREFIX", "analyzer:"),
 	}
 }
 

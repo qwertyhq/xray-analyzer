@@ -15,6 +15,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/correlation"
 	"github.com/xray-log-analyzer/server/internal/ipinfo"
 	"github.com/xray-log-analyzer/server/internal/models"
+	"github.com/xray-log-analyzer/server/internal/rediscache"
 	"github.com/xray-log-analyzer/server/internal/remnawave"
 	"github.com/xray-log-analyzer/server/internal/server"
 	"github.com/xray-log-analyzer/server/internal/storage"
@@ -42,6 +43,22 @@ func main() {
 	}
 	defer store.Close()
 	log.Println("storage: initialized")
+
+	// Initialize Redis (L2 persistent cache). Optional — if it fails or the
+	// address is empty, everything still works with only the in-process L1.
+	var redisClient *rediscache.Client
+	if cfg.RedisAddr != "" {
+		rc, err := rediscache.New(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisKeyPrefix)
+		if err != nil {
+			log.Printf("redis: disabled (connect %s failed: %v)", cfg.RedisAddr, err)
+		} else {
+			redisClient = rc
+			log.Printf("redis: connected at %s (prefix=%q)", cfg.RedisAddr, cfg.RedisKeyPrefix)
+			defer redisClient.Close()
+		}
+	} else {
+		log.Println("redis: not configured (REDIS_ADDR empty)")
+	}
 
 	// Initialize blacklist
 	bl := blacklist.New(cfg.BlacklistPath, cfg.BlacklistReload)
@@ -160,6 +177,7 @@ func main() {
 	if cfg.RemnawaveEnabled && cfg.RemnawaveURL != "" && cfg.RemnawaveAPIToken != "" {
 		remnaClient = remnawave.NewClient(cfg.RemnawaveURL, cfg.RemnawaveAPIToken)
 		remnaSvc = remnawave.NewSyncService(remnaClient, cfg.RemnawaveSyncInterval)
+		remnaSvc.SetIDCacheRedis(redisClient)
 		remnaSvc.SetStorage(store) // Persist data to SQLite
 		// Warm cache after each sync for fast page loads
 		remnaSvc.OnSyncComplete(func() {
