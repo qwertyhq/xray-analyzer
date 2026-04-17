@@ -1175,6 +1175,9 @@ func (s *Server) handleThreatIntelAnomalies(w http.ResponseWriter, r *http.Reque
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// Invalidate cached responses so the next GET shows the resolved
+		// item gone instead of waiting up to TTL.
+		s.InvalidateHTTPCache(ctx)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

@@ -159,6 +159,10 @@ func main() {
 	// Initialize and start server
 	srv := server.New(cfg.ListenAddr, cfg.AllowedOrigins, cfg.APIToken, cfg.AgentToken, anal, store, bl)
 	srv.SetThreatIntel(threatIntelSvc)
+	if redisClient != nil {
+		srv.SetRedis(redisClient, 10*time.Second)
+		log.Println("server: HTTP response cache enabled (Redis L2, TTL=10s)")
+	}
 
 	if cfg.APIToken != "" {
 		log.Println("auth: API token authentication enabled")
