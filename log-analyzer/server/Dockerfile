@@ -10,10 +10,9 @@ RUN apk add --no-cache git gcc musl-dev
 COPY go.mod ./
 RUN go mod download
 
-# Copy source code (exclude web folder)
+# Copy source code (exclude web folder). No top-level *.go in this layout.
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-COPY *.go ./
 
 # Generate go.sum and build
 RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /server ./cmd/server

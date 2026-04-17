@@ -113,6 +113,7 @@ func (s *Storage) DetectAnomalies(ctx context.Context) ([]*threatintel.Anomaly, 
 		s.detectNewUserHighVolume,
 		s.detectThreatBursts,
 		s.detectMultipleCountries,
+		s.detectPortScan,
 	}
 
 	for _, detect := range detectors {
@@ -341,6 +342,64 @@ func (s *Storage) detectMultipleCountries(ctx context.Context, now time.Time) ([
 	}
 
 	return anomalies, nil
+}
+
+// detectPortScan flags users who hit many distinct IPv4 destinations on the
+// same port within a short window — the signature of a service sweep. Filter
+// to IPv4-shaped destinations (GLOB) to avoid false positives from normal
+// browsing on :443 / :80.
+//
+// Threshold: ≥30 unique IPs on one port within the last 5 minutes.
+func (s *Storage) detectPortScan(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
+	const (
+		minUniqueDests = 30
+		windowMinutes  = 5
+	)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_email,
+		       SUBSTR(destination, INSTR(destination, ':')+1) AS port_str,
+		       COUNT(DISTINCT destination) AS uniq_dst,
+		       MAX(last_seen) AS last_hit
+		FROM user_destinations
+		WHERE last_seen > datetime('now', ?)
+		  AND destination GLOB '[0-9]*.[0-9]*.[0-9]*.[0-9]*:[0-9]*'
+		GROUP BY user_email, port_str
+		HAVING uniq_dst >= ?
+		ORDER BY uniq_dst DESC
+		LIMIT 50
+	`, fmt.Sprintf("-%d minutes", windowMinutes), minUniqueDests)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*threatintel.Anomaly
+	for rows.Next() {
+		var (
+			email, port, lastHit string
+			uniq                 int
+		)
+		if err := rows.Scan(&email, &port, &uniq, &lastHit); err != nil {
+			continue
+		}
+		out = append(out, &threatintel.Anomaly{
+			ID:       fmt.Sprintf("portscan_%s_%s_%d", email, port, now.Unix()),
+			Type:     threatintel.AnomalyPortScan,
+			Severity: threatintel.SeverityHigh,
+			UserEmail: email,
+			Description: fmt.Sprintf("Port scan: %d unique IPv4 destinations on port %s in last %d min",
+				uniq, port, windowMinutes),
+			Details: map[string]any{
+				"unique_destinations": uniq,
+				"port":                port,
+				"window_minutes":      windowMinutes,
+				"last_hit":            lastHit,
+			},
+			DetectedAt: now,
+		})
+	}
+	return out, nil
 }
 
 // scanAnomalies is a helper to scan anomaly rows

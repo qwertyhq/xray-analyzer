@@ -275,6 +275,7 @@ const (
 	AnomalyGeoAnomaly        AnomalyType = "geo_anomaly"        // Access from unusual location
 	AnomalyThreatBurst       AnomalyType = "threat_burst"       // Multiple threats in short time
 	AnomalyMultipleCountries AnomalyType = "multiple_countries" // User from multiple countries
+	AnomalyPortScan          AnomalyType = "port_scan"          // One user hits many distinct IPs on the same destination port
 )
 
 // AnomalySeverity indicates the severity of the anomaly

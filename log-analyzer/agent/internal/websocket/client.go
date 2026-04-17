@@ -6,12 +6,21 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/xray-log-analyzer/agent/internal/models"
+)
+
+// Defaults for liveness detection. Override per-instance for tests.
+const (
+	defaultPongWait     = 90 * time.Second
+	defaultPingPeriod   = 25 * time.Second // < pongWait so a missed pong trips the deadline
+	defaultWriteWait    = 10 * time.Second
+	defaultTCPKeepAlive = 30 * time.Second
 )
 
 // Client manages WebSocket connection to the main server
@@ -24,6 +33,12 @@ type Client struct {
 	mu             sync.Mutex
 	reconnectDelay time.Duration
 	maxRetries     int
+
+	// Liveness knobs (exported lowercase for in-package tests).
+	pongWait     time.Duration
+	pingPeriod   time.Duration
+	writeWait    time.Duration
+	tcpKeepAlive time.Duration
 }
 
 // New creates a new WebSocket client
@@ -35,6 +50,10 @@ func New(serverURL, nodeID, authToken string, batchCh chan *models.LogBatch) *Cl
 		batchCh:        batchCh,
 		reconnectDelay: 5 * time.Second,
 		maxRetries:     0, // 0 = infinite retries
+		pongWait:       defaultPongWait,
+		pingPeriod:     defaultPingPeriod,
+		writeWait:      defaultWriteWait,
+		tcpKeepAlive:   defaultTCPKeepAlive,
 	}
 }
 
@@ -53,6 +72,10 @@ func (c *Client) Start(ctx context.Context) {
 				continue
 			}
 			c.run(ctx)
+			// run() always returns with the connection torn down — either
+			// because the peer is dead, the writer failed, or ctx was
+			// cancelled. Make sure the next connect() starts from a clean slate.
+			c.close()
 		}
 	}
 }
@@ -76,10 +99,23 @@ func (c *Client) connect(ctx context.Context) error {
 		return err
 	}
 
+	// Kernel-level keepalive: detects fully-dead TCP without app traffic.
+	if tcpConn, ok := conn.UnderlyingConn().(*net.TCPConn); ok {
+		_ = tcpConn.SetKeepAlive(true)
+		_ = tcpConn.SetKeepAlivePeriod(c.tcpKeepAlive)
+	}
+
+	// Set initial read deadline; it gets extended on every received frame.
+	_ = conn.SetReadDeadline(time.Now().Add(c.pongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(c.pongWait))
+	})
+
 	c.conn = conn
 	log.Printf("websocket: connected to %s", c.serverURL)
 
-	// Send handshake with node ID
+	// Send handshake with node ID.
+	_ = conn.SetWriteDeadline(time.Now().Add(c.writeWait))
 	handshake := map[string]string{
 		"type":    "handshake",
 		"node_id": c.nodeID,
@@ -95,14 +131,20 @@ func (c *Client) connect(ctx context.Context) error {
 
 // run handles sending batches and receiving server messages
 func (c *Client) run(ctx context.Context) {
-	// Start reader goroutine for server messages
+	// Reader goroutine: any read failure means the link is dead.
 	readerDone := make(chan struct{})
 	go func() {
 		defer close(readerDone)
 		c.readPump(ctx)
 	}()
 
-	// Main loop: send batches
+	// Periodic client-side ping. We use the WebSocket control frame so a
+	// healthy peer responds at the protocol layer (handled by gorilla via
+	// PongHandler), regardless of any application-level ping the server
+	// may also send.
+	pingTicker := time.NewTicker(c.pingPeriod)
+	defer pingTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -110,6 +152,11 @@ func (c *Client) run(ctx context.Context) {
 		case <-readerDone:
 			log.Println("websocket: reader disconnected, reconnecting...")
 			return
+		case <-pingTicker.C:
+			if err := c.writeControl(websocket.PingMessage, nil); err != nil {
+				log.Printf("websocket: ping error: %v", err)
+				return
+			}
 		case batch := <-c.batchCh:
 			if err := c.sendBatch(batch); err != nil {
 				log.Printf("websocket: send error: %v", err)
@@ -117,6 +164,18 @@ func (c *Client) run(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// writeControl sends a control frame (e.g. Ping) with a write deadline.
+func (c *Client) writeControl(messageType int, data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.conn == nil {
+		return ErrNotConnected
+	}
+	deadline := time.Now().Add(c.writeWait)
+	return c.conn.WriteControl(messageType, data, deadline)
 }
 
 // sendBatch compresses and sends a batch to the server
@@ -144,9 +203,11 @@ func (c *Client) sendBatch(batch *models.LogBatch) error {
 		return err
 	}
 
-	// Send as binary message
-	err = c.conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
-	if err != nil {
+	// Bound the write so a stalled peer trips immediately instead of blocking.
+	if err := c.conn.SetWriteDeadline(time.Now().Add(c.writeWait)); err != nil {
+		return err
+	}
+	if err := c.conn.WriteMessage(websocket.BinaryMessage, buf.Bytes()); err != nil {
 		return err
 	}
 
@@ -175,9 +236,14 @@ func (c *Client) readPump(ctx context.Context) {
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 					log.Printf("websocket: read error: %v", err)
+				} else {
+					log.Printf("websocket: read terminated: %v", err)
 				}
 				return
 			}
+
+			// Any message from the server is proof of life — extend the deadline.
+			_ = conn.SetReadDeadline(time.Now().Add(c.pongWait))
 
 			var serverMsg models.ServerMessage
 			if err := json.Unmarshal(message, &serverMsg); err != nil {
@@ -213,8 +279,9 @@ func (c *Client) sendPong() {
 		return
 	}
 
+	_ = c.conn.SetWriteDeadline(time.Now().Add(c.writeWait))
 	pong := map[string]string{"type": "pong"}
-	c.conn.WriteJSON(pong)
+	_ = c.conn.WriteJSON(pong)
 }
 
 // waitReconnect waits before reconnecting

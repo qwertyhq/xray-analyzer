@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"sync"
 	"time"
 
@@ -28,6 +29,20 @@ type Analyzer struct {
 	recentAlerts      map[string]time.Time // Prevent duplicate alerts
 	recentAlertsMu    sync.RWMutex
 	alertDedupeWindow time.Duration
+
+	// bridgeInboundRegex matches inbound tags whose source IP is an
+	// infrastructure hop (another Xray bridge node), not a real client.
+	// nil disables the filter — see SetBridgeInboundPattern.
+	bridgeInboundRegex *regexp.Regexp
+
+	// bridgeNodeIDs lists node_ids that ingest real-client traffic into the
+	// bridge tunnel. Used to look up the real client IP when correlating an
+	// exit-node bridged flow. Empty disables correlation.
+	bridgeNodeIDs []string
+
+	// bridgeCorrelationWindow is the ± window we accept between the exit-node
+	// entry timestamp and the bridge user_ip_history record.
+	bridgeCorrelationWindow time.Duration
 }
 
 // New creates a new Analyzer
@@ -58,6 +73,42 @@ func (a *Analyzer) SetCorrelation(c *correlation.Service) {
 	a.correlation = c
 }
 
+// SetBridgeInboundPattern compiles a regex matching inbound tags that
+// belong to bridged tunnels (e.g. "BRIDGE_DE_IN", "BRIDGE_DE_IN_2"). For
+// matched entries the source IP is suppressed everywhere it would be
+// recorded as a "client IP" — because it's actually the other Xray node.
+// Empty pattern disables the filter; an invalid regex is returned as-is.
+func (a *Analyzer) SetBridgeInboundPattern(pattern string) error {
+	if pattern == "" {
+		a.bridgeInboundRegex = nil
+		return nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return err
+	}
+	a.bridgeInboundRegex = re
+	return nil
+}
+
+// isInfrastructureSource reports whether the entry's inbound tag matches
+// the configured bridge pattern (i.e. source IP belongs to our own infra).
+func (a *Analyzer) isInfrastructureSource(inbound string) bool {
+	return a.bridgeInboundRegex != nil && a.bridgeInboundRegex.MatchString(inbound)
+}
+
+// SetBridgeCorrelation enables Layer-3 correlation: for entries whose
+// inbound matches the bridge pattern, the analyzer looks up the real client
+// IP in user_ip_history on any of `nodeIDs`, within ±window of the entry
+// timestamp, and records a row in bridged_flows. Empty nodeIDs disables it.
+func (a *Analyzer) SetBridgeCorrelation(nodeIDs []string, window time.Duration) {
+	a.bridgeNodeIDs = append(a.bridgeNodeIDs[:0], nodeIDs...)
+	if window <= 0 {
+		window = 30 * time.Second
+	}
+	a.bridgeCorrelationWindow = window
+}
+
 // ProcessBatch processes a batch of log entries
 func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (processed int, blacklistHits int, err error) {
 	if batch.NodeID == "" {
@@ -77,8 +128,11 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 		// Count user requests
 		userRequests[entry.UserEmail]++
 
-		// Track last IP for user
-		if entry.SourceIP != "" {
+		// Track last IP for user. For bridged inbounds the source is the
+		// upstream bridge node (e.g. RU-White), not the real client — skip
+		// so user_ip_history / ip_user_map / user_locations stay clean.
+		// The destination is still correct and is recorded below.
+		if entry.SourceIP != "" && !a.isInfrastructureSource(entry.Inbound) {
 			userLastIP[entry.UserEmail] = entry.SourceIP
 		}
 
@@ -191,7 +245,67 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 		_ = err
 	}
 
+	// Layer-3 correlation: for each bridged entry, resolve real client IP
+	// via user_ip_history on any of bridgeNodeIDs and persist the link in
+	// bridged_flows. One lookup per user, then a row per destination.
+	a.correlateBridgedFlows(ctx, batch)
+
 	return processed, blacklistHits, nil
+}
+
+// correlateBridgedFlows resolves and persists bridged_flows for entries
+// whose inbound matches the bridge pattern. No-op when correlation is
+// disabled (empty bridgeNodeIDs) or no bridged entries exist.
+func (a *Analyzer) correlateBridgedFlows(ctx context.Context, batch *models.LogBatch) {
+	if len(a.bridgeNodeIDs) == 0 || a.bridgeInboundRegex == nil {
+		return
+	}
+
+	// Group bridged entries by user, keeping only entries that look bridged.
+	bridgedByUser := make(map[string][]models.LogEntry)
+	for _, entry := range batch.Entries {
+		if !a.isInfrastructureSource(entry.Inbound) {
+			continue
+		}
+		if entry.UserEmail == "" || entry.Destination == "" {
+			continue
+		}
+		bridgedByUser[entry.UserEmail] = append(bridgedByUser[entry.UserEmail], entry)
+	}
+	if len(bridgedByUser) == 0 {
+		return
+	}
+
+	for user, entries := range bridgedByUser {
+		// Use the latest entry's timestamp as the lookup anchor — the
+		// freshest user_ip_history record near it is the safest match.
+		latest := entries[0].Timestamp
+		for _, e := range entries[1:] {
+			if e.Timestamp.After(latest) {
+				latest = e.Timestamp
+			}
+		}
+		ip, bridgeNode, ok := a.storage.LookupRealClientIP(ctx, user, latest, a.bridgeCorrelationWindow, a.bridgeNodeIDs)
+		if !ok {
+			// No matching bridge ingress yet — skip silently. Future
+			// batches with the same user will likely succeed once the
+			// bridge agent flushes its batch.
+			continue
+		}
+		for _, e := range entries {
+			flow := &storage.BridgedFlow{
+				UserEmail:    user,
+				RealClientIP: ip,
+				BridgeNodeID: bridgeNode,
+				ExitNodeID:   batch.NodeID,
+				Destination:  e.Destination,
+				Timestamp:    e.Timestamp,
+			}
+			if err := a.storage.RecordBridgedFlow(ctx, flow); err != nil {
+				_ = err // suppress verbose logging
+			}
+		}
+	}
 }
 
 // checkAndAlert checks if an alert should be generated

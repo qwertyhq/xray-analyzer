@@ -644,6 +644,25 @@ func (s *Storage) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_remna_nodes_connected ON remna_nodes(is_connected);
 	CREATE INDEX IF NOT EXISTS idx_remna_nodes_country ON remna_nodes(country_code);
 
+	-- Bridged flows: correlation between a bridge-node ingress (real client IP)
+	-- and an exit-node egress (final destination), joined by user_email and a
+	-- short time window. Populated by the analyzer when processing entries
+	-- whose inbound matches the configured bridge pattern.
+	CREATE TABLE IF NOT EXISTS bridged_flows (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_email      TEXT NOT NULL,
+		real_client_ip  TEXT NOT NULL,
+		bridge_node_id  TEXT NOT NULL,
+		exit_node_id    TEXT NOT NULL,
+		destination     TEXT NOT NULL,
+		ts              DATETIME NOT NULL,
+		created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_bridged_flows_user ON bridged_flows(user_email, ts DESC);
+	CREATE INDEX IF NOT EXISTS idx_bridged_flows_dest ON bridged_flows(destination);
+	CREATE INDEX IF NOT EXISTS idx_bridged_flows_ip ON bridged_flows(real_client_ip);
+	CREATE INDEX IF NOT EXISTS idx_bridged_flows_ts ON bridged_flows(ts DESC);
+
 	-- AI Chat Sessions
 	CREATE TABLE IF NOT EXISTS ai_chat_sessions (
 		id TEXT PRIMARY KEY,
