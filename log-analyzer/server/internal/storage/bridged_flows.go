@@ -43,37 +43,40 @@ func (s *Storage) RecordBridgedFlow(ctx context.Context, f *BridgedFlow) error {
 	return err
 }
 
-// LookupRealClientIP finds the most-recent client IP seen for `userEmail`
-// on any of the supplied bridge nodes within `window` of `at`. Returns
-// (ip, bridge_node_id, true) on hit, ("", "", false) when no match.
+// LookupRealClientIP returns the most recently seen client IP for
+// `userEmail` on any of `bridgeNodeIDs`, as long as it was seen no earlier
+// than `at.Add(-maxAge)`. Returns (ip, bridge_node_id, true) on hit.
 //
-// We use user_ip_history (already populated by direct inbound logs on the
-// bridge node) instead of carrying a separate dedicated table — this keeps
-// the data path simple: bridge agent writes its access.log → analyzer
-// records source IP as usual into user_ip_history → exit-node correlation
-// reads it back.
-func (s *Storage) LookupRealClientIP(ctx context.Context, userEmail string, at time.Time, window time.Duration, bridgeNodeIDs []string) (string, string, bool) {
+// Semantics: "last known real IP for this user on the bridge, within maxAge
+// lookback". Xray writes an access-log entry per TCP accept on a bridge
+// inbound — with long-lived tunnels that open once and stream for hours,
+// that accept happened in the past. A ±window around `at` misses those;
+// an open-ended "seen within the last N" picks them up and still evicts
+// stale records from previous sessions.
+func (s *Storage) LookupRealClientIP(ctx context.Context, userEmail string, at time.Time, maxAge time.Duration, bridgeNodeIDs []string) (string, string, bool) {
 	if userEmail == "" || len(bridgeNodeIDs) == 0 {
 		return "", "", false
 	}
+	if maxAge <= 0 {
+		maxAge = 24 * time.Hour
+	}
 
 	placeholders := make([]string, len(bridgeNodeIDs))
-	args := make([]interface{}, 0, len(bridgeNodeIDs)+3)
+	args := make([]interface{}, 0, len(bridgeNodeIDs)+2)
 	args = append(args, userEmail)
 	for i, id := range bridgeNodeIDs {
 		placeholders[i] = "?"
 		args = append(args, id)
 	}
-	lo := at.Add(-window).UTC().Format(time.RFC3339)
-	hi := at.Add(window).UTC().Format(time.RFC3339)
-	args = append(args, lo, hi)
+	since := at.Add(-maxAge).UTC().Format(time.RFC3339)
+	args = append(args, since)
 
 	query := fmt.Sprintf(`
 		SELECT ip_address, node_id
 		FROM user_ip_history
 		WHERE user_email = ?
 		  AND node_id IN (%s)
-		  AND last_seen BETWEEN ? AND ?
+		  AND last_seen >= ?
 		ORDER BY last_seen DESC
 		LIMIT 1
 	`, strings.Join(placeholders, ","))

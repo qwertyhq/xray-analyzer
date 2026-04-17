@@ -226,6 +226,106 @@ func TestProcessBatch_CorrelatesBridgedFlowToRealClientIP(t *testing.T) {
 	}
 }
 
+// TestProcessBatch_CorrelatesLongLivedBridgeTunnel: the common production
+// case. A client opened a bridge tunnel hours ago; Xray logged it once on
+// the bridge node and hasn't logged it since (requests inside the tunnel
+// don't generate new accept events on the bridge side). A fresh exit-node
+// bridged entry must still resolve to the bridge-recorded IP, as long as
+// it falls within the configured maxAge lookback.
+func TestProcessBatch_CorrelatesLongLivedBridgeTunnel(t *testing.T) {
+	a, store := newTestAnalyzer(t, `^BRIDGE_.*_IN(_\d+)?$`)
+	a.SetBridgeCorrelation([]string{"ru-white"}, 24*time.Hour)
+	ctx := context.Background()
+
+	// Bridge sees this user ONCE, two hours ago.
+	twoHoursAgo := time.Now().Add(-2 * time.Hour)
+	bridgeBatch := &models.LogBatch{
+		NodeID: "ru-white",
+		Entries: []models.LogEntry{{
+			Timestamp:   twoHoursAgo,
+			SourceIP:    "91.78.168.130",
+			UserEmail:   "long-lived-5117",
+			Destination: "5.188.141.197:9999",
+			Inbound:     "REALITY_IN",
+		}},
+		Count: 1,
+	}
+	if _, _, err := a.ProcessBatch(ctx, bridgeBatch); err != nil {
+		t.Fatalf("bridge ProcessBatch: %v", err)
+	}
+
+	// Fresh exit-node bridged flow right now.
+	exitBatch := &models.LogBatch{
+		NodeID: "germany-1",
+		Entries: []models.LogEntry{{
+			Timestamp:   time.Now(),
+			SourceIP:    "5.188.141.197",
+			UserEmail:   "long-lived-5117",
+			Destination: "youtube.com:443",
+			Inbound:     "BRIDGE_DE_IN",
+		}},
+		Count: 1,
+	}
+	if _, _, err := a.ProcessBatch(ctx, exitBatch); err != nil {
+		t.Fatalf("exit ProcessBatch: %v", err)
+	}
+
+	flows, err := store.GetBridgedFlows(ctx, storage.BridgedFlowsFilter{UserEmail: "long-lived-5117"})
+	if err != nil {
+		t.Fatalf("GetBridgedFlows: %v", err)
+	}
+	if len(flows) != 1 {
+		t.Fatalf("long-lived tunnel not correlated: got %d flows, want 1", len(flows))
+	}
+	if flows[0].RealClientIP != "91.78.168.130" {
+		t.Errorf("real_client_ip: got %q, want 91.78.168.130", flows[0].RealClientIP)
+	}
+}
+
+// TestProcessBatch_StaleBridgeRecordNotUsed verifies the lookback ceiling.
+// We simulate an aged user_ip_history row by inserting it directly with an
+// old last_seen (ProcessBatch stamps last_seen with now(), so this is the
+// only way to exercise the boundary). Record older than maxAge must be
+// ignored so we don't attribute flows to a previous session's IP.
+func TestProcessBatch_StaleBridgeRecordNotUsed(t *testing.T) {
+	a, store := newTestAnalyzer(t, `^BRIDGE_.*_IN(_\d+)?$`)
+	a.SetBridgeCorrelation([]string{"ru-white"}, 1*time.Hour)
+	ctx := context.Background()
+
+	// Insert a user_ip_history row with last_seen 3h ago (beyond 1h maxAge).
+	threeHoursAgo := time.Now().Add(-3 * time.Hour).UTC().Format(time.RFC3339)
+	_, err := store.DB().ExecContext(ctx, `
+		INSERT INTO user_ip_history (user_email, ip_address, node_id, first_seen, last_seen, request_count)
+		VALUES (?, ?, ?, ?, ?, 1)
+	`, "stale-user", "91.78.168.130", "ru-white", threeHoursAgo, threeHoursAgo)
+	if err != nil {
+		t.Fatalf("seed user_ip_history: %v", err)
+	}
+
+	_, _, err = a.ProcessBatch(ctx, &models.LogBatch{
+		NodeID: "germany-1",
+		Entries: []models.LogEntry{{
+			Timestamp:   time.Now(),
+			SourceIP:    "5.188.141.197",
+			UserEmail:   "stale-user",
+			Destination: "x.com:443",
+			Inbound:     "BRIDGE_DE_IN",
+		}},
+		Count: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	flows, err := store.GetBridgedFlows(ctx, storage.BridgedFlowsFilter{UserEmail: "stale-user"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flows) != 0 {
+		t.Errorf("stale bridge record was used: got %d flows, want 0", len(flows))
+	}
+}
+
 // TestProcessBatch_NoCorrelationWhenBridgeUnknown verifies that an exit-node
 // bridged flow without a matching bridge user_ip_history record produces NO
 // bridged_flows row (silent skip; future batches may resolve it).

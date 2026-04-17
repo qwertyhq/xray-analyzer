@@ -97,16 +97,17 @@ func (a *Analyzer) isInfrastructureSource(inbound string) bool {
 	return a.bridgeInboundRegex != nil && a.bridgeInboundRegex.MatchString(inbound)
 }
 
-// SetBridgeCorrelation enables Layer-3 correlation: for entries whose
+// SetBridgeCorrelation enables Layer-3 correlation. For each entry whose
 // inbound matches the bridge pattern, the analyzer looks up the real client
-// IP in user_ip_history on any of `nodeIDs`, within ±window of the entry
-// timestamp, and records a row in bridged_flows. Empty nodeIDs disables it.
-func (a *Analyzer) SetBridgeCorrelation(nodeIDs []string, window time.Duration) {
+// IP in user_ip_history on any of `nodeIDs`, as long as it was seen within
+// `maxAge` of the entry timestamp, and records a row in bridged_flows.
+// Empty nodeIDs disables correlation entirely.
+func (a *Analyzer) SetBridgeCorrelation(nodeIDs []string, maxAge time.Duration) {
 	a.bridgeNodeIDs = append(a.bridgeNodeIDs[:0], nodeIDs...)
-	if window <= 0 {
-		window = 30 * time.Second
+	if maxAge <= 0 {
+		maxAge = 24 * time.Hour
 	}
-	a.bridgeCorrelationWindow = window
+	a.bridgeCorrelationWindow = maxAge
 }
 
 // ProcessBatch processes a batch of log entries
