@@ -254,56 +254,73 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 	return processed, blacklistHits, nil
 }
 
-// correlateBridgedFlows resolves and persists bridged_flows for entries
-// whose inbound matches the bridge pattern. No-op when correlation is
-// disabled (empty bridgeNodeIDs) or no bridged entries exist.
+// correlateBridgedFlows resolves real-client candidates for every bridged
+// entry and fans them out into bridged_flows: one row per candidate. That
+// way "who was the scanner" reduces to a GROUP BY real_client_ip against
+// the suspicious destinations — the user seen in most flows is the most
+// likely culprit even though the exit-node log collapsed their identity
+// into a synthetic bridge account.
+//
+// Entries are grouped into ~window-sized time buckets so we do one DB
+// lookup per bucket instead of one per entry (batch with 100 bridged
+// entries arriving inside a second would otherwise be 100 queries).
 func (a *Analyzer) correlateBridgedFlows(ctx context.Context, batch *models.LogBatch) {
 	if len(a.bridgeNodeIDs) == 0 || a.bridgeInboundRegex == nil {
 		return
 	}
 
-	// Group bridged entries by user, keeping only entries that look bridged.
-	bridgedByUser := make(map[string][]models.LogEntry)
-	for _, entry := range batch.Entries {
-		if !a.isInfrastructureSource(entry.Inbound) {
+	// Collect bridged entries up-front.
+	var bridged []models.LogEntry
+	for _, e := range batch.Entries {
+		if !a.isInfrastructureSource(e.Inbound) || e.Destination == "" {
 			continue
 		}
-		if entry.UserEmail == "" || entry.Destination == "" {
-			continue
-		}
-		bridgedByUser[entry.UserEmail] = append(bridgedByUser[entry.UserEmail], entry)
+		bridged = append(bridged, e)
 	}
-	if len(bridgedByUser) == 0 {
+	if len(bridged) == 0 {
 		return
 	}
 
-	for user, entries := range bridgedByUser {
-		// Use the latest entry's timestamp as the lookup anchor — the
-		// freshest user_ip_history record near it is the safest match.
-		latest := entries[0].Timestamp
-		for _, e := range entries[1:] {
-			if e.Timestamp.After(latest) {
-				latest = e.Timestamp
-			}
-		}
-		ip, bridgeNode, ok := a.storage.LookupRealClientIP(ctx, user, latest, a.bridgeCorrelationWindow, a.bridgeNodeIDs)
+	// Bucket entries by window-sized slots so each slot gets one lookup.
+	windowSec := int64(a.bridgeCorrelationWindow / time.Second)
+	if windowSec <= 0 {
+		windowSec = 15
+	}
+	type bucket struct {
+		anchor  time.Time
+		entries []models.LogEntry
+	}
+	buckets := make(map[int64]*bucket)
+	for _, e := range bridged {
+		slot := e.Timestamp.Unix() / windowSec
+		b, ok := buckets[slot]
 		if !ok {
-			// No matching bridge ingress yet — skip silently. Future
-			// batches with the same user will likely succeed once the
-			// bridge agent flushes its batch.
+			b = &bucket{anchor: e.Timestamp}
+			buckets[slot] = b
+		} else if e.Timestamp.After(b.anchor) {
+			b.anchor = e.Timestamp
+		}
+		b.entries = append(b.entries, e)
+	}
+
+	for _, b := range buckets {
+		candidates, err := a.storage.LookupBridgeCandidates(ctx, b.anchor, a.bridgeCorrelationWindow, a.bridgeNodeIDs)
+		if err != nil || len(candidates) == 0 {
 			continue
 		}
-		for _, e := range entries {
-			flow := &storage.BridgedFlow{
-				UserEmail:    user,
-				RealClientIP: ip,
-				BridgeNodeID: bridgeNode,
-				ExitNodeID:   batch.NodeID,
-				Destination:  e.Destination,
-				Timestamp:    e.Timestamp,
-			}
-			if err := a.storage.RecordBridgedFlow(ctx, flow); err != nil {
-				_ = err // suppress verbose logging
+		for _, e := range b.entries {
+			for _, c := range candidates {
+				flow := &storage.BridgedFlow{
+					UserEmail:    c.UserEmail,
+					RealClientIP: c.IPAddress,
+					BridgeNodeID: c.BridgeNodeID,
+					ExitNodeID:   batch.NodeID,
+					Destination:  e.Destination,
+					Timestamp:    e.Timestamp,
+				}
+				if err := a.storage.RecordBridgedFlow(ctx, flow); err != nil {
+					_ = err
+				}
 			}
 		}
 	}

@@ -53,11 +53,10 @@ type Config struct {
 	// correlation.
 	BridgeNodeIDs []string
 
-	// BridgeCorrelationWindow controls how far back the analyzer looks in
-	// user_ip_history on bridge nodes when resolving the real client IP for
-	// an exit-node bridged entry. Bridged tunnels can stay open for hours,
-	// so the default is generous (24h); a shorter value tightens freshness
-	// at the cost of missing long-lived sessions.
+	// BridgeCorrelationWindow is the ± time window used to match an exit-node
+	// bridged entry against bridge-node user_ip_history rows. Should stay in
+	// the single-digit-seconds range — NTP-synced nodes have sub-second drift,
+	// and a wider window fans each destination out to too many candidates.
 	BridgeCorrelationWindow time.Duration
 }
 
@@ -84,7 +83,7 @@ func Load() *Config {
 		AleriaAPIKey:           getEnv("ALERIA_API_KEY", ""),
 		BridgeInboundPattern:    getEnv("BRIDGE_INBOUND_PATTERN", `^BRIDGE_.*_IN(_\d+)?$`),
 		BridgeNodeIDs:           getStringSliceEnv("BRIDGE_NODE_IDS", []string{"ru-white", "ru-bride"}),
-		BridgeCorrelationWindow: getDurationEnv("BRIDGE_CORRELATION_WINDOW", 24*time.Hour),
+		BridgeCorrelationWindow: getDurationEnv("BRIDGE_CORRELATION_WINDOW", 15*time.Second),
 	}
 }
 

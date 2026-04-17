@@ -43,16 +43,74 @@ func (s *Storage) RecordBridgedFlow(ctx context.Context, f *BridgedFlow) error {
 	return err
 }
 
-// LookupRealClientIP returns the most recently seen client IP for
-// `userEmail` on any of `bridgeNodeIDs`, as long as it was seen no earlier
-// than `at.Add(-maxAge)`. Returns (ip, bridge_node_id, true) on hit.
+// BridgeCandidate is a user who was active on a bridge node in the
+// correlation window surrounding an exit-node bridged entry.
+type BridgeCandidate struct {
+	UserEmail    string
+	IPAddress    string
+	BridgeNodeID string
+	LastSeen     time.Time
+}
+
+// LookupBridgeCandidates returns every (user_email, ip_address) pair seen on
+// any of `bridgeNodeIDs` within ±window of `at`. The returned slice is
+// ordered by freshness (newest last_seen first).
 //
-// Semantics: "last known real IP for this user on the bridge, within maxAge
-// lookback". Xray writes an access-log entry per TCP accept on a bridge
-// inbound — with long-lived tunnels that open once and stream for hours,
-// that accept happened in the past. A ±window around `at` misses those;
-// an open-ended "seen within the last N" picks them up and still evicts
-// stale records from previous sessions.
+// Why time-based and not user-based: the bridge outbound authenticates to
+// the exit node with a single shared UUID, so the exit-node access log
+// collapses every real user into one synthetic email. The only remaining
+// signal linking an exit-node destination to a real client is the fact
+// that the exit entry and the bridge entry are near-simultaneous. With
+// NTP-synchronised nodes ±window is sub-second in practice.
+func (s *Storage) LookupBridgeCandidates(ctx context.Context, at time.Time, window time.Duration, bridgeNodeIDs []string) ([]BridgeCandidate, error) {
+	if len(bridgeNodeIDs) == 0 {
+		return nil, nil
+	}
+	if window <= 0 {
+		window = 15 * time.Second
+	}
+
+	placeholders := make([]string, len(bridgeNodeIDs))
+	args := make([]interface{}, 0, len(bridgeNodeIDs)+2)
+	for i, id := range bridgeNodeIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	lo := at.Add(-window).UTC().Format(time.RFC3339)
+	hi := at.Add(window).UTC().Format(time.RFC3339)
+	args = append(args, lo, hi)
+
+	query := fmt.Sprintf(`
+		SELECT user_email, ip_address, node_id, last_seen
+		FROM user_ip_history
+		WHERE node_id IN (%s)
+		  AND last_seen BETWEEN ? AND ?
+		ORDER BY last_seen DESC
+		LIMIT 200
+	`, strings.Join(placeholders, ","))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []BridgeCandidate
+	for rows.Next() {
+		var c BridgeCandidate
+		var lastSeenStr string
+		if err := rows.Scan(&c.UserEmail, &c.IPAddress, &c.BridgeNodeID, &lastSeenStr); err != nil {
+			return nil, err
+		}
+		c.LastSeen = parseDateTime(lastSeenStr)
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// LookupRealClientIP (legacy 1:1 by user_email) — kept for direct-inbound
+// flows where the same email travels through end-to-end. For bridge flows
+// use LookupBridgeCandidates instead.
 func (s *Storage) LookupRealClientIP(ctx context.Context, userEmail string, at time.Time, maxAge time.Duration, bridgeNodeIDs []string) (string, string, bool) {
 	if userEmail == "" || len(bridgeNodeIDs) == 0 {
 		return "", "", false
