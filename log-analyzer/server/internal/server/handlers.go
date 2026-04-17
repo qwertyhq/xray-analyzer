@@ -1689,7 +1689,7 @@ func (s *Server) handleBridgedFlows(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAttackAnomalies(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	types := []string{"port_scan", "abuse_port_flood"}
+	types := []string{"port_scan", "abuse_port_flood", "burst_scan"}
 	if v := q.Get("types"); v != "" {
 		types = types[:0]
 		for _, p := range strings.Split(v, ",") {

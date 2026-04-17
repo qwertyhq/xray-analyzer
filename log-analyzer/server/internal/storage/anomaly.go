@@ -115,6 +115,7 @@ func (s *Storage) DetectAnomalies(ctx context.Context) ([]*threatintel.Anomaly, 
 		s.detectMultipleCountries,
 		s.detectPortScan,
 		s.detectAbusePortFlood,
+		s.detectBurstScanAnyTarget,
 	}
 
 	for _, detect := range detectors {
@@ -543,6 +544,95 @@ func (s *Storage) GetAttackAnomalies(ctx context.Context, types []string, since 
 	defer rows.Close()
 
 	return scanAnomalies(rows)
+}
+
+// benignHighVolumePorts are ports where a single user legitimately touches
+// many distinct IPs in normal operation. Exclude them from burst-scan so
+// NTP clients, BitTorrent peers, XMPP messengers and RTSP cameras don't
+// get flagged as mamka-hackers.
+var benignHighVolumePorts = []string{
+	"80", "443", "53", "8080", "8443", // web/DNS
+	"123",         // NTP
+	"554",         // RTSP (cameras)
+	"5222", "5223", // XMPP (Telegram, WhatsApp signalling)
+	"6881", "6882", "6883", "6884", "6885", "6886", "6887", "6888", "6889", // BitTorrent
+	"51413",       // deluge/qBittorrent default
+}
+
+// detectBurstScanAnyTarget flags "target-agnostic" scans: a user hits many
+// distinct IPv4 destinations on one non-web, non-benign port inside a single
+// minute. Unlike detectPortScan (which needs a /16 concentration) this catches
+// SSH/RDP/RTSP/exposed-service sweeps against scattered networks — the thing
+// mamka-hackers actually do.
+//
+// Threshold: ≥15 unique IPs on one port in 60 seconds.
+func (s *Storage) detectBurstScanAnyTarget(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
+	const (
+		minUniqueIPs = 15
+		windowMin    = 1
+	)
+
+	placeholders := make([]string, len(benignHighVolumePorts))
+	args := make([]interface{}, 0, len(benignHighVolumePorts)+1)
+	args = append(args, fmt.Sprintf("-%d minutes", windowMin))
+	for i, p := range benignHighVolumePorts {
+		placeholders[i] = "?"
+		args = append(args, p)
+	}
+
+	// first_seen is the signal — it marks the *first time* we saw this
+	// (user, destination) pair, which is exactly what a scanner generates
+	// in bulk (each probe is a brand-new dest). Repeat traffic doesn't
+	// qualify here; port_scan/abuse_port_flood cover steady-state flood.
+	query := fmt.Sprintf(`
+		WITH parsed AS (
+			SELECT user_email,
+			       SUBSTR(destination, 1, INSTR(destination, ':') - 1) AS ip,
+			       SUBSTR(destination, INSTR(destination, ':') + 1) AS port
+			FROM user_destinations
+			WHERE first_seen > datetime('now', ?)
+			  AND destination GLOB '[0-9]*.[0-9]*.[0-9]*.[0-9]*:[0-9]*'
+		)
+		SELECT user_email, port, COUNT(DISTINCT ip) AS uniq_ips
+		FROM parsed
+		WHERE port NOT IN (%s)
+		GROUP BY user_email, port
+		HAVING uniq_ips >= %d
+		ORDER BY uniq_ips DESC
+		LIMIT 50
+	`, strings.Join(placeholders, ","), minUniqueIPs)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*threatintel.Anomaly
+	for rows.Next() {
+		var (
+			email, port string
+			uniq        int
+		)
+		if err := rows.Scan(&email, &port, &uniq); err != nil {
+			continue
+		}
+		out = append(out, &threatintel.Anomaly{
+			ID:        fmt.Sprintf("burstscan_%s_%s_%d", email, port, now.Unix()),
+			Type:      threatintel.AnomalyBurstScan,
+			Severity:  threatintel.SeverityHigh,
+			UserEmail: email,
+			Description: fmt.Sprintf("Burst scan: %d unique IPv4 destinations on port %s in last %d min",
+				uniq, port, windowMin),
+			Details: map[string]any{
+				"unique_ips":     uniq,
+				"port":           port,
+				"window_minutes": windowMin,
+			},
+			DetectedAt: now,
+		})
+	}
+	return out, nil
 }
 
 // scanAnomalies is a helper to scan anomaly rows
