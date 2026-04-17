@@ -16,11 +16,17 @@ import (
 )
 
 // Defaults for liveness detection. Override per-instance for tests.
+//
+// Tuning rationale: NetBird/Caddy silently drop long-idle WS connections in
+// prod; the previous 90s pongWait kept a "dead" node off the dashboard for
+// up to ~95s per flap. 30s/10s detects a stall in under 30s, then reconnect
+// takes ~5s — most flaps are invisible to the UI. Extra ping traffic is
+// negligible (a control frame every 10s ≈ 6 bytes).
 const (
-	defaultPongWait     = 90 * time.Second
-	defaultPingPeriod   = 25 * time.Second // < pongWait so a missed pong trips the deadline
-	defaultWriteWait    = 10 * time.Second
-	defaultTCPKeepAlive = 30 * time.Second
+	defaultPongWait     = 30 * time.Second
+	defaultPingPeriod   = 10 * time.Second // < pongWait so a missed pong trips the deadline
+	defaultWriteWait    = 5 * time.Second
+	defaultTCPKeepAlive = 15 * time.Second
 )
 
 // Client manages WebSocket connection to the main server
