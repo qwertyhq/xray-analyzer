@@ -198,6 +198,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/threatintel/time-stats", s.requireAPIToken(s.handleThreatIntelTimeStats))
 	mux.HandleFunc("/api/threatintel/geo-stats", s.requireAPIToken(s.handleThreatIntelGeoStats))
 	mux.HandleFunc("/api/threatintel/anomalies", s.requireAPIToken(s.handleThreatIntelAnomalies))
+	mux.HandleFunc("/api/threatintel/attacks", s.requireAPIToken(s.handleAttackAnomalies))
 	mux.HandleFunc("/api/threatintel/risk-profiles", s.requireAPIToken(s.handleUserRiskProfiles))
 	mux.HandleFunc("/api/threatintel/dns-analysis", s.requireAPIToken(s.handleDNSAnalysis))
 	mux.HandleFunc("/api/threatintel/reports", s.requireAPIToken(s.handleReports))

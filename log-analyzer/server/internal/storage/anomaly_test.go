@@ -183,3 +183,64 @@ func TestDetectAbusePortFlood_WebNotFlagged(t *testing.T) {
 		}
 	}
 }
+
+// TestGetAttackAnomalies_FiltersByType: GetAttackAnomalies is the backing
+// store for the new Attacks tab. It must return ONLY records of the
+// requested attack types — no activity_spike / night_activity noise.
+func TestGetAttackAnomalies_FiltersByType(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	insert := func(id, atype string) {
+		if err := st.SaveAnomaly(ctx, &threatintel.Anomaly{
+			ID: id, Type: threatintel.AnomalyType(atype), Severity: threatintel.SeverityHigh,
+			UserEmail: "u", Description: id, DetectedAt: now,
+		}); err != nil {
+			t.Fatalf("SaveAnomaly: %v", err)
+		}
+	}
+	insert("ps-1", "port_scan")
+	insert("af-1", "abuse_port_flood")
+	insert("sp-1", "activity_spike") // must be filtered out
+	insert("na-1", "night_activity") // must be filtered out
+
+	got, err := st.GetAttackAnomalies(ctx, []string{"port_scan", "abuse_port_flood"}, time.Hour, 50, false)
+	if err != nil {
+		t.Fatalf("GetAttackAnomalies: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 attack-type rows, got %d", len(got))
+	}
+	seen := map[string]bool{}
+	for _, a := range got {
+		seen[a.ID] = true
+		if a.Type != threatintel.AnomalyPortScan && a.Type != threatintel.AnomalyAbusePortFlood {
+			t.Errorf("non-attack type leaked through: %s", a.Type)
+		}
+	}
+	if !seen["ps-1"] || !seen["af-1"] {
+		t.Errorf("missing expected ids: seen=%v", seen)
+	}
+}
+
+// TestGetAttackAnomalies_SkipsResolved: resolved rows must be hidden by
+// default (UI only cares about live attacks).
+func TestGetAttackAnomalies_SkipsResolved(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{ID: "active", Type: threatintel.AnomalyPortScan, Severity: threatintel.SeverityHigh, UserEmail: "u", Description: "a", DetectedAt: now})
+	_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{ID: "done", Type: threatintel.AnomalyPortScan, Severity: threatintel.SeverityHigh, UserEmail: "u", Description: "d", DetectedAt: now, Resolved: true})
+
+	got, _ := st.GetAttackAnomalies(ctx, []string{"port_scan"}, time.Hour, 50, false)
+	if len(got) != 1 || got[0].ID != "active" {
+		t.Errorf("expected only 'active', got %+v", got)
+	}
+
+	gotAll, _ := st.GetAttackAnomalies(ctx, []string{"port_scan"}, time.Hour, 50, true)
+	if len(gotAll) != 2 {
+		t.Errorf("includeResolved=true should return both, got %d", len(gotAll))
+	}
+}

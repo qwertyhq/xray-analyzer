@@ -4,12 +4,13 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldAlert, RefreshCw, Download, Globe } from "lucide-react";
+import { ShieldAlert, RefreshCw, Download, Globe, Swords } from "lucide-react";
 import { useWsThreatIntel } from "@/contexts/websocket-context";
 import { useThreatIntelData } from "@/hooks/use-threat-intel-data";
 import { OverviewTab } from "./overview-tab";
 import { TorrentTab } from "./torrent-tab";
 import { TorTab } from "./tor-tab";
+import { AttacksPanel } from "./attacks-panel";
 
 export function ThreatIntelPage() {
   const { threatIntel, loading: wsLoading, connected } = useWsThreatIntel();
@@ -73,11 +74,14 @@ export function ThreatIntelPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 max-w-md">
+        <TabsList className="grid w-full grid-cols-4 max-w-xl">
           <TabsTrigger value="overview" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
             <ShieldAlert className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            <span className="hidden sm:inline">Обзор</span>
-            <span className="sm:hidden">Обзор</span>
+            Обзор
+          </TabsTrigger>
+          <TabsTrigger value="attacks" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+            <Swords className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            Атаки
           </TabsTrigger>
           <TabsTrigger value="torrent" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
             <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -105,6 +109,10 @@ export function ThreatIntelPage() {
             onGenerateReport={generateReport}
             onDeleteReport={deleteReport}
           />
+        </TabsContent>
+
+        <TabsContent value="attacks" className="mt-6">
+          <AttacksPanel />
         </TabsContent>
 
         <TabsContent value="torrent" className="mt-6">

@@ -1673,3 +1673,67 @@ func (s *Server) handleBridgedFlows(w http.ResponseWriter, r *http.Request) {
 		"flows": flows,
 	})
 }
+
+// handleAttackAnomalies returns only attack-type anomalies (port_scan,
+// abuse_port_flood) enriched with the resolved username — for the
+// dedicated Attacks tab in Threat Intel.
+//
+// Query params:
+//   types  = csv (default "port_scan,abuse_port_flood")
+//   since  = duration (default "24h")
+//   limit  = 1..500 (default 100)
+//   resolved = "true" to include resolved entries
+func (s *Server) handleAttackAnomalies(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	types := []string{"port_scan", "abuse_port_flood"}
+	if v := q.Get("types"); v != "" {
+		types = types[:0]
+		for _, p := range strings.Split(v, ",") {
+			if t := strings.TrimSpace(p); t != "" {
+				types = append(types, t)
+			}
+		}
+	}
+	since := 24 * time.Hour
+	if v := q.Get("since"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			since = d
+		}
+	}
+	limit := 100
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	includeResolved := q.Get("resolved") == "true"
+
+	anomalies, err := s.storage.GetAttackAnomalies(r.Context(), types, since, limit, includeResolved)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Resolve numeric user_email → Remnawave username for the UI.
+	type enriched struct {
+		*threatintel.Anomaly
+		Username string `json:"username,omitempty"`
+	}
+	out := make([]enriched, 0, len(anomalies))
+	for _, a := range anomalies {
+		username := ""
+		if s.remnawave != nil && a.UserEmail != "" {
+			username = s.remnawave.ResolveUsername(r.Context(), a.UserEmail)
+		}
+		out = append(out, enriched{Anomaly: a, Username: username})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"count":  len(out),
+		"types":  types,
+		"since":  since.String(),
+		"attacks": out,
+	})
+}

@@ -493,6 +493,58 @@ func (s *Storage) detectAbusePortFlood(ctx context.Context, now time.Time) ([]*t
 	return out, nil
 }
 
+// GetAttackAnomalies returns anomalies whose type belongs to the supplied
+// allow-list (e.g. port_scan + abuse_port_flood) within `since`. Unlike
+// GetAnomalies this is narrowed to active attack-type detections so the UI
+// can render a dedicated "Attacks" screen without the activity_spike /
+// night_activity noise that dominates the generic anomalies list.
+func (s *Storage) GetAttackAnomalies(ctx context.Context, types []string, since time.Duration, limit int, includeResolved bool) ([]*threatintel.Anomaly, error) {
+	if len(types) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	if since <= 0 {
+		since = 24 * time.Hour
+	}
+
+	placeholders := make([]string, len(types))
+	args := make([]interface{}, 0, len(types)+2)
+	for i, t := range types {
+		placeholders[i] = "?"
+		args = append(args, t)
+	}
+	// modernc.org/sqlite binds time.Time → DATETIME correctly but string →
+	// string comparison on a DATETIME column does not match rows written from
+	// time.Time. Pass the threshold as time.Time so the driver handles it.
+	args = append(args, time.Now().Add(-since).UTC())
+
+	resolvedClause := "AND resolved = 0"
+	if includeResolved {
+		resolvedClause = ""
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, type, severity, user_email, description, details, detected_at, resolved
+		FROM anomalies
+		WHERE type IN (%s)
+		  AND detected_at >= ?
+		  %s
+		ORDER BY detected_at DESC
+		LIMIT ?
+	`, strings.Join(placeholders, ","), resolvedClause)
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanAnomalies(rows)
+}
+
 // scanAnomalies is a helper to scan anomaly rows
 func scanAnomalies(rows *sql.Rows) ([]*threatintel.Anomaly, error) {
 	var result []*threatintel.Anomaly
