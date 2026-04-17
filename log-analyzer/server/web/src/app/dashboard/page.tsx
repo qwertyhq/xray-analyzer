@@ -46,35 +46,45 @@ export default function DashboardPage() {
   const [remnawaveLastSync, setRemnawaveLastSync] = useState<string | undefined>();
   const [onlineHistory, setOnlineHistory] = useState<Array<{hour: string; online_users: number}>>([]);
   
-  // Fetch additional dashboard data
+  // Fetch additional dashboard data.
+  // All 6 endpoints are independent → Promise.all. Previously they ran
+  // sequentially so a single slow one (usually threatintel/geo-stats on a
+  // cold cache) bottlenecked every other card's first paint.
   useEffect(() => {
-    const fetchDashboardData = async () => {
+    const safeJson = async (url: string) => {
       try {
-        const token = localStorage.getItem("auth_token");
-        const headers: HeadersInit = {};
-        if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
-        }
+        const res = await authFetch(url);
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    };
 
-        // Fetch geo stats (use type=connections to get ALL connections, not just threats)
-        const geoRes = await authFetch("/api/threatintel/geo-stats?type=connections&limit=50", { headers });
-        if (geoRes.ok) {
-          const data = await geoRes.json();
-          // Transform top_countries to match GeoMap format
-          const countries = data.top_countries?.map((c: { country_code: string; country_name: string; total_matches: number; unique_users: number }) => ({
+    const fetchDashboardData = async () => {
+      const [geo, cities, offenders, online, remna, alerts] = await Promise.all([
+        safeJson("/api/threatintel/geo-stats?type=connections&limit=50"),
+        safeJson("/api/threatintel/geo-stats?type=cities&limit=200"),
+        safeJson("/api/users"),
+        safeJson("/api/online-history?since=24h"),
+        safeJson("/api/remnawave/stats"),
+        safeJson("/api/alerts?limit=20"),
+      ]);
+
+      if (geo?.top_countries) {
+        setGeoData(
+          geo.top_countries.map((c: { country_code: string; country_name: string; total_matches: number; unique_users: number }) => ({
             country: c.country_name || c.country_code,
             country_code: c.country_code,
             count: c.total_matches,
             users: c.unique_users,
-          })) || [];
-          setGeoData(countries);
-        }
+          })),
+        );
+      }
 
-        // Fetch city-level geo stats with coordinates
-        const citiesRes = await authFetch("/api/threatintel/geo-stats?type=cities&limit=200", { headers });
-        if (citiesRes.ok) {
-          const data = await citiesRes.json();
-          const cities: CityData[] = data.cities?.map((c: { city: string; country_code: string; country_name: string; latitude: number; longitude: number; connections: number; unique_users: number }) => ({
+      if (cities?.cities) {
+        setCityData(
+          cities.cities.map((c: { city: string; country_code: string; country_name: string; latitude: number; longitude: number; connections: number; unique_users: number }) => ({
             city: c.city,
             country: c.country_name || c.country_code,
             country_code: c.country_code,
@@ -82,67 +92,49 @@ export default function DashboardPage() {
             users: c.unique_users,
             latitude: c.latitude,
             longitude: c.longitude,
-          })) || [];
-          setCityData(cities);
-        }
+          })),
+        );
+      }
 
-        // Fetch top offenders (API returns array directly, sorted by blacklist_hits)
-        const offendersRes = await authFetch("/api/users", { headers });
-        if (offendersRes.ok) {
-          const data = await offendersRes.json();
-          // Filter users with blacklist hits and take top 5
-          const topUsers = (data || [])
-            .filter((u: { blacklist_hits: number }) => u.blacklist_hits > 0)
-            .slice(0, 5)
-            .map((u: { username: string; blacklist_hits: number }) => ({
-              user_email: u.username,
-              blacklist_hits: u.blacklist_hits,
-            }));
-          setTopOffenders(topUsers);
-        }
+      if (Array.isArray(offenders)) {
+        const topUsers = offenders
+          .filter((u: { blacklist_hits: number }) => u.blacklist_hits > 0)
+          .slice(0, 5)
+          .map((u: { username: string; blacklist_hits: number }) => ({
+            user_email: u.username,
+            blacklist_hits: u.blacklist_hits,
+          }));
+        setTopOffenders(topUsers);
+      }
 
-        // Pull the 24h online-user snapshot series (Remnawave-sourced, not
-        // access-log). activity-chart overlays this on top of hourly_stats.
-        const onlineRes = await authFetch("/api/online-history?since=24h", { headers });
-        if (onlineRes.ok) {
-          const data = await onlineRes.json();
-          setOnlineHistory(data.points || []);
-        }
+      if (online?.points) {
+        setOnlineHistory(online.points);
+      }
 
-        // Check Remnawave status
-        const remnawaveRes = await authFetch("/api/remnawave/stats", { headers });
-        if (remnawaveRes.ok) {
-          const data = await remnawaveRes.json();
-          setRemnawaveEnabled(data.enabled ?? false);
-          // Check if enabled and has users, or just enabled
-          if (data.enabled) {
-            setRemnawaveStatus(data.totalUsers > 0 ? "online" : "offline");
-            setRemnawaveLastSync(data.lastSync);
-          } else {
-            setRemnawaveStatus("offline");
-          }
+      if (remna) {
+        setRemnawaveEnabled(remna.enabled ?? false);
+        if (remna.enabled) {
+          setRemnawaveStatus(remna.totalUsers > 0 ? "online" : "offline");
+          setRemnawaveLastSync(remna.lastSync);
         } else {
-          setRemnawaveEnabled(false);
           setRemnawaveStatus("offline");
         }
+      } else {
+        setRemnawaveEnabled(false);
+        setRemnawaveStatus("offline");
+      }
 
-        // Fetch real alerts from database
-        const alertsRes = await authFetch("/api/alerts?limit=20", { headers });
-        if (alertsRes.ok) {
-          const alertsData = await alertsRes.json();
-          const mappedAlerts: Alert[] = (alertsData || []).map((a: { id: number; type: string; user_email: string; destination: string; count: number; message: string; created_at: string; sent: boolean }) => ({
-            id: `db-${a.id}`,
-            title: a.type === "blacklist_threshold" ? `🚨 Блоклист: ${a.user_email}` : `⚠️ ${a.type}`,
-            description: a.destination ? `${a.count}x → ${a.destination}` : `${a.count} нарушений`,
-            severity: a.count >= 10 ? "critical" as const : a.count >= 5 ? "high" as const : "medium" as const,
-            timestamp: a.created_at,
-            read: a.sent,
-            link: `/users/${encodeURIComponent(a.user_email)}`,
-          }));
-          setDbAlerts(mappedAlerts);
-        }
-      } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
+      if (Array.isArray(alerts)) {
+        const mappedAlerts: Alert[] = alerts.map((a: { id: number; type: string; user_email: string; destination: string; count: number; message: string; created_at: string; sent: boolean }) => ({
+          id: `db-${a.id}`,
+          title: a.type === "blacklist_threshold" ? `🚨 Блоклист: ${a.user_email}` : `⚠️ ${a.type}`,
+          description: a.destination ? `${a.count}x → ${a.destination}` : `${a.count} нарушений`,
+          severity: a.count >= 10 ? "critical" as const : a.count >= 5 ? "high" as const : "medium" as const,
+          timestamp: a.created_at,
+          read: a.sent,
+          link: `/users/${encodeURIComponent(a.user_email)}`,
+        }));
+        setDbAlerts(mappedAlerts);
       }
     };
 

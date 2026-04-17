@@ -40,9 +40,13 @@ func New(dbPath string) (*Storage, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// Configure connection pool for SQLite
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	// SQLite WAL allows one writer + many concurrent readers, so the 1-conn
+	// pool we had made even trivial selects queue behind a batch-processing
+	// write. Under load `/api/stats` MISS measured at 200+ seconds because
+	// of this. Bump the pool to 8 so dashboard reads can overlap with
+	// background batch writes; SetMaxIdleConns matches for keepalive.
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(8)
 	db.SetConnMaxLifetime(0)
 
 	// Enable WAL mode for better concurrency
