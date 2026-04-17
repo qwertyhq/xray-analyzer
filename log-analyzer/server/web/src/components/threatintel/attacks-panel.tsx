@@ -51,6 +51,7 @@ const severityBadge: Record<string, string> = {
 const typeLabel: Record<string, { label: string; icon: React.ReactNode }> = {
   port_scan: { label: "Port scan", icon: <Crosshair className="h-3.5 w-3.5" /> },
   abuse_port_flood: { label: "Brute-force / flood", icon: <Swords className="h-3.5 w-3.5" /> },
+  burst_scan: { label: "Burst scan", icon: <Target className="h-3.5 w-3.5" /> },
 };
 
 const SINCE_OPTIONS = [

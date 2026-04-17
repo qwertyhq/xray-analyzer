@@ -184,6 +184,89 @@ func TestDetectAbusePortFlood_WebNotFlagged(t *testing.T) {
 	}
 }
 
+// TestDetectBurstScan_SSHSweepOnScatteredNetworks: the exact real-world
+// signature observed on prod — one user (e.g. "15333") generates 25 new
+// (user, IPv4, port=22) entries inside a minute, spread across unrelated
+// networks so port_scan's /16 concentration check misses it. detectBurstScan
+// must fire on that.
+func TestDetectBurstScan_SSHSweepOnScatteredNetworks(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+
+	// 25 distinct SSH targets across /24s — no /16 concentration.
+	for i := 0; i < 25; i++ {
+		_ = st.RecordUserDestination(ctx, "mamka-hacker", "poland-1", fmt.Sprintf("10.%d.1.1:22", i+1))
+	}
+
+	got, err := st.detectBurstScanAnyTarget(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("detectBurstScan: %v", err)
+	}
+	var hit *threatintel.Anomaly
+	for _, a := range got {
+		if a.UserEmail == "mamka-hacker" {
+			hit = a
+			break
+		}
+	}
+	if hit == nil {
+		t.Fatalf("SSH sweep not flagged: %+v", got)
+	}
+	if hit.Type != threatintel.AnomalyBurstScan {
+		t.Errorf("type: got %q, want burst_scan", hit.Type)
+	}
+	if hit.Details["port"] != "22" {
+		t.Errorf("port: got %v, want 22", hit.Details["port"])
+	}
+}
+
+// TestDetectBurstScan_BenignPortsIgnored: legitimate heavy-IP traffic on
+// NTP / RTSP / BitTorrent / XMPP / web ports must NOT trip the detector.
+func TestDetectBurstScan_BenignPortsIgnored(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		user, port string
+	}{
+		{"ntp-client", "123"},
+		{"rtsp-cam", "554"},
+		{"xmpp-msg", "5222"},
+		{"bittorrent", "6881"},
+		{"web-user", "443"},
+	}
+	for _, c := range cases {
+		for i := 0; i < 30; i++ {
+			_ = st.RecordUserDestination(ctx, c.user, "poland-1", fmt.Sprintf("10.0.%d.%d:%s", i%256, i/256+1, c.port))
+		}
+	}
+
+	got, _ := st.detectBurstScanAnyTarget(ctx, time.Now())
+	for _, a := range got {
+		for _, c := range cases {
+			if a.UserEmail == c.user {
+				t.Errorf("%s on :%s flagged as burst scan (false positive): %+v", c.user, c.port, a)
+			}
+		}
+	}
+}
+
+// TestDetectBurstScan_BelowThresholdNotFlagged: 10 unique IPs on :22 stays
+// under the 15-IP bar.
+func TestDetectBurstScan_BelowThresholdNotFlagged(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+	for i := 0; i < 10; i++ {
+		_ = st.RecordUserDestination(ctx, "low-vol", "poland-1", fmt.Sprintf("10.%d.1.1:22", i+1))
+	}
+	got, _ := st.detectBurstScanAnyTarget(ctx, time.Now())
+	for _, a := range got {
+		if a.UserEmail == "low-vol" {
+			t.Errorf("user under threshold flagged: %+v", a)
+		}
+	}
+}
+
 // TestGetAttackAnomalies_FiltersByType: GetAttackAnomalies is the backing
 // store for the new Attacks tab. It must return ONLY records of the
 // requested attack types — no activity_spike / night_activity noise.

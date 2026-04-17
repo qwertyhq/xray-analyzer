@@ -277,6 +277,7 @@ const (
 	AnomalyMultipleCountries AnomalyType = "multiple_countries" // User from multiple countries
 	AnomalyPortScan          AnomalyType = "port_scan"          // Many IPs in a single /16 hit from one user — masscan-style sweep
 	AnomalyAbusePortFlood    AnomalyType = "abuse_port_flood"   // Many destinations on an abuse port (22/25/445/3389/...) — brute-force/spam
+	AnomalyBurstScan         AnomalyType = "burst_scan"         // 15+ unique IPv4 on one non-web, non-benign port in 1 minute — target-agnostic scan
 )
 
 // AnomalySeverity indicates the severity of the anomaly
