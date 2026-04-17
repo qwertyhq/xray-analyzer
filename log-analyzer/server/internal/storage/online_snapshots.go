@@ -12,13 +12,16 @@ type OnlineHistoryPoint struct {
 }
 
 // RecordOnlineSnapshot writes (or overwrites) a single minute-bucket sample.
-// Called by the 1/min background job.
+// ts is stored as a strftime-compatible ISO-8601 string so GetOnlineHistoryHourly
+// can bucket via strftime. modernc.org/sqlite binds time.Time to a Go
+// representation ("2026-04-17 19:11:00 +0000 UTC") that strftime can't parse.
 func (s *Storage) RecordOnlineSnapshot(ctx context.Context, ts time.Time, total int) error {
+	bucketed := ts.UTC().Truncate(time.Minute).Format("2006-01-02T15:04:05Z")
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO online_snapshots (ts, total_online)
 		VALUES (?, ?)
 		ON CONFLICT(ts) DO UPDATE SET total_online = excluded.total_online
-	`, ts.UTC().Truncate(time.Minute), total)
+	`, bucketed, total)
 	return err
 }
 
@@ -44,7 +47,7 @@ func (s *Storage) GetOnlineHistoryHourly(ctx context.Context, since time.Duratio
 	if since <= 0 {
 		since = 24 * time.Hour
 	}
-	cutoff := time.Now().UTC().Add(-since)
+	cutoff := time.Now().UTC().Add(-since).Format("2006-01-02T15:04:05Z")
 
 	// Hour bucket via strftime; literal format (bind-as-param breaks under
 	// modernc.org/sqlite). MAX picks the peak minute within the hour.
