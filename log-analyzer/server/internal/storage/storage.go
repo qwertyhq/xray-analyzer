@@ -23,8 +23,9 @@ const (
 
 // Storage handles database operations
 type Storage struct {
-	db    *sql.DB
-	cache *cache.Cache
+	db           *sql.DB
+	cache        *cache.Cache
+	nodeRemnaMap map[string]string // agent NODE_ID → Remnawave node name (for online counts)
 }
 
 // New creates a new Storage

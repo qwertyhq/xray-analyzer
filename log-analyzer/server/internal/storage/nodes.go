@@ -37,6 +37,21 @@ func (s *Storage) UpdateNodeUniqueUsers(ctx context.Context, nodeID string) erro
 	return err
 }
 
+// SetNodeRemnaMap wires agent NODE_ID → Remnawave node name so online user
+// counts can be sourced from the Remnawave sync (XTLS tracked sessions)
+// instead of being inferred from access-log recency. Pass nil/empty to fall
+// back to the access-log heuristic.
+func (s *Storage) SetNodeRemnaMap(m map[string]string) {
+	if m == nil {
+		s.nodeRemnaMap = nil
+		return
+	}
+	s.nodeRemnaMap = make(map[string]string, len(m))
+	for k, v := range m {
+		s.nodeRemnaMap[k] = v
+	}
+}
+
 // GetNodeStats gets statistics for all nodes (cached)
 func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error) {
 	cacheKey := "node_stats"
@@ -45,15 +60,11 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 		return cached.([]*models.NodeStats), nil
 	}
 
-	// 5-minute window instead of 1. Agents occasionally lose their
-	// WebSocket for 30-60s (NetBird/Caddy idle drops, DNS hiccups) and
-	// during those gaps user_stats.last_seen isn't updated — a 1-minute
-	// window would report 0 online users on a still-very-active node.
-	// 5 min is a better "who is still active" proxy; real UI latency is
-	// dominated by the 10s cache TTL, not this window.
+	// Access-log fallback window: 5 min tolerates WS flaps (30-60s) and
+	// is used when the node has no Remnawave mapping or Remnawave isn't
+	// synced yet.
 	windowAgo := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
 
-	// Use LEFT JOIN instead of correlated subquery to avoid N+1 problem
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			n.node_id,
@@ -91,8 +102,43 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 		nodes = append(nodes, n)
 	}
 
+	// Enrich with Remnawave's XTLS-level online count. Prefer it over the
+	// access-log heuristic: Xray reports real active sessions, the log
+	// approach undercounts whenever an agent's WebSocket flaps.
+	if len(s.nodeRemnaMap) > 0 {
+		remna, err := s.remnaOnlineCounts(ctx)
+		if err == nil {
+			for _, n := range nodes {
+				if name, ok := s.nodeRemnaMap[n.NodeID]; ok {
+					if cnt, ok := remna[name]; ok {
+						n.OnlineUsers = cnt
+					}
+				}
+			}
+		}
+	}
+
 	s.cache.Set(cacheKey, nodes, CacheTTLShort)
 	return nodes, nil
+}
+
+// remnaOnlineCounts returns a map of remnawave-node-name → users_online
+// from the synced remna_nodes table. Fast, indexed, read-only.
+func (s *Storage) remnaOnlineCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT name, users_online FROM remna_nodes`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]int)
+	for rows.Next() {
+		var name string
+		var cnt int
+		if err := rows.Scan(&name, &cnt); err == nil {
+			out[name] = cnt
+		}
+	}
+	return out, nil
 }
 
 // DeleteNode removes a node and all its related data
