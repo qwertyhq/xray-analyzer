@@ -46,14 +46,16 @@ func (s *Storage) GetOnlineHistoryHourly(ctx context.Context, since time.Duratio
 	}
 	cutoff := time.Now().UTC().Add(-since)
 
-	// strftime bucket to the hour; MAX(total_online) per bucket.
+	// Hour bucket via strftime; literal format (bind-as-param breaks under
+	// modernc.org/sqlite). MAX picks the peak minute within the hour.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT strftime(?, ts) AS hour, MAX(total_online) AS peak
+		SELECT strftime('%Y-%m-%dT%H:00:00Z', ts) AS hour,
+		       MAX(total_online) AS peak
 		FROM online_snapshots
 		WHERE ts >= ?
 		GROUP BY hour
 		ORDER BY hour ASC
-	`, "%Y-%m-%dT%H:00:00Z", cutoff)
+	`, cutoff)
 	if err != nil {
 		return nil, err
 	}
