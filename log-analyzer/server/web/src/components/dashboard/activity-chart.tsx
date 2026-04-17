@@ -16,16 +16,27 @@ import {
   Legend,
 } from "recharts";
 
+interface OnlineHistoryPoint {
+  hour: string;
+  online_users: number;
+}
+
 interface ActivityChartProps {
   data: HourlyStats[];
+  // Optional overlay of real XTLS online counts per hour (from Remnawave
+  // snapshots). When provided the chart uses these for the "Online Users"
+  // line instead of hourly_stats.unique_users — the former is the actual
+  // session count, the latter is an access-log proxy that dips on WS flaps.
+  onlineHistory?: OnlineHistoryPoint[];
   title?: string;
   description?: string;
   loading?: boolean;
   timeRange?: TimeRange;
 }
 
-export function ActivityChart({ 
-  data, 
+export function ActivityChart({
+  data,
+  onlineHistory,
   title = "Activity",
   description = "Requests over time",
   loading = false,
@@ -39,20 +50,33 @@ export function ActivityChart({
     // Determine label format based on time range
     const isLongRange = timeRange === "7d" || timeRange === "30d";
 
+    // Hour (UTC floor) → online users lookup, driven by Remnawave snapshots
+    // when we have them. Falling back to unique_users keeps old dashboards
+    // readable until snapshots have had time to accumulate.
+    const overlay = new Map<string, number>();
+    if (onlineHistory) {
+      for (const p of onlineHistory) {
+        const key = new Date(p.hour).toISOString().slice(0, 13); // YYYY-MM-DDTHH
+        overlay.set(key, p.online_users);
+      }
+    }
+
     // Sort data by hour and format for chart
     return data
       .sort((a, b) => new Date(a.hour).getTime() - new Date(b.hour).getTime())
       .map(d => {
         const date = new Date(d.hour);
+        const key = date.toISOString().slice(0, 13);
+        const onlineFromSnapshot = overlay.get(key);
         return {
           hour: isLongRange ? format(date, "MMM d") : format(date, "HH:mm"),
           fullDate: format(date, "MMM d, HH:mm"),
           requests: d.total_requests || 0,
           blacklist: d.blacklist_hits || 0,
-          online: d.unique_users || 0,
+          online: onlineFromSnapshot !== undefined ? onlineFromSnapshot : (d.unique_users || 0),
         };
       });
-  }, [data, timeRange]);
+  }, [data, onlineHistory, timeRange]);
 
   // Calculate tick interval based on data length
   const tickInterval = useMemo(() => {

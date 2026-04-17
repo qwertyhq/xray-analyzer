@@ -1,0 +1,87 @@
+package storage
+
+import (
+	"context"
+	"time"
+)
+
+// OnlineHistoryPoint is one bucket of the history series returned to the UI.
+type OnlineHistoryPoint struct {
+	Hour         time.Time `json:"hour"`
+	OnlineUsers  int       `json:"online_users"`
+}
+
+// RecordOnlineSnapshot writes (or overwrites) a single minute-bucket sample.
+// Called by the 1/min background job.
+func (s *Storage) RecordOnlineSnapshot(ctx context.Context, ts time.Time, total int) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO online_snapshots (ts, total_online)
+		VALUES (?, ?)
+		ON CONFLICT(ts) DO UPDATE SET total_online = excluded.total_online
+	`, ts.UTC().Truncate(time.Minute), total)
+	return err
+}
+
+// TotalRemnaOnline sums users_online across the Remnawave nodes mapped
+// from agent NODE_IDs. Zero when no mapping is configured.
+func (s *Storage) TotalRemnaOnline(ctx context.Context) (int, error) {
+	if len(s.nodeRemnaMap) == 0 {
+		return 0, nil
+	}
+	q := `SELECT COALESCE(SUM(users_online), 0) FROM remna_nodes WHERE name IN (` +
+		placeholderList(len(s.nodeRemnaMap)) + `)`
+	var n int
+	if err := s.db.QueryRowContext(ctx, q, remnaNamesAsArgs(s.nodeRemnaMap)...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// GetOnlineHistoryHourly returns hourly peak online_users over the last
+// `since` duration. Peak (MAX) rather than average so a blip-free trend
+// line is easier to read: "there were 650 people online that hour".
+func (s *Storage) GetOnlineHistoryHourly(ctx context.Context, since time.Duration) ([]OnlineHistoryPoint, error) {
+	if since <= 0 {
+		since = 24 * time.Hour
+	}
+	cutoff := time.Now().UTC().Add(-since)
+
+	// strftime bucket to the hour; MAX(total_online) per bucket.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT strftime(?, ts) AS hour, MAX(total_online) AS peak
+		FROM online_snapshots
+		WHERE ts >= ?
+		GROUP BY hour
+		ORDER BY hour ASC
+	`, "%Y-%m-%dT%H:00:00Z", cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []OnlineHistoryPoint
+	for rows.Next() {
+		var hour string
+		var peak int
+		if err := rows.Scan(&hour, &peak); err != nil {
+			return nil, err
+		}
+		t, err := time.Parse(time.RFC3339, hour)
+		if err != nil {
+			continue
+		}
+		out = append(out, OnlineHistoryPoint{Hour: t, OnlineUsers: peak})
+	}
+	return out, nil
+}
+
+// CleanupOnlineSnapshots trims anything older than retentionDays. The 1/min
+// cadence × 30d fits in a few MB, so this is mostly hygiene.
+func (s *Storage) CleanupOnlineSnapshots(ctx context.Context, retentionDays int) error {
+	if retentionDays <= 0 {
+		retentionDays = 30
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM online_snapshots WHERE ts < ?`, cutoff)
+	return err
+}
