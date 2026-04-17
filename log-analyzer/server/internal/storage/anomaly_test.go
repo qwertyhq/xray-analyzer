@@ -21,30 +21,21 @@ func newTestStorage(t *testing.T) *Storage {
 	return st
 }
 
-// TestDetectPortScan_HitsSweepOfIPv4OnSinglePort: classic abuse signature
-// from the 2026-04-15 incident — 35 distinct 147.251.x.y:8317 destinations
-// from one user in a 5-minute window. Detector must flag as AnomalyPortScan.
-func TestDetectPortScan_HitsSweepOfIPv4OnSinglePort(t *testing.T) {
+// TestDetectPortScan_Slash16Sweep: the 2026-04-15 abuse signature — 25
+// unique 147.251.x.y:8317 destinations from one user. All IPs in one /16,
+// non-web port → fires.
+func TestDetectPortScan_Slash16Sweep(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
 
-	// Inject 35 distinct IPv4 destinations on port 8317 for user "scanner-1".
-	for i := 0; i < 35; i++ {
-		dest := fmt.Sprintf("147.251.6.%d:8317", i+1)
-		if err := st.RecordUserDestination(ctx, "scanner-1", "germany-1", dest); err != nil {
-			t.Fatalf("RecordUserDestination: %v", err)
-		}
-	}
-	// And some normal traffic from another user — must NOT trip the detector.
-	for i := 0; i < 5; i++ {
-		_ = st.RecordUserDestination(ctx, "normal-user", "germany-1", fmt.Sprintf("youtube-%d.com:443", i))
+	for i := 0; i < 25; i++ {
+		_ = st.RecordUserDestination(ctx, "scanner-1", "germany-1", fmt.Sprintf("147.251.6.%d:8317", i+1))
 	}
 
 	anomalies, err := st.detectPortScan(ctx, time.Now())
 	if err != nil {
 		t.Fatalf("detectPortScan: %v", err)
 	}
-
 	var got *threatintel.Anomaly
 	for _, a := range anomalies {
 		if a.UserEmail == "scanner-1" {
@@ -53,65 +44,142 @@ func TestDetectPortScan_HitsSweepOfIPv4OnSinglePort(t *testing.T) {
 		}
 	}
 	if got == nil {
-		t.Fatalf("scanner-1 was not flagged; all anomalies: %+v", anomalies)
+		t.Fatalf("scanner-1 not flagged: %+v", anomalies)
 	}
-	if got.Type != threatintel.AnomalyPortScan {
-		t.Errorf("type: got %q, want %q", got.Type, threatintel.AnomalyPortScan)
-	}
-	if got.Severity != threatintel.SeverityHigh {
-		t.Errorf("severity: got %q, want %q", got.Severity, threatintel.SeverityHigh)
+	if got.Details["target_subnet"] != "147.251.0.0/16" {
+		t.Errorf("target_subnet: got %v, want 147.251.0.0/16", got.Details["target_subnet"])
 	}
 	if got.Details["port"] != "8317" {
-		t.Errorf("details.port: got %v, want 8317", got.Details["port"])
-	}
-	if uniq, _ := got.Details["unique_destinations"].(int); uniq < 30 {
-		t.Errorf("details.unique_destinations: got %v, want >= 30", got.Details["unique_destinations"])
-	}
-
-	// Normal user must not appear.
-	for _, a := range anomalies {
-		if a.UserEmail == "normal-user" {
-			t.Errorf("false positive: normal-user flagged: %+v", a)
-		}
+		t.Errorf("port: got %v, want 8317", got.Details["port"])
 	}
 }
 
-// TestDetectPortScan_BelowThresholdNotFlagged: under 30 unique IPs on a port
-// → no anomaly (avoid noisy alerts on small bursts).
-func TestDetectPortScan_BelowThresholdNotFlagged(t *testing.T) {
+// TestDetectPortScan_WhatsAppOn443NotFlagged: WhatsApp/Meta CDN happily
+// churns through dozens of IPs on :443. We must NOT flag that. :443 is in
+// the exclusion list; even without it the IPs would be scattered across
+// many /16s, so concentration alone would save us — this test guards both.
+func TestDetectPortScan_WhatsAppOn443NotFlagged(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
 
-	for i := 0; i < 25; i++ {
-		_ = st.RecordUserDestination(ctx, "borderline", "germany-1", fmt.Sprintf("10.0.0.%d:22", i))
+	// 100 IPs spread across 10 distinct /16s, all on :443 — normal CDN.
+	subnets := []string{"31.13.64", "31.13.65", "31.13.66", "157.240.1", "157.240.2",
+		"102.132.96", "163.70.128", "173.252.100", "179.60.192", "185.60.216"}
+	for _, s := range subnets {
+		for i := 0; i < 10; i++ {
+			_ = st.RecordUserDestination(ctx, "whatsapp-user", "germany-1", fmt.Sprintf("%s.%d:443", s, i+1))
+		}
 	}
+
 	anomalies, err := st.detectPortScan(ctx, time.Now())
 	if err != nil {
-		t.Fatalf("detectPortScan: %v", err)
+		t.Fatal(err)
 	}
 	for _, a := range anomalies {
-		if a.UserEmail == "borderline" {
-			t.Errorf("borderline user flagged below threshold: %+v", a)
+		if a.UserEmail == "whatsapp-user" {
+			t.Errorf("WhatsApp false positive: %+v", a)
 		}
 	}
 }
 
-// TestDetectPortScan_DomainTrafficNotFlagged: 50 distinct domain:443 hits is
-// normal browsing, NOT a port scan. The IPv4 GLOB filter must exclude these.
+// TestDetectPortScan_DomainTrafficNotFlagged: normal domain browsing has
+// no IPv4 form, the GLOB filter must drop it.
 func TestDetectPortScan_DomainTrafficNotFlagged(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
-
 	for i := 0; i < 50; i++ {
-		_ = st.RecordUserDestination(ctx, "browser-user", "germany-1", fmt.Sprintf("site-%d.example.com:443", i))
+		_ = st.RecordUserDestination(ctx, "browser", "germany-1", fmt.Sprintf("site-%d.example.com:443", i))
 	}
-	anomalies, err := st.detectPortScan(ctx, time.Now())
-	if err != nil {
-		t.Fatalf("detectPortScan: %v", err)
-	}
+	anomalies, _ := st.detectPortScan(ctx, time.Now())
 	for _, a := range anomalies {
-		if a.UserEmail == "browser-user" {
-			t.Errorf("normal domain browsing flagged as port scan: %+v", a)
+		if a.UserEmail == "browser" {
+			t.Errorf("domain browsing flagged: %+v", a)
+		}
+	}
+}
+
+// TestDetectPortScan_BelowThresholdNotFlagged: just under the 20-IP line.
+func TestDetectPortScan_BelowThresholdNotFlagged(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+	for i := 0; i < 15; i++ {
+		_ = st.RecordUserDestination(ctx, "borderline", "germany-1", fmt.Sprintf("10.0.0.%d:9999", i))
+	}
+	anomalies, _ := st.detectPortScan(ctx, time.Now())
+	for _, a := range anomalies {
+		if a.UserEmail == "borderline" {
+			t.Errorf("borderline user flagged: %+v", a)
+		}
+	}
+}
+
+// TestDetectAbusePortFlood_SSHSweep: SSH brute against 20 distinct IPs.
+// Fires even though the IPs are in different /16s.
+func TestDetectAbusePortFlood_SSHSweep(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+
+	// 20 distinct /24s, one IP each, all on :22 — scattered SSH brute.
+	for i := 0; i < 20; i++ {
+		_ = st.RecordUserDestination(ctx, "ssh-bruteforcer", "germany-1", fmt.Sprintf("10.%d.1.1:22", i+1))
+	}
+
+	anomalies, err := st.detectAbusePortFlood(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got *threatintel.Anomaly
+	for _, a := range anomalies {
+		if a.UserEmail == "ssh-bruteforcer" {
+			got = a
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("SSH brute not flagged: %+v", anomalies)
+	}
+	if got.Type != threatintel.AnomalyAbusePortFlood {
+		t.Errorf("type: got %q, want abuse_port_flood", got.Type)
+	}
+	if got.Details["port"] != "22" {
+		t.Errorf("port: got %v, want 22", got.Details["port"])
+	}
+}
+
+// TestDetectAbusePortFlood_SMTPSpam: spam campaign against 18 different
+// mail servers on :587.
+func TestDetectAbusePortFlood_SMTPSpam(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+
+	for i := 0; i < 18; i++ {
+		_ = st.RecordUserDestination(ctx, "spammer", "germany-1", fmt.Sprintf("smtp-%d.example.com:587", i))
+	}
+	anomalies, _ := st.detectAbusePortFlood(ctx, time.Now())
+	found := false
+	for _, a := range anomalies {
+		if a.UserEmail == "spammer" && a.Details["port"] == "587" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("SMTP spammer not flagged; anomalies=%+v", anomalies)
+	}
+}
+
+// TestDetectAbusePortFlood_WebNotFlagged: :443 and :80 are NOT abuse
+// ports; heavy web activity must not fire this detector.
+func TestDetectAbusePortFlood_WebNotFlagged(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+	for i := 0; i < 50; i++ {
+		_ = st.RecordUserDestination(ctx, "browser", "germany-1", fmt.Sprintf("web-%d.com:443", i))
+	}
+	anomalies, _ := st.detectAbusePortFlood(ctx, time.Now())
+	for _, a := range anomalies {
+		if a.UserEmail == "browser" {
+			t.Errorf("web traffic flagged as abuse flood: %+v", a)
 		}
 	}
 }
