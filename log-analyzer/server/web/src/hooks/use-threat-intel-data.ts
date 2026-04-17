@@ -66,7 +66,7 @@ export function useThreatIntelData(): UseThreatIntelDataReturn {
     errorMessage: string
   ): Promise<T | null> => {
     try {
-      const res = await fetch(url);
+      const res = await authFetch(url);
       if (!res.ok) {
         console.error(`${errorMessage}: ${res.status}`);
         return null;
