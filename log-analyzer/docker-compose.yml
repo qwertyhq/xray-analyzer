@@ -84,9 +84,42 @@ services:
     networks:
       - analyzer-net
 
+  analyzer-postgres:
+    image: postgres:17-alpine
+    container_name: analyzer-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: xray_analyzer
+      POSTGRES_USER: xray_analyzer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_env}
+    volumes:
+      - analyzer-postgres-data:/var/lib/postgresql/data
+    command: >-
+      postgres
+      -c shared_buffers=256MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=64MB
+      -c effective_cache_size=1GB
+      -c wal_buffers=16MB
+      -c max_connections=40
+      -c random_page_cost=1.1
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "xray_analyzer"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - analyzer-net
+
 volumes:
   analyzer-data:
   analyzer-redis-data:
+  analyzer-postgres-data:
 
 networks:
   analyzer-net:
