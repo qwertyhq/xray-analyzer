@@ -52,7 +52,6 @@ func TestSchemaAppliesCleanly(t *testing.T) {
 
 	wantTables := []string{
 		"node_stats", "user_stats", "blacklist_matches", "alerts", "hourly_stats",
-		"user_destinations", "threat_matches", "anomalies", "hourly_stats",
 		"user_destinations", "threat_matches", "anomalies", "user_ip_history",
 		"user_risk_profiles", "remna_users", "remna_hwid_devices", "remna_nodes",
 		"bridged_flows", "online_snapshots", "ip_user_map", "hwid_user_map",
