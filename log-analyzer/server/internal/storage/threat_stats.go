@@ -1,5 +1,3 @@
-//go:build sqlite_legacy
-
 package storage
 
 import (
@@ -28,16 +26,16 @@ func (s *Storage) GetThreatStats(ctx context.Context) (*threatintel.ThreatStats,
 	row.Scan(&stats.TotalMatches)
 
 	// Matches in last 24h
-	since := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
+	since := time.Now().Add(-24 * time.Hour)
 	row = s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM threat_matches WHERE matched_at >= ?
+		SELECT COUNT(*) FROM threat_matches WHERE matched_at >= $1
 	`, since)
 	row.Scan(&stats.MatchesLast24h)
 
 	// Estimate from type stats if more accurate
 	var recentTypeMatches int64
 	row = s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(match_count), 0) FROM threat_type_stats WHERE last_match >= ?
+		SELECT COALESCE(SUM(match_count), 0) FROM threat_type_stats WHERE last_match >= $1
 	`, since)
 	row.Scan(&recentTypeMatches)
 
@@ -47,8 +45,8 @@ func (s *Storage) GetThreatStats(ctx context.Context) (*threatintel.ThreatStats,
 
 	// Matches by type from aggregated table
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT threat_type, match_count 
-		FROM threat_type_stats 
+		SELECT threat_type, match_count
+		FROM threat_type_stats
 		ORDER BY match_count DESC
 	`)
 	if err == nil {
@@ -64,8 +62,8 @@ func (s *Storage) GetThreatStats(ctx context.Context) (*threatintel.ThreatStats,
 
 	// Matches by source from recent matches
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT source, COUNT(*) as cnt 
-		FROM threat_matches 
+		SELECT source, COUNT(*) as cnt
+		FROM threat_matches
 		GROUP BY source
 	`)
 	if err == nil {
@@ -95,9 +93,9 @@ func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, li
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT user_email, threat_type, match_count
 		FROM user_threat_stats
-		WHERE threat_type = ?
+		WHERE threat_type = $1
 		ORDER BY match_count DESC
-		LIMIT ?
+		LIMIT $2
 	`, category, limit)
 	if err != nil {
 		return nil, err
@@ -121,7 +119,7 @@ func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, li
 		domainRows, err := s.db.QueryContext(ctx, `
 			SELECT domain, hit_count
 			FROM user_threat_domains
-			WHERE user_email = ? AND threat_type = ?
+			WHERE user_email = $1 AND threat_type = $2
 			ORDER BY hit_count DESC
 			LIMIT 5
 		`, st.UserEmail, category)
@@ -169,9 +167,9 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT user_email, match_count, last_match
 		FROM user_threat_stats
-		WHERE threat_type = ?
+		WHERE threat_type = $1
 		ORDER BY last_match DESC
-		LIMIT ?
+		LIMIT $2
 	`, category, limit)
 	if err != nil {
 		return nil, err
@@ -181,7 +179,7 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 	var stats []*threatintel.CategoryUserStats
 	for rows.Next() {
 		var st threatintel.CategoryUserStats
-		var lastMatch string
+		var lastMatch time.Time
 		if err := rows.Scan(&st.UserEmail, &st.MatchCount, &lastMatch); err != nil {
 			return nil, err
 		}
@@ -197,10 +195,10 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 		fallbackRows, err := s.db.QueryContext(ctx, `
 			SELECT user_email, COUNT(*) as match_count, MAX(matched_at) as last_match
 			FROM threat_matches
-			WHERE threat_type = ?
+			WHERE threat_type = $1
 			GROUP BY user_email
 			ORDER BY last_match DESC
-			LIMIT ?
+			LIMIT $2
 		`, category, limit)
 		if err != nil {
 			return nil, err
@@ -209,7 +207,7 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 
 		for fallbackRows.Next() {
 			var st threatintel.CategoryUserStats
-			var lastMatch string
+			var lastMatch time.Time
 			if err := fallbackRows.Scan(&st.UserEmail, &st.MatchCount, &lastMatch); err != nil {
 				return nil, err
 			}
@@ -223,7 +221,7 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 		// First try user_threat_domains
 		domainRows, err := s.db.QueryContext(ctx, `
 			SELECT domain FROM user_threat_domains
-			WHERE user_email = ? AND threat_type = ?
+			WHERE user_email = $1 AND threat_type = $2
 			ORDER BY hit_count DESC
 			LIMIT 5
 		`, st.UserEmail, category)
@@ -243,8 +241,8 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 		if len(st.Domains) == 0 {
 			matchDomainRows, err := s.db.QueryContext(ctx, `
 				SELECT DISTINCT destination FROM threat_matches
-				WHERE user_email = ? AND threat_type = ?
-				ORDER BY matched_at DESC
+				WHERE user_email = $1 AND threat_type = $2
+				ORDER BY destination
 				LIMIT 5
 			`, st.UserEmail, category)
 			if err != nil {
@@ -278,10 +276,10 @@ func (s *Storage) GetUsersByCategory(ctx context.Context, category string, page,
 	var total int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT user_email) FROM (
-			SELECT user_email FROM user_threat_stats WHERE threat_type = ?
+			SELECT user_email FROM user_threat_stats WHERE threat_type = $1
 			UNION
-			SELECT user_email FROM threat_matches WHERE threat_type = ?
-		)
+			SELECT user_email FROM threat_matches WHERE threat_type = $2
+		) sub
 	`, category, category).Scan(&total)
 	if err != nil {
 		return nil, 0, err
@@ -291,14 +289,14 @@ func (s *Storage) GetUsersByCategory(ctx context.Context, category string, page,
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT user_email, SUM(match_count) as total_matches, MAX(last_match) as last_match
 		FROM (
-			SELECT user_email, match_count, last_match FROM user_threat_stats WHERE threat_type = ?
+			SELECT user_email, match_count, last_match FROM user_threat_stats WHERE threat_type = $1
 			UNION ALL
-			SELECT user_email, 1 as match_count, matched_at as last_match FROM threat_matches 
-			WHERE threat_type = ? AND user_email NOT IN (SELECT user_email FROM user_threat_stats WHERE threat_type = ?)
-		)
+			SELECT user_email, 1 as match_count, matched_at as last_match FROM threat_matches
+			WHERE threat_type = $2 AND user_email NOT IN (SELECT user_email FROM user_threat_stats WHERE threat_type = $3)
+		) sub
 		GROUP BY user_email
 		ORDER BY last_match DESC
-		LIMIT ? OFFSET ?
+		LIMIT $4 OFFSET $5
 	`, category, category, category, pageSize, offset)
 	if err != nil {
 		return nil, 0, err
@@ -308,7 +306,7 @@ func (s *Storage) GetUsersByCategory(ctx context.Context, category string, page,
 	var stats []*threatintel.CategoryUserStats
 	for rows.Next() {
 		var st threatintel.CategoryUserStats
-		var lastMatch string
+		var lastMatch time.Time
 		if err := rows.Scan(&st.UserEmail, &st.MatchCount, &lastMatch); err != nil {
 			return nil, 0, err
 		}
@@ -320,7 +318,7 @@ func (s *Storage) GetUsersByCategory(ctx context.Context, category string, page,
 	for _, st := range stats {
 		domainRows, err := s.db.QueryContext(ctx, `
 			SELECT domain FROM user_threat_domains
-			WHERE user_email = ? AND threat_type = ?
+			WHERE user_email = $1 AND threat_type = $2
 			ORDER BY hit_count DESC
 			LIMIT 5
 		`, st.UserEmail, category)
@@ -340,7 +338,7 @@ func (s *Storage) GetUsersByCategory(ctx context.Context, category string, page,
 		if len(st.Domains) == 0 {
 			matchDomainRows, _ := s.db.QueryContext(ctx, `
 				SELECT DISTINCT destination FROM threat_matches
-				WHERE user_email = ? AND threat_type = ?
+				WHERE user_email = $1 AND threat_type = $2
 				LIMIT 5
 			`, st.UserEmail, category)
 			if matchDomainRows != nil {
@@ -380,12 +378,15 @@ func (s *Storage) GetHourlyThreatStats(ctx context.Context, hours int) ([]*threa
 		hours = 24
 	}
 
+	// Compute the cutoff as a formatted TEXT string matching the hour column format (YYYY-MM-DDTHH)
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).Format("2006-01-02T15")
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT hour, threat_type, match_count, unique_users
 		FROM threat_hourly_stats
-		WHERE hour >= datetime('now', '-' || ? || ' hours')
+		WHERE hour >= $1
 		ORDER BY hour DESC
-	`, hours)
+	`, cutoff)
 	if err != nil {
 		return nil, err
 	}
@@ -420,12 +421,15 @@ func (s *Storage) GetDailyThreatStats(ctx context.Context, days int) ([]*threati
 		days = 30
 	}
 
+	// Compute the cutoff as a formatted TEXT string matching the day column format (YYYY-MM-DD)
+	cutoff := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT day, threat_type, match_count, unique_users
 		FROM threat_daily_stats
-		WHERE day >= date('now', '-' || ? || ' days')
+		WHERE day >= $1
 		ORDER BY day DESC
-	`, days)
+	`, cutoff)
 	if err != nil {
 		return nil, err
 	}

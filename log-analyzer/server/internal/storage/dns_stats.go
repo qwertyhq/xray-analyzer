@@ -1,5 +1,3 @@
-//go:build sqlite_legacy
-
 package storage
 
 import (
@@ -15,14 +13,11 @@ import (
 
 // UpdateDNSDomainStats updates statistics for a domain
 func (s *Storage) UpdateDNSDomainStats(ctx context.Context, domain string, threatType string, source string) error {
-	now := time.Now().Format(time.RFC3339)
-
 	// Check if domain exists
-	var existing sql.NullString
 	var existingTypes, existingSources sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT domain, threat_types, sources FROM dns_domain_stats WHERE domain = ?
-	`, domain).Scan(&existing, &existingTypes, &existingSources)
+		SELECT threat_types, sources FROM dns_domain_stats WHERE domain = $1
+	`, domain).Scan(&existingTypes, &existingSources)
 
 	if err == sql.ErrNoRows {
 		// New domain
@@ -32,8 +27,11 @@ func (s *Storage) UpdateDNSDomainStats(ctx context.Context, domain string, threa
 
 		_, err = s.db.ExecContext(ctx, `
 			INSERT INTO dns_domain_stats (domain, total_hits, unique_users, threat_types, sources, first_seen, last_seen, category_hits)
-			VALUES (?, 1, 1, ?, ?, ?, ?, ?)
-		`, domain, string(types), string(sources), now, now, string(categoryHits))
+			VALUES ($1, 1, 1, $2, $3, NOW(), NOW(), $4)
+		`, domain, string(types), string(sources), string(categoryHits))
+		return err
+	}
+	if err != nil {
 		return err
 	}
 
@@ -61,11 +59,11 @@ func (s *Storage) UpdateDNSDomainStats(ctx context.Context, domain string, threa
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE dns_domain_stats SET
 			total_hits = total_hits + 1,
-			threat_types = ?,
-			sources = ?,
-			last_seen = ?
-		WHERE domain = ?
-	`, string(typesJSON), string(sourcesJSON), now, domain)
+			threat_types = $1,
+			sources = $2,
+			last_seen = NOW()
+		WHERE domain = $3
+	`, string(typesJSON), string(sourcesJSON), domain)
 
 	return err
 }
@@ -91,10 +89,10 @@ func (s *Storage) UpdateDNSHourlyStats(ctx context.Context, blocked bool) error 
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO dns_hourly_stats (hour, total_queries, blocked_queries, unique_users)
-		VALUES (?, 1, ?, 1)
-		ON CONFLICT(hour) DO UPDATE SET
-			total_queries = total_queries + 1,
-			blocked_queries = blocked_queries + ?
+		VALUES ($1, 1, $2, 1)
+		ON CONFLICT (hour) DO UPDATE SET
+			total_queries = dns_hourly_stats.total_queries + 1,
+			blocked_queries = dns_hourly_stats.blocked_queries + $3
 	`, hour, blockedInc, blockedInc)
 
 	return err
@@ -111,10 +109,10 @@ func (s *Storage) UpdateDNSDailyStats(ctx context.Context, blocked bool) error {
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO dns_daily_stats (day, total_queries, blocked_queries, unique_users)
-		VALUES (?, 1, ?, 1)
-		ON CONFLICT(day) DO UPDATE SET
-			total_queries = total_queries + 1,
-			blocked_queries = blocked_queries + ?
+		VALUES ($1, 1, $2, 1)
+		ON CONFLICT (day) DO UPDATE SET
+			total_queries = dns_daily_stats.total_queries + 1,
+			blocked_queries = dns_daily_stats.blocked_queries + $3
 	`, day, blockedInc, blockedInc)
 
 	return err
@@ -122,8 +120,6 @@ func (s *Storage) UpdateDNSDailyStats(ctx context.Context, blocked bool) error {
 
 // UpdateUserDNSStats updates DNS statistics for a user
 func (s *Storage) UpdateUserDNSStats(ctx context.Context, email string, domain string, blocked bool) error {
-	now := time.Now().Format(time.RFC3339)
-
 	blockedInc := 0
 	if blocked {
 		blockedInc = 1
@@ -131,7 +127,7 @@ func (s *Storage) UpdateUserDNSStats(ctx context.Context, email string, domain s
 
 	// Get existing top domains
 	var existingDomains sql.NullString
-	s.db.QueryRowContext(ctx, `SELECT top_domains FROM user_dns_stats WHERE user_email = ?`, email).Scan(&existingDomains)
+	s.db.QueryRowContext(ctx, `SELECT top_domains FROM user_dns_stats WHERE user_email = $1`, email).Scan(&existingDomains)
 
 	var topDomains []string
 	if existingDomains.Valid {
@@ -149,13 +145,13 @@ func (s *Storage) UpdateUserDNSStats(ctx context.Context, email string, domain s
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO user_dns_stats (user_email, total_queries, blocked_queries, top_domains, updated_at)
-		VALUES (?, 1, ?, ?, ?)
-		ON CONFLICT(user_email) DO UPDATE SET
-			total_queries = total_queries + 1,
-			blocked_queries = blocked_queries + ?,
-			top_domains = ?,
-			updated_at = ?
-	`, email, blockedInc, string(domainsJSON), now, blockedInc, string(domainsJSON), now)
+		VALUES ($1, 1, $2, $3, NOW())
+		ON CONFLICT (user_email) DO UPDATE SET
+			total_queries = user_dns_stats.total_queries + 1,
+			blocked_queries = user_dns_stats.blocked_queries + $4,
+			top_domains = $5,
+			updated_at = NOW()
+	`, email, blockedInc, string(domainsJSON), blockedInc, string(domainsJSON))
 
 	return err
 }
@@ -187,7 +183,7 @@ func (s *Storage) GetDNSQueryStats(ctx context.Context) (*threatintel.DNSQuerySt
 	row := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(total_queries), 0), COALESCE(SUM(blocked_queries), 0)
 		FROM dns_daily_stats
-		WHERE day > date('now', '-30 days')
+		WHERE day > TO_CHAR(NOW() - INTERVAL '30 days', 'YYYY-MM-DD')
 	`)
 	row.Scan(&stats.TotalQueries, &stats.BlockedQueries)
 
@@ -214,7 +210,7 @@ func (s *Storage) GetDNSQueryStats(ctx context.Context) (*threatintel.DNSQuerySt
 				CategoryHits: make(map[string]int),
 			}
 			var threatTypes, sources sql.NullString
-			var firstSeen, lastSeen sql.NullString
+			var firstSeen, lastSeen sql.NullTime
 			var riskLevel string
 
 			if rows.Scan(&ds.Domain, &ds.TotalHits, &ds.UniqueUsers, &threatTypes, &sources, &firstSeen, &lastSeen, &riskLevel) == nil {
@@ -225,10 +221,10 @@ func (s *Storage) GetDNSQueryStats(ctx context.Context) (*threatintel.DNSQuerySt
 					json.Unmarshal([]byte(sources.String), &ds.Sources)
 				}
 				if firstSeen.Valid {
-					ds.FirstSeen, _ = time.Parse(time.RFC3339, firstSeen.String)
+					ds.FirstSeen = firstSeen.Time
 				}
 				if lastSeen.Valid {
-					ds.LastSeen, _ = time.Parse(time.RFC3339, lastSeen.String)
+					ds.LastSeen = lastSeen.Time
 				}
 				ds.RiskLevel = threatintel.RiskLevel(riskLevel)
 				stats.TopDomains = append(stats.TopDomains, ds)
@@ -255,7 +251,7 @@ func (s *Storage) GetDNSQueryStats(ctx context.Context) (*threatintel.DNSQuerySt
 	hourlyRows, err := s.db.QueryContext(ctx, `
 		SELECT hour, total_queries, blocked_queries, unique_users
 		FROM dns_hourly_stats
-		WHERE hour >= datetime('now', '-24 hours')
+		WHERE hour >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24')
 		ORDER BY hour ASC
 	`)
 	if err == nil {
@@ -271,7 +267,7 @@ func (s *Storage) GetDNSQueryStats(ctx context.Context) (*threatintel.DNSQuerySt
 	dailyRows, err := s.db.QueryContext(ctx, `
 		SELECT day, total_queries, blocked_queries, unique_users
 		FROM dns_daily_stats
-		WHERE day >= date('now', '-30 days')
+		WHERE day >= TO_CHAR(NOW() - INTERVAL '30 days', 'YYYY-MM-DD')
 		ORDER BY day ASC
 	`)
 	if err == nil {
@@ -294,7 +290,7 @@ func (s *Storage) GetTopUsersByDNS(ctx context.Context, limit int) ([]*threatint
 		SELECT user_email, total_queries, blocked_queries, top_domains
 		FROM user_dns_stats
 		ORDER BY blocked_queries DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -370,10 +366,13 @@ func (s *Storage) GetDNSAnalysisSummary(ctx context.Context) (*threatintel.DNSAn
 	// Calculate trend
 	var recent, previous int64
 	s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(blocked_queries), 0) FROM dns_daily_stats WHERE day >= date('now', '-7 days')
+		SELECT COALESCE(SUM(blocked_queries), 0) FROM dns_daily_stats
+		WHERE day >= TO_CHAR(NOW() - INTERVAL '7 days', 'YYYY-MM-DD')
 	`).Scan(&recent)
 	s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(blocked_queries), 0) FROM dns_daily_stats WHERE day >= date('now', '-14 days') AND day < date('now', '-7 days')
+		SELECT COALESCE(SUM(blocked_queries), 0) FROM dns_daily_stats
+		WHERE day >= TO_CHAR(NOW() - INTERVAL '14 days', 'YYYY-MM-DD')
+		  AND day < TO_CHAR(NOW() - INTERVAL '7 days', 'YYYY-MM-DD')
 	`).Scan(&previous)
 
 	if recent > previous+100 {
