@@ -12,6 +12,7 @@ type Config struct {
 	// Server settings
 	ListenAddr     string
 	DBPath         string
+	PostgresURL    string
 	AllowedOrigins []string // Allowed origins for WebSocket CORS (empty = allow all for dev)
 
 	// Authentication
@@ -77,6 +78,7 @@ func Load() *Config {
 	return &Config{
 		ListenAddr:             getEnv("LISTEN_ADDR", ":8080"),
 		DBPath:                 getEnv("DB_PATH", "./data/analyzer.db"),
+		PostgresURL:            getEnv("POSTGRES_URL", "postgres://xray_analyzer:changeme@analyzer-postgres:5432/xray_analyzer?sslmode=disable"),
 		AllowedOrigins:         getStringSliceEnv("ALLOWED_ORIGINS", nil),
 		APIToken:               getEnv("API_TOKEN", ""),
 		AgentToken:             getEnv("AGENT_TOKEN", ""),

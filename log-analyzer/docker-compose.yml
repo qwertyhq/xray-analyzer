@@ -38,9 +38,12 @@ services:
       - REDIS_ADDR=analyzer-redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-analyzer:}
+      - POSTGRES_URL=postgres://xray_analyzer:${POSTGRES_PASSWORD:-changeme_in_env}@analyzer-postgres:5432/xray_analyzer?sslmode=disable
     depends_on:
       analyzer-redis:
         condition: service_started
+      analyzer-postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8237/health"]
       interval: 10s

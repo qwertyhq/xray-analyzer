@@ -116,8 +116,36 @@ func (s *Storage) SetNodeRemnaMap(m map[string]string) {
 	}
 }
 
-// WarmCache is temporarily a no-op until Task 6 restores the per-method warm
-// calls (they live in files currently behind the sqlite_legacy build tag).
+// WarmCache pre-populates the in-process L1 cache by firing all heavy read
+// queries in parallel. Called once at startup and after each Remnawave sync.
 func (s *Storage) WarmCache(ctx context.Context) {
-	log.Println("[cache] WarmCache skipped: query files being ported to postgres (Task 4-6 transition)")
+	log.Println("[cache] warming cache in parallel...")
+	start := time.Now()
+
+	var wg sync.WaitGroup
+
+	warmFuncs := []func(){
+		func() { s.GetGlobalStats(ctx) },
+		func() { s.GetNodeStats(ctx) },
+		func() { s.GetRemnaStats(ctx) },
+		func() { s.GetThreatStats(ctx) },
+		func() { s.GetAllUsers(ctx, 100) },
+		func() { s.GetCorrelationStats(ctx) },
+		func() { s.GetHourlyStats(ctx, 24) },
+		func() { s.GetRemnaUsers(ctx, 100, "", "") },
+		func() { s.GetRemnaNodes(ctx) },
+		func() { s.GetTopSharedHWIDs(ctx, 50) },
+		func() { s.GetTopSharedIPs(ctx, 50) },
+	}
+
+	wg.Add(len(warmFuncs))
+	for _, fn := range warmFuncs {
+		go func(f func()) {
+			defer wg.Done()
+			f()
+		}(fn)
+	}
+	wg.Wait()
+
+	log.Printf("[cache] cache warmed in %v, stats: %v", time.Since(start), s.cache.Stats())
 }

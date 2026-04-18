@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,14 +31,14 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 	log.Printf("config: listen=%s, db=%s, blacklist=%s",
-		cfg.ListenAddr, cfg.DBPath, cfg.BlacklistPath)
+		cfg.ListenAddr, sanitizeDSN(cfg.PostgresURL), cfg.BlacklistPath)
 
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Initialize storage
-	store, err := storage.New(cfg.DBPath)
+	store, err := storage.New(ctx, cfg.PostgresURL)
 	if err != nil {
 		log.Fatalf("failed to initialize storage: %v", err)
 	}
@@ -308,4 +309,17 @@ func main() {
 	// Give goroutines time to cleanup
 	time.Sleep(2 * time.Second)
 	log.Println("server stopped")
+}
+
+// sanitizeDSN strips the password from a postgres DSN for safe logging.
+// postgres://user:pass@host/db → postgres://user@host/db
+func sanitizeDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil || u.User == nil {
+		return dsn
+	}
+	if _, hasPW := u.User.Password(); hasPW {
+		u.User = url.User(u.User.Username())
+	}
+	return u.String()
 }
