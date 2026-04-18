@@ -1,5 +1,3 @@
-//go:build sqlite_legacy
-
 package storage
 
 import (
@@ -18,15 +16,15 @@ func (s *Storage) SaveGeoStats(ctx context.Context, countryCode, countryName, th
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO threat_geo_stats (country_code, country_name, threat_type, match_count, unique_users, last_match)
-		VALUES (?, ?, ?, 1, 1, CURRENT_TIMESTAMP)
-		ON CONFLICT(country_code, threat_type) DO UPDATE SET
-			match_count = match_count + 1,
+		VALUES ($1, $2, $3, 1, 1, NOW())
+		ON CONFLICT (country_code, threat_type) DO UPDATE SET
+			match_count = threat_geo_stats.match_count + 1,
 			unique_users = (
-				SELECT COUNT(DISTINCT user_email) FROM threat_matches 
-				WHERE threat_type = ? 
-				AND source_ip IN (SELECT DISTINCT source_ip FROM user_locations WHERE country_code = ?)
+				SELECT COUNT(DISTINCT user_email) FROM threat_matches
+				WHERE threat_type = $4
+				AND source_ip IN (SELECT DISTINCT source_ip FROM user_locations WHERE country_code = $5)
 			),
-			last_match = CURRENT_TIMESTAMP
+			last_match = NOW()
 	`, countryCode, countryName, threatType, threatType, countryCode)
 
 	return err
@@ -38,16 +36,15 @@ func (s *Storage) SaveUserLocation(ctx context.Context, userEmail, countryCode, 
 		return nil
 	}
 
-	// Use CASE to only update coordinates if new ones are valid (non-zero)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO user_locations (user_email, country_code, country_name, city, latitude, longitude, last_seen, request_count)
-		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1)
-		ON CONFLICT(user_email, country_code) DO UPDATE SET
-			city = CASE WHEN ? != '' THEN ? ELSE city END,
-			latitude = CASE WHEN ? != 0 THEN ? ELSE latitude END,
-			longitude = CASE WHEN ? != 0 THEN ? ELSE longitude END,
-			last_seen = CURRENT_TIMESTAMP,
-			request_count = request_count + 1
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), 1)
+		ON CONFLICT (user_email, country_code) DO UPDATE SET
+			city = CASE WHEN $7 != '' THEN $8 ELSE user_locations.city END,
+			latitude = CASE WHEN $9 != 0 THEN $10 ELSE user_locations.latitude END,
+			longitude = CASE WHEN $11 != 0 THEN $12 ELSE user_locations.longitude END,
+			last_seen = NOW(),
+			request_count = user_locations.request_count + 1
 	`, userEmail, countryCode, countryName, city, lat, lon, city, city, lat, lat, lon, lon)
 
 	return err
@@ -68,7 +65,7 @@ func (s *Storage) GetGeoStats(ctx context.Context, limit int) ([]*threatintel.Ge
 		SELECT country_code, country_name, threat_type, match_count, unique_users, last_match
 		FROM threat_geo_stats
 		ORDER BY match_count DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -112,13 +109,13 @@ func (s *Storage) GetGeoSummary(ctx context.Context) (*threatintel.GeoSummary, e
 
 	// Get top countries (aggregated across all threat types)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT 
-			country_code, 
+		SELECT
+			country_code,
 			country_name,
 			SUM(match_count) as total_matches,
 			SUM(unique_users) as unique_users,
-			(SELECT threat_type FROM threat_geo_stats g2 
-			 WHERE g2.country_code = threat_geo_stats.country_code 
+			(SELECT threat_type FROM threat_geo_stats g2
+			 WHERE g2.country_code = threat_geo_stats.country_code
 			 ORDER BY match_count DESC LIMIT 1) as top_threat
 		FROM threat_geo_stats
 		GROUP BY country_code, country_name
@@ -179,16 +176,16 @@ func (s *Storage) GetUserLocations(ctx context.Context, userEmail string, limit 
 		rows, err = s.db.QueryContext(ctx, `
 			SELECT user_email, country_code, country_name, city, last_seen, request_count
 			FROM user_locations
-			WHERE user_email = ?
+			WHERE user_email = $1
 			ORDER BY last_seen DESC
-			LIMIT ?
+			LIMIT $2
 		`, userEmail, limit)
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
 			SELECT user_email, country_code, country_name, city, last_seen, request_count
 			FROM user_locations
 			ORDER BY last_seen DESC
-			LIMIT ?
+			LIMIT $1
 		`, limit)
 	}
 
@@ -220,16 +217,16 @@ func (s *Storage) GetConnectionGeoStats(ctx context.Context, limit int) ([]*thre
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT 
+		SELECT
 			country_code,
 			country_name,
 			SUM(request_count) as total_connections,
 			COUNT(DISTINCT user_email) as unique_users
 		FROM user_locations
 		WHERE country_code != ''
-		GROUP BY country_code
+		GROUP BY country_code, country_name
 		ORDER BY total_connections DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -266,7 +263,7 @@ func (s *Storage) GetCityGeoStats(ctx context.Context, limit int) ([]*CityGeoSta
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT 
+		SELECT
 			COALESCE(city, country_name) as city,
 			country_code,
 			country_name,
@@ -276,9 +273,9 @@ func (s *Storage) GetCityGeoStats(ctx context.Context, limit int) ([]*CityGeoSta
 			COUNT(DISTINCT user_email) as unique_users
 		FROM user_locations
 		WHERE country_code != '' AND latitude IS NOT NULL AND longitude IS NOT NULL
-		GROUP BY country_code, city
+		GROUP BY country_code, city, country_name, latitude, longitude
 		ORDER BY total_connections DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -312,7 +309,7 @@ func (s *Storage) GetLocationsWithoutCoords(ctx context.Context, limit int) ([]*
 		FROM user_locations
 		WHERE (latitude IS NULL OR latitude = 0) AND (longitude IS NULL OR longitude = 0)
 		ORDER BY request_count DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -334,11 +331,11 @@ func (s *Storage) GetLocationsWithoutCoords(ctx context.Context, limit int) ([]*
 // UpdateLocationCoords updates coordinates for a specific user location
 func (s *Storage) UpdateLocationCoords(ctx context.Context, userEmail, countryCode, city string, lat, lon float64) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE user_locations 
-		SET city = CASE WHEN ? != '' THEN ? ELSE city END,
-			latitude = ?,
-			longitude = ?
-		WHERE user_email = ? AND country_code = ?
+		UPDATE user_locations
+		SET city = CASE WHEN $1 != '' THEN $2 ELSE city END,
+			latitude = $3,
+			longitude = $4
+		WHERE user_email = $5 AND country_code = $6
 	`, city, city, lat, lon, userEmail, countryCode)
 	return err
 }
