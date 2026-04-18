@@ -1,5 +1,3 @@
-//go:build sqlite_legacy
-
 package storage
 
 import (
@@ -14,11 +12,11 @@ import (
 func (s *Storage) RecordIPUserMapping(ctx context.Context, ip, userEmail, nodeID string) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO ip_user_map (ip_address, user_email, node_id, first_seen, last_seen, request_count)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
-		ON CONFLICT(ip_address, user_email) DO UPDATE SET
-			last_seen = CURRENT_TIMESTAMP,
-			request_count = request_count + 1,
-			node_id = COALESCE(excluded.node_id, node_id)
+		VALUES ($1, $2, $3, NOW(), NOW(), 1)
+		ON CONFLICT (ip_address, user_email) DO UPDATE SET
+			last_seen = NOW(),
+			request_count = ip_user_map.request_count + 1,
+			node_id = COALESCE(EXCLUDED.node_id, ip_user_map.node_id)
 	`, ip, userEmail, nodeID)
 	return err
 }
@@ -27,11 +25,11 @@ func (s *Storage) RecordIPUserMapping(ctx context.Context, ip, userEmail, nodeID
 func (s *Storage) RecordHWIDUserMapping(ctx context.Context, hwid, userEmail, platform string) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO hwid_user_map (hwid, user_email, platform, first_seen, last_seen, request_count)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
-		ON CONFLICT(hwid, user_email) DO UPDATE SET
-			last_seen = CURRENT_TIMESTAMP,
-			request_count = request_count + 1,
-			platform = COALESCE(excluded.platform, platform)
+		VALUES ($1, $2, $3, NOW(), NOW(), 1)
+		ON CONFLICT (hwid, user_email) DO UPDATE SET
+			last_seen = NOW(),
+			request_count = hwid_user_map.request_count + 1,
+			platform = COALESCE(EXCLUDED.platform, hwid_user_map.platform)
 	`, hwid, userEmail, platform)
 	return err
 }
@@ -40,11 +38,11 @@ func (s *Storage) RecordHWIDUserMapping(ctx context.Context, hwid, userEmail, pl
 func (s *Storage) RecordUserFingerprint(ctx context.Context, userEmail, ip, hwid, userAgent, nodeID string) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO user_fingerprints (user_email, ip_address, hwid, user_agent, node_id, first_seen, last_seen, session_count)
-		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
-		ON CONFLICT(user_email, ip_address, hwid) DO UPDATE SET
-			last_seen = CURRENT_TIMESTAMP,
-			session_count = session_count + 1,
-			user_agent = COALESCE(excluded.user_agent, user_agent)
+		VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), 1)
+		ON CONFLICT (user_email, ip_address, hwid) DO UPDATE SET
+			last_seen = NOW(),
+			session_count = user_fingerprints.session_count + 1,
+			user_agent = COALESCE(EXCLUDED.user_agent, user_fingerprints.user_agent)
 	`, userEmail, ip, hwid, userAgent, nodeID)
 	return err
 }
@@ -58,7 +56,7 @@ func (s *Storage) GetUsersForIP(ctx context.Context, ip string) ([]IPUserMapping
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT ip_address, user_email, node_id, first_seen, last_seen, request_count
-		FROM ip_user_map WHERE ip_address = ?
+		FROM ip_user_map WHERE ip_address = $1
 		ORDER BY last_seen DESC
 	`, ip)
 	if err != nil {
@@ -70,9 +68,12 @@ func (s *Storage) GetUsersForIP(ctx context.Context, ip string) ([]IPUserMapping
 	for rows.Next() {
 		var m IPUserMapping
 		var nodeID sql.NullString
-		if err := rows.Scan(&m.IPAddress, &m.UserEmail, &nodeID, &m.FirstSeen, &m.LastSeen, &m.RequestCount); err != nil {
+		var firstSeen, lastSeen time.Time
+		if err := rows.Scan(&m.IPAddress, &m.UserEmail, &nodeID, &firstSeen, &lastSeen, &m.RequestCount); err != nil {
 			continue
 		}
+		m.FirstSeen = firstSeen
+		m.LastSeen = lastSeen
 		if nodeID.Valid {
 			m.NodeID = nodeID.String
 		}
@@ -92,7 +93,7 @@ func (s *Storage) GetUsersForHWID(ctx context.Context, hwid string) ([]HWIDUserM
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT hwid, user_email, platform, first_seen, last_seen, request_count
-		FROM hwid_user_map WHERE hwid = ?
+		FROM hwid_user_map WHERE hwid = $1
 		ORDER BY last_seen DESC
 	`, hwid)
 	if err != nil {
@@ -104,9 +105,12 @@ func (s *Storage) GetUsersForHWID(ctx context.Context, hwid string) ([]HWIDUserM
 	for rows.Next() {
 		var m HWIDUserMapping
 		var platform sql.NullString
-		if err := rows.Scan(&m.HWID, &m.UserEmail, &platform, &m.FirstSeen, &m.LastSeen, &m.RequestCount); err != nil {
+		var firstSeen, lastSeen time.Time
+		if err := rows.Scan(&m.HWID, &m.UserEmail, &platform, &firstSeen, &lastSeen, &m.RequestCount); err != nil {
 			continue
 		}
+		m.FirstSeen = firstSeen
+		m.LastSeen = lastSeen
 		if platform.Valid {
 			m.Platform = platform.String
 		}
@@ -123,7 +127,7 @@ func (s *Storage) GetSharedIPUsers(ctx context.Context, userEmail string) ([]Sha
 		SELECT DISTINCT m2.user_email, m1.ip_address, m2.last_seen, m2.request_count
 		FROM ip_user_map m1
 		JOIN ip_user_map m2 ON m1.ip_address = m2.ip_address
-		WHERE m1.user_email = ? AND m2.user_email != ?
+		WHERE m1.user_email = $1 AND m2.user_email != $2
 		ORDER BY m2.last_seen DESC
 	`, userEmail, userEmail)
 	if err != nil {
@@ -134,9 +138,11 @@ func (s *Storage) GetSharedIPUsers(ctx context.Context, userEmail string) ([]Sha
 	var result []SharedUserInfo
 	for rows.Next() {
 		var u SharedUserInfo
-		if err := rows.Scan(&u.UserEmail, &u.SharedValue, &u.LastSeen, &u.RequestCount); err != nil {
+		var lastSeen time.Time
+		if err := rows.Scan(&u.UserEmail, &u.SharedValue, &lastSeen, &u.RequestCount); err != nil {
 			continue
 		}
+		u.LastSeen = lastSeen
 		u.Reason = "shared_ip"
 		result = append(result, u)
 	}
@@ -149,7 +155,7 @@ func (s *Storage) GetSharedHWIDUsers(ctx context.Context, userEmail string) ([]S
 		SELECT DISTINCT m2.user_email, m1.hwid, m2.last_seen, m2.request_count
 		FROM hwid_user_map m1
 		JOIN hwid_user_map m2 ON m1.hwid = m2.hwid
-		WHERE m1.user_email = ? AND m2.user_email != ?
+		WHERE m1.user_email = $1 AND m2.user_email != $2
 		ORDER BY m2.last_seen DESC
 	`, userEmail, userEmail)
 	if err != nil {
@@ -160,9 +166,11 @@ func (s *Storage) GetSharedHWIDUsers(ctx context.Context, userEmail string) ([]S
 	var result []SharedUserInfo
 	for rows.Next() {
 		var u SharedUserInfo
-		if err := rows.Scan(&u.UserEmail, &u.SharedValue, &u.LastSeen, &u.RequestCount); err != nil {
+		var lastSeen time.Time
+		if err := rows.Scan(&u.UserEmail, &u.SharedValue, &lastSeen, &u.RequestCount); err != nil {
 			continue
 		}
+		u.LastSeen = lastSeen
 		u.Reason = "shared_hwid"
 		result = append(result, u)
 	}
@@ -173,7 +181,7 @@ func (s *Storage) GetSharedHWIDUsers(ctx context.Context, userEmail string) ([]S
 func (s *Storage) GetUserFingerprints(ctx context.Context, userEmail string) ([]UserFingerprint, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, user_email, ip_address, hwid, user_agent, node_id, first_seen, last_seen, session_count
-		FROM user_fingerprints WHERE user_email = ?
+		FROM user_fingerprints WHERE user_email = $1
 		ORDER BY last_seen DESC
 	`, userEmail)
 	if err != nil {
@@ -185,9 +193,12 @@ func (s *Storage) GetUserFingerprints(ctx context.Context, userEmail string) ([]
 	for rows.Next() {
 		var f UserFingerprint
 		var hwid, userAgent, nodeID sql.NullString
-		if err := rows.Scan(&f.ID, &f.UserEmail, &f.IPAddress, &hwid, &userAgent, &nodeID, &f.FirstSeen, &f.LastSeen, &f.SessionCount); err != nil {
+		var firstSeen, lastSeen time.Time
+		if err := rows.Scan(&f.ID, &f.UserEmail, &f.IPAddress, &hwid, &userAgent, &nodeID, &firstSeen, &lastSeen, &f.SessionCount); err != nil {
 			continue
 		}
+		f.FirstSeen = firstSeen
+		f.LastSeen = lastSeen
 		if hwid.Valid {
 			f.HWID = hwid.String
 		}
@@ -219,35 +230,35 @@ func (s *Storage) UpsertUserAIProfile(ctx context.Context, profile *UserAIProfil
 			risk_score, risk_factors,
 			remna_uuid, remna_status, remna_traffic_used, remna_traffic_limit, remna_expire_at, remna_hwid_devices, remna_hwid_limit,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-		ON CONFLICT(user_email) DO UPDATE SET
-			unique_ips = excluded.unique_ips,
-			unique_hwids = excluded.unique_hwids,
-			unique_fingerprints = excluded.unique_fingerprints,
-			unique_countries = excluded.unique_countries,
-			unique_nodes = excluded.unique_nodes,
-			total_requests = excluded.total_requests,
-			total_sessions = excluded.total_sessions,
-			avg_session_duration_sec = excluded.avg_session_duration_sec,
-			total_threat_matches = excluded.total_threat_matches,
-			threat_categories = excluded.threat_categories,
-			shared_ip_users = excluded.shared_ip_users,
-			shared_hwid_users = excluded.shared_hwid_users,
-			cluster_ids = excluded.cluster_ids,
-			first_seen = COALESCE(user_ai_profile.first_seen, excluded.first_seen),
-			last_seen = excluded.last_seen,
-			active_days = excluded.active_days,
-			typical_hours = excluded.typical_hours,
-			risk_score = excluded.risk_score,
-			risk_factors = excluded.risk_factors,
-			remna_uuid = excluded.remna_uuid,
-			remna_status = excluded.remna_status,
-			remna_traffic_used = excluded.remna_traffic_used,
-			remna_traffic_limit = excluded.remna_traffic_limit,
-			remna_expire_at = excluded.remna_expire_at,
-			remna_hwid_devices = excluded.remna_hwid_devices,
-			remna_hwid_limit = excluded.remna_hwid_limit,
-			updated_at = CURRENT_TIMESTAMP
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, NOW())
+		ON CONFLICT (user_email) DO UPDATE SET
+			unique_ips = EXCLUDED.unique_ips,
+			unique_hwids = EXCLUDED.unique_hwids,
+			unique_fingerprints = EXCLUDED.unique_fingerprints,
+			unique_countries = EXCLUDED.unique_countries,
+			unique_nodes = EXCLUDED.unique_nodes,
+			total_requests = EXCLUDED.total_requests,
+			total_sessions = EXCLUDED.total_sessions,
+			avg_session_duration_sec = EXCLUDED.avg_session_duration_sec,
+			total_threat_matches = EXCLUDED.total_threat_matches,
+			threat_categories = EXCLUDED.threat_categories,
+			shared_ip_users = EXCLUDED.shared_ip_users,
+			shared_hwid_users = EXCLUDED.shared_hwid_users,
+			cluster_ids = EXCLUDED.cluster_ids,
+			first_seen = COALESCE(user_ai_profile.first_seen, EXCLUDED.first_seen),
+			last_seen = EXCLUDED.last_seen,
+			active_days = EXCLUDED.active_days,
+			typical_hours = EXCLUDED.typical_hours,
+			risk_score = EXCLUDED.risk_score,
+			risk_factors = EXCLUDED.risk_factors,
+			remna_uuid = EXCLUDED.remna_uuid,
+			remna_status = EXCLUDED.remna_status,
+			remna_traffic_used = EXCLUDED.remna_traffic_used,
+			remna_traffic_limit = EXCLUDED.remna_traffic_limit,
+			remna_expire_at = EXCLUDED.remna_expire_at,
+			remna_hwid_devices = EXCLUDED.remna_hwid_devices,
+			remna_hwid_limit = EXCLUDED.remna_hwid_limit,
+			updated_at = NOW()
 	`, profile.UserEmail, profile.UniqueIPs, profile.UniqueHWIDs, profile.UniqueFingerprints, profile.UniqueCountries, profile.UniqueNodes,
 		profile.TotalRequests, profile.TotalSessions, profile.AvgSessionDurationSec,
 		profile.TotalThreatMatches, string(threatCategories),
@@ -269,7 +280,7 @@ func (s *Storage) GetUserAIProfile(ctx context.Context, userEmail string) (*User
 			risk_score, risk_factors,
 			remna_uuid, remna_status, remna_traffic_used, remna_traffic_limit, remna_expire_at, remna_hwid_devices, remna_hwid_limit,
 			updated_at
-		FROM user_ai_profile WHERE user_email = ?
+		FROM user_ai_profile WHERE user_email = $1
 	`, userEmail)
 
 	var p UserAIProfile
@@ -346,13 +357,13 @@ func (s *Storage) GetAllUserAIProfiles(ctx context.Context, limit int, minRiskSc
 			p.updated_at
 		FROM user_ai_profile p
 		LEFT JOIN remna_users r ON (
-			p.user_email = r.username 
+			p.user_email = r.username
 			OR CAST(r.id AS TEXT) = p.user_email
 			OR p.remna_uuid = r.uuid
 		)
-		WHERE p.risk_score >= ?
+		WHERE p.risk_score >= $1
 		ORDER BY p.risk_score DESC, p.total_threat_matches DESC
-		LIMIT ?
+		LIMIT $2
 	`, minRiskScore, limit)
 	if err != nil {
 		return nil, err
@@ -436,9 +447,9 @@ func (s *Storage) GetCorrelationStats(ctx context.Context) (*CorrelationStats, e
 			SELECT ip_address, COUNT(DISTINCT user_email) as user_count
 			FROM ip_user_map
 			GROUP BY ip_address
-			HAVING user_count > 1
+			HAVING COUNT(DISTINCT user_email) > 1
 		)
-		SELECT 
+		SELECT
 			(SELECT COUNT(*) FROM shared_ips) as shared_ip_count,
 			(SELECT COUNT(DISTINCT m.user_email) FROM ip_user_map m INNER JOIN shared_ips s ON m.ip_address = s.ip_address)
 	`).Scan(&stats.SharedIPs, &stats.UsersWithSharedIP)
@@ -449,9 +460,9 @@ func (s *Storage) GetCorrelationStats(ctx context.Context) (*CorrelationStats, e
 			SELECT hwid, COUNT(DISTINCT user_email) as user_count
 			FROM hwid_user_map
 			GROUP BY hwid
-			HAVING user_count > 1
+			HAVING COUNT(DISTINCT user_email) > 1
 		)
-		SELECT 
+		SELECT
 			(SELECT COUNT(*) FROM shared_hwids) as shared_hwid_count,
 			(SELECT COUNT(DISTINCT m.user_email) FROM hwid_user_map m INNER JOIN shared_hwids s ON m.hwid = s.hwid)
 	`).Scan(&stats.SharedHWIDs, &stats.UsersWithSharedHWID)
@@ -478,9 +489,9 @@ func (s *Storage) GetTopSharedIPs(ctx context.Context, limit int) ([]SharedIPInf
 		SELECT ip_address, COUNT(DISTINCT user_email) as user_count, MAX(last_seen) as last_seen, SUM(request_count) as total_requests
 		FROM ip_user_map
 		GROUP BY ip_address
-		HAVING user_count > 1
+		HAVING COUNT(DISTINCT user_email) > 1
 		ORDER BY user_count DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -490,9 +501,11 @@ func (s *Storage) GetTopSharedIPs(ctx context.Context, limit int) ([]SharedIPInf
 	var result []SharedIPInfo
 	for rows.Next() {
 		var info SharedIPInfo
-		if err := rows.Scan(&info.IPAddress, &info.UserCount, &info.LastSeen, &info.TotalRequests); err != nil {
+		var lastSeen time.Time
+		if err := rows.Scan(&info.IPAddress, &info.UserCount, &lastSeen, &info.TotalRequests); err != nil {
 			continue
 		}
+		info.LastSeen = lastSeen
 		result = append(result, info)
 	}
 
@@ -507,13 +520,15 @@ func (s *Storage) GetTopSharedHWIDs(ctx context.Context, limit int) ([]SharedHWI
 		return cached.([]SharedHWIDInfo), nil
 	}
 
+	// platform is picked up via MIN to satisfy Postgres GROUP BY strictness;
+	// semantically a single HWID belongs to one platform in practice.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT hwid, platform, COUNT(DISTINCT user_email) as user_count, MAX(last_seen) as last_seen, SUM(request_count) as total_requests
+		SELECT hwid, MIN(platform), COUNT(DISTINCT user_email) as user_count, MAX(last_seen) as last_seen, SUM(request_count) as total_requests
 		FROM hwid_user_map
 		GROUP BY hwid
-		HAVING user_count > 1
+		HAVING COUNT(DISTINCT user_email) > 1
 		ORDER BY user_count DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -524,9 +539,11 @@ func (s *Storage) GetTopSharedHWIDs(ctx context.Context, limit int) ([]SharedHWI
 	for rows.Next() {
 		var info SharedHWIDInfo
 		var platform sql.NullString
-		if err := rows.Scan(&info.HWID, &platform, &info.UserCount, &info.LastSeen, &info.TotalRequests); err != nil {
+		var lastSeen time.Time
+		if err := rows.Scan(&info.HWID, &platform, &info.UserCount, &lastSeen, &info.TotalRequests); err != nil {
 			continue
 		}
+		info.LastSeen = lastSeen
 		if platform.Valid {
 			info.Platform = platform.String
 		}
