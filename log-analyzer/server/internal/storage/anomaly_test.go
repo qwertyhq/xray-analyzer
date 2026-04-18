@@ -1,27 +1,13 @@
-//go:build sqlite_legacy
-
 package storage
 
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
-
-func newTestStorage(t *testing.T) *Storage {
-	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	st, err := New(dbPath)
-	if err != nil {
-		t.Fatalf("storage.New: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
-	return st
-}
 
 // TestDetectPortScan_Slash16Sweep: the 2026-04-15 abuse signature — 25
 // unique 147.251.x.y:8317 destinations from one user. All IPs in one /16,
@@ -85,7 +71,7 @@ func TestDetectPortScan_WhatsAppOn443NotFlagged(t *testing.T) {
 }
 
 // TestDetectPortScan_DomainTrafficNotFlagged: normal domain browsing has
-// no IPv4 form, the GLOB filter must drop it.
+// no IPv4 form, the regex filter must drop it.
 func TestDetectPortScan_DomainTrafficNotFlagged(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
@@ -327,5 +313,120 @@ func TestGetAttackAnomalies_SkipsResolved(t *testing.T) {
 	gotAll, _ := st.GetAttackAnomalies(ctx, []string{"port_scan"}, time.Hour, 50, true)
 	if len(gotAll) != 2 {
 		t.Errorf("includeResolved=true should return both, got %d", len(gotAll))
+	}
+}
+
+// TestSaveAndGetAnomaly_RoundTrip: SaveAnomaly then GetAnomalies returns
+// the persisted record with correct fields.
+func TestSaveAndGetAnomaly_RoundTrip(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	a := &threatintel.Anomaly{
+		ID:          "test-round-trip-1",
+		Type:        threatintel.AnomalyPortScan,
+		Severity:    threatintel.SeverityHigh,
+		UserEmail:   "test@example.com",
+		Description: "round trip test",
+		Details:     map[string]any{"port": "8317", "unique_ips": float64(25)},
+		DetectedAt:  now,
+		Resolved:    false,
+	}
+
+	if err := st.SaveAnomaly(ctx, a); err != nil {
+		t.Fatalf("SaveAnomaly: %v", err)
+	}
+
+	list, err := st.GetAnomalies(ctx, 10, false)
+	if err != nil {
+		t.Fatalf("GetAnomalies: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 anomaly, got %d", len(list))
+	}
+	got := list[0]
+	if got.ID != a.ID {
+		t.Errorf("ID: got %q want %q", got.ID, a.ID)
+	}
+	if got.UserEmail != a.UserEmail {
+		t.Errorf("UserEmail: got %q want %q", got.UserEmail, a.UserEmail)
+	}
+	if got.Resolved {
+		t.Errorf("expected Resolved=false")
+	}
+}
+
+// TestResolveAnomaly: ResolveAnomaly sets resolved=1 so GetAnomalies hides it.
+func TestResolveAnomaly(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{
+		ID: "resolve-me", Type: threatintel.AnomalyAbusePortFlood,
+		Severity: threatintel.SeverityHigh, UserEmail: "u",
+		Description: "will be resolved", DetectedAt: now,
+	})
+
+	if err := st.ResolveAnomaly(ctx, "resolve-me"); err != nil {
+		t.Fatalf("ResolveAnomaly: %v", err)
+	}
+
+	// GetAnomalies with includeResolved=false must hide it
+	list, _ := st.GetAnomalies(ctx, 10, false)
+	for _, a := range list {
+		if a.ID == "resolve-me" {
+			t.Error("resolved anomaly still appears in unresolved list")
+		}
+	}
+
+	// GetAnomalies with includeResolved=true must show it
+	all, _ := st.GetAnomalies(ctx, 10, true)
+	found := false
+	for _, a := range all {
+		if a.ID == "resolve-me" {
+			found = true
+			if !a.Resolved {
+				t.Error("anomaly.Resolved should be true")
+			}
+		}
+	}
+	if !found {
+		t.Error("resolved anomaly not visible with includeResolved=true")
+	}
+}
+
+// TestGetAnomalySummary_CountsByType: summary aggregates unresolved counts.
+func TestGetAnomalySummary_CountsByType(t *testing.T) {
+	st := newTestStorage(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	for i := 0; i < 3; i++ {
+		_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{
+			ID: fmt.Sprintf("ps-%d", i), Type: threatintel.AnomalyPortScan,
+			Severity: threatintel.SeverityHigh, UserEmail: "u1",
+			Description: "x", DetectedAt: now,
+		})
+	}
+	_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{
+		ID: "af-1", Type: threatintel.AnomalyAbusePortFlood,
+		Severity: threatintel.SeverityHigh, UserEmail: "u2",
+		Description: "x", DetectedAt: now,
+	})
+
+	sum, err := st.GetAnomalySummary(ctx)
+	if err != nil {
+		t.Fatalf("GetAnomalySummary: %v", err)
+	}
+	if sum.TotalAnomalies != 4 {
+		t.Errorf("TotalAnomalies: got %d want 4", sum.TotalAnomalies)
+	}
+	if sum.ByType[string(threatintel.AnomalyPortScan)] != 3 {
+		t.Errorf("ByType[port_scan]: got %d want 3", sum.ByType[string(threatintel.AnomalyPortScan)])
+	}
+	if sum.AffectedUsers != 2 {
+		t.Errorf("AffectedUsers: got %d want 2", sum.AffectedUsers)
 	}
 }
