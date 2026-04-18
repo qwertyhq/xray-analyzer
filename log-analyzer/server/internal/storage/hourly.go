@@ -1,5 +1,3 @@
-//go:build sqlite_legacy
-
 package storage
 
 import (
@@ -13,15 +11,15 @@ import (
 
 // UpdateHourlyStats updates hourly statistics for charts
 func (s *Storage) UpdateHourlyStats(ctx context.Context, nodeID string, requests int, blacklistHits int, uniqueUsers int) error {
-	now := time.Now().UTC().Truncate(time.Hour).Format(time.RFC3339)
+	now := time.Now().UTC().Truncate(time.Hour)
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO hourly_stats (node_id, hour, total_requests, blacklist_hits, unique_users)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(node_id, hour) DO UPDATE SET
-			total_requests = total_requests + excluded.total_requests,
-			blacklist_hits = blacklist_hits + excluded.blacklist_hits,
-			unique_users = MAX(unique_users, excluded.unique_users)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (node_id, hour) DO UPDATE SET
+			total_requests = hourly_stats.total_requests + EXCLUDED.total_requests,
+			blacklist_hits = hourly_stats.blacklist_hits + EXCLUDED.blacklist_hits,
+			unique_users = GREATEST(hourly_stats.unique_users, EXCLUDED.unique_users)
 	`, nodeID, now, requests, blacklistHits, uniqueUsers)
 	return err
 }
@@ -37,10 +35,10 @@ func (s *Storage) GetHourlyStats(ctx context.Context, hours int) ([]models.Hourl
 	since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour).Truncate(time.Hour)
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT COALESCE(hour, '') as hour, SUM(total_requests) as total_requests, 
-			   SUM(blacklist_hits) as blacklist_hits, SUM(unique_users) as unique_users
+		SELECT hour, SUM(total_requests) AS total_requests,
+			   SUM(blacklist_hits) AS blacklist_hits, SUM(unique_users) AS unique_users
 		FROM hourly_stats
-		WHERE hour >= ?
+		WHERE hour >= $1
 		GROUP BY hour
 		ORDER BY hour ASC
 	`, since)
@@ -51,13 +49,14 @@ func (s *Storage) GetHourlyStats(ctx context.Context, hours int) ([]models.Hourl
 
 	stats := []models.HourlyStats{}
 	for rows.Next() {
-		var s models.HourlyStats
-		var hourStr string
-		if err := rows.Scan(&hourStr, &s.TotalRequests, &s.BlacklistHits, &s.UniqueUsers); err != nil {
+		var stat models.HourlyStats
+		if err := rows.Scan(&stat.Hour, &stat.TotalRequests, &stat.BlacklistHits, &stat.UniqueUsers); err != nil {
 			return nil, err
 		}
-		s.Hour = parseDateTime(hourStr)
-		stats = append(stats, s)
+		stats = append(stats, stat)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	s.cache.Set(cacheKey, stats, CacheTTLShort)
@@ -74,10 +73,10 @@ func (s *Storage) GetHourlyStatsRange(ctx context.Context, from, to time.Time) (
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT COALESCE(hour, '') as hour, SUM(total_requests) as total_requests, 
-			   SUM(blacklist_hits) as blacklist_hits, SUM(unique_users) as unique_users
+		SELECT hour, SUM(total_requests) AS total_requests,
+			   SUM(blacklist_hits) AS blacklist_hits, SUM(unique_users) AS unique_users
 		FROM hourly_stats
-		WHERE hour >= ? AND hour <= ?
+		WHERE hour >= $1 AND hour <= $2
 		GROUP BY hour
 		ORDER BY hour ASC
 	`, from.Truncate(time.Hour), to.Truncate(time.Hour))
@@ -88,13 +87,14 @@ func (s *Storage) GetHourlyStatsRange(ctx context.Context, from, to time.Time) (
 
 	stats := []models.HourlyStats{}
 	for rows.Next() {
-		var s models.HourlyStats
-		var hourStr string
-		if err := rows.Scan(&hourStr, &s.TotalRequests, &s.BlacklistHits, &s.UniqueUsers); err != nil {
+		var stat models.HourlyStats
+		if err := rows.Scan(&stat.Hour, &stat.TotalRequests, &stat.BlacklistHits, &stat.UniqueUsers); err != nil {
 			return nil, err
 		}
-		s.Hour = parseDateTime(hourStr)
-		stats = append(stats, s)
+		stats = append(stats, stat)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return stats, nil
 }
@@ -102,10 +102,10 @@ func (s *Storage) GetHourlyStatsRange(ctx context.Context, from, to time.Time) (
 // CleanupOldData removes data older than retentionDays
 // This prevents the database from growing indefinitely
 func (s *Storage) CleanupOldData(ctx context.Context, retentionDays int) error {
-	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays).Format(time.RFC3339)
+	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
 
 	// Delete old blacklist matches
-	result, err := s.db.ExecContext(ctx, `DELETE FROM blacklist_matches WHERE timestamp < ?`, cutoff)
+	result, err := s.db.ExecContext(ctx, `DELETE FROM blacklist_matches WHERE timestamp < $1`, cutoff)
 	if err != nil {
 		return fmt.Errorf("cleanup blacklist_matches: %w", err)
 	}
@@ -114,7 +114,7 @@ func (s *Storage) CleanupOldData(ctx context.Context, retentionDays int) error {
 	}
 
 	// Delete old alerts
-	result, err = s.db.ExecContext(ctx, `DELETE FROM alerts WHERE created_at < ?`, cutoff)
+	result, err = s.db.ExecContext(ctx, `DELETE FROM alerts WHERE created_at < $1`, cutoff)
 	if err != nil {
 		return fmt.Errorf("cleanup alerts: %w", err)
 	}
@@ -123,7 +123,7 @@ func (s *Storage) CleanupOldData(ctx context.Context, retentionDays int) error {
 	}
 
 	// Delete old hourly stats
-	result, err = s.db.ExecContext(ctx, `DELETE FROM hourly_stats WHERE hour < ?`, cutoff)
+	result, err = s.db.ExecContext(ctx, `DELETE FROM hourly_stats WHERE hour < $1`, cutoff)
 	if err != nil {
 		return fmt.Errorf("cleanup hourly_stats: %w", err)
 	}
@@ -132,7 +132,7 @@ func (s *Storage) CleanupOldData(ctx context.Context, retentionDays int) error {
 	}
 
 	// Delete user stats for users not seen in retention period
-	result, err = s.db.ExecContext(ctx, `DELETE FROM user_stats WHERE last_seen < ?`, cutoff)
+	result, err = s.db.ExecContext(ctx, `DELETE FROM user_stats WHERE last_seen < $1`, cutoff)
 	if err != nil {
 		return fmt.Errorf("cleanup user_stats: %w", err)
 	}
@@ -141,16 +141,13 @@ func (s *Storage) CleanupOldData(ctx context.Context, retentionDays int) error {
 	}
 
 	// Delete old user destinations
-	result, err = s.db.ExecContext(ctx, `DELETE FROM user_destinations WHERE last_seen < ?`, cutoff)
+	result, err = s.db.ExecContext(ctx, `DELETE FROM user_destinations WHERE last_seen < $1`, cutoff)
 	if err != nil {
 		return fmt.Errorf("cleanup user_destinations: %w", err)
 	}
 	if rows, _ := result.RowsAffected(); rows > 0 {
 		log.Printf("storage: cleaned up %d old user destinations", rows)
 	}
-
-	// Checkpoint WAL to reclaim space
-	s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 
 	return nil
 }

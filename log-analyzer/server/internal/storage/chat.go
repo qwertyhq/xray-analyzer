@@ -1,5 +1,3 @@
-//go:build sqlite_legacy
-
 package storage
 
 import (
@@ -36,7 +34,7 @@ func (s *Storage) CreateChatSession(ctx context.Context, title string) (*ChatSes
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO ai_chat_sessions (id, title, created_at, updated_at, total_tokens)
-		VALUES (?, ?, ?, ?, 0)
+		VALUES ($1, $2, $3, $4, 0)
 	`, id, title, now, now)
 	if err != nil {
 		return nil, err
@@ -57,7 +55,7 @@ func (s *Storage) GetChatSession(ctx context.Context, sessionID string) (*ChatSe
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, title, created_at, updated_at, total_tokens
 		FROM ai_chat_sessions
-		WHERE id = ?
+		WHERE id = $1
 	`, sessionID).Scan(&session.ID, &session.Title, &session.CreatedAt, &session.UpdatedAt, &session.TotalTokens)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -78,7 +76,7 @@ func (s *Storage) GetChatSessions(ctx context.Context, limit int) ([]ChatSession
 		SELECT id, title, created_at, updated_at, total_tokens
 		FROM ai_chat_sessions
 		ORDER BY updated_at DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -99,7 +97,7 @@ func (s *Storage) GetChatSessions(ctx context.Context, limit int) ([]ChatSession
 // UpdateChatSessionTitle updates the title of a chat session
 func (s *Storage) UpdateChatSessionTitle(ctx context.Context, sessionID, title string) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE ai_chat_sessions SET title = ?, updated_at = ? WHERE id = ?
+		UPDATE ai_chat_sessions SET title = $1, updated_at = $2 WHERE id = $3
 	`, title, time.Now(), sessionID)
 	return err
 }
@@ -107,7 +105,7 @@ func (s *Storage) UpdateChatSessionTitle(ctx context.Context, sessionID, title s
 // DeleteChatSession deletes a chat session and all its messages
 func (s *Storage) DeleteChatSession(ctx context.Context, sessionID string) error {
 	// Messages will be deleted via CASCADE
-	_, err := s.db.ExecContext(ctx, `DELETE FROM ai_chat_sessions WHERE id = ?`, sessionID)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM ai_chat_sessions WHERE id = $1`, sessionID)
 	return err
 }
 
@@ -121,24 +119,21 @@ func (s *Storage) ClearAllChatSessions(ctx context.Context) error {
 func (s *Storage) AddChatMessage(ctx context.Context, sessionID, role, content string, tokensUsed int) (*ChatMessage, error) {
 	now := time.Now()
 
-	result, err := s.db.ExecContext(ctx, `
+	var id int64
+	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO ai_chat_messages (session_id, role, content, tokens_used, created_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, sessionID, role, content, tokensUsed, now)
-	if err != nil {
-		return nil, err
-	}
-
-	id, err := result.LastInsertId()
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
+	`, sessionID, role, content, tokensUsed, now).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
 
 	// Update session's updated_at and total_tokens
 	_, err = s.db.ExecContext(ctx, `
-		UPDATE ai_chat_sessions 
-		SET updated_at = ?, total_tokens = total_tokens + ?
-		WHERE id = ?
+		UPDATE ai_chat_sessions
+		SET updated_at = $1, total_tokens = total_tokens + $2
+		WHERE id = $3
 	`, now, tokensUsed, sessionID)
 	if err != nil {
 		return nil, err
@@ -163,9 +158,9 @@ func (s *Storage) GetChatMessages(ctx context.Context, sessionID string, limit i
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, session_id, role, content, tokens_used, created_at
 		FROM ai_chat_messages
-		WHERE session_id = ?
+		WHERE session_id = $1
 		ORDER BY created_at ASC
-		LIMIT ?
+		LIMIT $2
 	`, sessionID, limit)
 	if err != nil {
 		return nil, err
@@ -192,9 +187,9 @@ func (s *Storage) GetRecentChatMessages(ctx context.Context, sessionID string, l
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, session_id, role, content, tokens_used, created_at
 		FROM ai_chat_messages
-		WHERE session_id = ?
+		WHERE session_id = $1
 		ORDER BY created_at DESC
-		LIMIT ?
+		LIMIT $2
 	`, sessionID, limit)
 	if err != nil {
 		return nil, err

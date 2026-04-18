@@ -1,5 +1,3 @@
-//go:build sqlite_legacy
-
 package storage
 
 import (
@@ -15,16 +13,16 @@ func (s *Storage) UpdateNodeStats(ctx context.Context, nodeID string, requests i
 	if nodeID == "" {
 		return fmt.Errorf("empty node_id")
 	}
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO node_stats (node_id, total_requests, blacklist_hits, last_seen, last_batch_time, last_batch_count)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(node_id) DO UPDATE SET
-			total_requests = total_requests + excluded.total_requests,
-			blacklist_hits = blacklist_hits + excluded.blacklist_hits,
-			last_seen = excluded.last_seen,
-			last_batch_time = excluded.last_batch_time,
-			last_batch_count = excluded.last_batch_count
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (node_id) DO UPDATE SET
+			total_requests = node_stats.total_requests + EXCLUDED.total_requests,
+			blacklist_hits = node_stats.blacklist_hits + EXCLUDED.blacklist_hits,
+			last_seen = EXCLUDED.last_seen,
+			last_batch_time = EXCLUDED.last_batch_time,
+			last_batch_count = EXCLUDED.last_batch_count
 	`, nodeID, requests, blacklistHits, now, now, batchCount)
 	return err
 }
@@ -32,9 +30,9 @@ func (s *Storage) UpdateNodeStats(ctx context.Context, nodeID string, requests i
 // UpdateNodeUniqueUsers updates unique users count for a node
 func (s *Storage) UpdateNodeUniqueUsers(ctx context.Context, nodeID string) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE node_stats 
-		SET unique_users = (SELECT COUNT(DISTINCT user_email) FROM user_stats WHERE node_id = ?)
-		WHERE node_id = ?
+		UPDATE node_stats
+		SET unique_users = (SELECT COUNT(DISTINCT user_email) FROM user_stats WHERE node_id = $1)
+		WHERE node_id = $2
 	`, nodeID, nodeID)
 	return err
 }
@@ -50,7 +48,7 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 	// Access-log fallback window: 5 min tolerates WS flaps (30-60s) and
 	// is used when the node has no Remnawave mapping or Remnawave isn't
 	// synced yet.
-	windowAgo := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
+	windowAgo := time.Now().UTC().Add(-5 * time.Minute)
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
@@ -58,15 +56,15 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 			n.total_requests,
 			n.blacklist_hits,
 			n.unique_users,
-			COALESCE(online.cnt, 0) as online_users,
-			COALESCE(n.last_seen, '') as last_seen,
-			COALESCE(n.last_batch_time, '') as last_batch_time,
+			COALESCE(online.cnt, 0) AS online_users,
+			n.last_seen,
+			n.last_batch_time,
 			n.last_batch_count
 		FROM node_stats n
 		LEFT JOIN (
-			SELECT node_id, COUNT(DISTINCT user_email) as cnt
+			SELECT node_id, COUNT(DISTINCT user_email) AS cnt
 			FROM user_stats
-			WHERE last_seen > ?
+			WHERE last_seen > $1
 			GROUP BY node_id
 		) online ON online.node_id = n.node_id
 		ORDER BY n.total_requests DESC
@@ -79,14 +77,21 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 	var nodes []*models.NodeStats
 	for rows.Next() {
 		n := &models.NodeStats{}
-		var lastSeenStr, lastBatchStr string
-		err := rows.Scan(&n.NodeID, &n.TotalRequests, &n.BlacklistHits, &n.UniqueUsers, &n.OnlineUsers, &lastSeenStr, &lastBatchStr, &n.LastBatchCount)
+		var lastSeen, lastBatch *time.Time
+		err := rows.Scan(&n.NodeID, &n.TotalRequests, &n.BlacklistHits, &n.UniqueUsers, &n.OnlineUsers, &lastSeen, &lastBatch, &n.LastBatchCount)
 		if err != nil {
 			return nil, err
 		}
-		n.LastSeen = parseDateTime(lastSeenStr)
-		n.LastBatchTime = parseDateTime(lastBatchStr)
+		if lastSeen != nil {
+			n.LastSeen = *lastSeen
+		}
+		if lastBatch != nil {
+			n.LastBatchTime = *lastBatch
+		}
 		nodes = append(nodes, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	// Enrich with Remnawave's XTLS-level online count. Prefer it over the
@@ -136,23 +141,23 @@ func (s *Storage) DeleteNode(ctx context.Context, nodeID string) error {
 	}
 
 	// Delete from all related tables
-	if _, err := tx.ExecContext(ctx, "DELETE FROM user_stats WHERE node_id = ?", nodeID); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM user_stats WHERE node_id = $1", nodeID); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("delete user_stats: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM blacklist_matches WHERE node_id = ?", nodeID); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM blacklist_matches WHERE node_id = $1", nodeID); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("delete blacklist_matches: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM alerts WHERE node_id = ?", nodeID); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM alerts WHERE node_id = $1", nodeID); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("delete alerts: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM hourly_stats WHERE node_id = ?", nodeID); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM hourly_stats WHERE node_id = $1", nodeID); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("delete hourly_stats: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM node_stats WHERE node_id = ?", nodeID); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM node_stats WHERE node_id = $1", nodeID); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("delete node_stats: %w", err)
 	}
@@ -165,7 +170,7 @@ func (s *Storage) CleanupInactiveNodes(ctx context.Context, olderThan time.Durat
 	cutoff := time.Now().Add(-olderThan)
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT node_id FROM node_stats WHERE last_seen < ?
+		SELECT node_id FROM node_stats WHERE last_seen < $1
 	`, cutoff)
 	if err != nil {
 		return 0, err
