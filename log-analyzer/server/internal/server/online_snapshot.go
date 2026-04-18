@@ -17,7 +17,11 @@ func (s *Server) startOnlineSnapshotJob(ctx context.Context) {
 	const tick = time.Minute
 
 	snap := func() {
-		jobCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		// 30s budget — this job has to compete with ProcessBatch writes for
+		// the SQLite write lock, and 5s was routinely not enough under
+		// bursty load. Missing a minute is still fine, the chart bucket is
+		// hourly.
+		jobCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		total, err := s.storage.TotalRemnaOnline(jobCtx)
 		if err != nil {

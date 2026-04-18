@@ -45,6 +45,10 @@ export default function DashboardPage() {
   const [remnawaveEnabled, setRemnawaveEnabled] = useState<boolean>(true);
   const [remnawaveLastSync, setRemnawaveLastSync] = useState<string | undefined>();
   const [onlineHistory, setOnlineHistory] = useState<Array<{hour: string; online_users: number}>>([]);
+  // HTTP fallback for core stats. WS broadcast skips ticks under SQLite
+  // write contention; falling back to /api/stats (which is Redis-cached)
+  // keeps the Dashboard cards populated even while the WS queue drains.
+  const [statsHTTP, setStatsHTTP] = useState<typeof stats | null>(null);
   
   // Fetch additional dashboard data.
   // All 6 endpoints are independent → Promise.all. Previously they ran
@@ -62,14 +66,18 @@ export default function DashboardPage() {
     };
 
     const fetchDashboardData = async () => {
-      const [geo, cities, offenders, online, remna, alerts] = await Promise.all([
+      const [geo, cities, offenders, online, remna, alerts, coreStats] = await Promise.all([
         safeJson("/api/threatintel/geo-stats?type=connections&limit=50"),
         safeJson("/api/threatintel/geo-stats?type=cities&limit=200"),
         safeJson("/api/users"),
         safeJson("/api/online-history?since=24h"),
         safeJson("/api/remnawave/stats"),
         safeJson("/api/alerts?limit=20"),
+        safeJson("/api/stats"),
       ]);
+      if (coreStats) {
+        setStatsHTTP(coreStats);
+      }
 
       if (geo?.top_countries) {
         setGeoData(
@@ -357,8 +365,20 @@ export default function DashboardPage() {
         </Badge>
       </div>
 
-      {/* Stats Cards */}
-      <StatsCards stats={stats} />
+      {/* Stats Cards — prefer live WS state, but fall back to HTTP so the
+          dashboard keeps showing numbers even if the broadcast is stalled.
+          Each field is picked independently so a partial WS update still
+          shows the freshest value available. */}
+      <StatsCards
+        stats={{
+          total_requests: stats?.total_requests || statsHTTP?.total_requests || 0,
+          total_blacklist: stats?.total_blacklist || statsHTTP?.total_blacklist || 0,
+          nodes_total: stats?.nodes_total || statsHTTP?.nodes_total || 0,
+          nodes_connected: stats?.nodes_connected ?? statsHTTP?.nodes_connected ?? 0,
+          total_unique_users: stats?.total_unique_users || statsHTTP?.total_unique_users || 0,
+          online_users: stats?.online_users || statsHTTP?.online_users || 0,
+        }}
+      />
 
       {/* Row 2: Quick Actions + System Health + Period Comparison + Alerts */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">

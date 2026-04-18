@@ -49,20 +49,27 @@ func New(dbPath string) (*Storage, error) {
 	db.SetMaxIdleConns(8)
 	db.SetConnMaxLifetime(0)
 
-	// Enable WAL mode for better concurrency
+	// WAL mode is mandatory for our workload — one writer (ProcessBatch +
+	// correlation + threat intel + online snapshot) racing many readers.
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		return nil, fmt.Errorf("enable WAL: %w", err)
 	}
 
-	// Set busy timeout to wait instead of failing immediately
-	if _, err := db.Exec("PRAGMA busy_timeout=30000"); err != nil {
+	// 60s busy timeout. 30s was hit regularly on prod — ProcessBatch with a
+	// large batch holds the write lock long enough that a concurrent
+	// correlation/threatintel write times out and emits SQLITE_BUSY.
+	if _, err := db.Exec("PRAGMA busy_timeout=60000"); err != nil {
 		return nil, fmt.Errorf("set busy_timeout: %w", err)
 	}
 
-	// Optimize SQLite performance
+	// Checkpoint the WAL more aggressively so it doesn't grow unbounded
+	// under sustained write pressure (the default 1000-page threshold can
+	// leave the WAL at hundreds of MB, which makes readers slower too).
+	db.Exec("PRAGMA wal_autocheckpoint=500")
 	db.Exec("PRAGMA synchronous=NORMAL")
-	db.Exec("PRAGMA cache_size=10000")
+	db.Exec("PRAGMA cache_size=20000") // doubled — more pages in RAM, fewer disk hits
 	db.Exec("PRAGMA temp_store=MEMORY")
+	db.Exec("PRAGMA mmap_size=268435456") // 256 MB mmap for read-heavy queries
 
 	storage := &Storage{
 		db:    db,
