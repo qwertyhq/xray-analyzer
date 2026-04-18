@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     count       BIGINT DEFAULT 0,
     message     TEXT NOT NULL,
     created_at  TIMESTAMPTZ DEFAULT NOW(),
-    sent        INTEGER DEFAULT 0
+    sent        INTEGER DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS hourly_stats (
@@ -222,7 +222,7 @@ CREATE TABLE IF NOT EXISTS anomalies (
     description TEXT NOT NULL,
     details     TEXT,                      -- JSON encoded
     detected_at TIMESTAMPTZ DEFAULT NOW(),
-    resolved    INTEGER DEFAULT 0
+    resolved    INTEGER DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS user_activity_baseline (
@@ -464,9 +464,9 @@ CREATE TABLE IF NOT EXISTS remna_nodes (
     name             TEXT NOT NULL,
     address          TEXT,
     port             INTEGER,
-    is_connected     INTEGER DEFAULT 0,
-    is_disabled      INTEGER DEFAULT 0,
-    is_traffic_track INTEGER DEFAULT 0,
+    is_connected     INTEGER DEFAULT 0 NOT NULL,
+    is_disabled      INTEGER DEFAULT 0 NOT NULL,
+    is_traffic_track INTEGER DEFAULT 0 NOT NULL,
     traffic_total    BIGINT DEFAULT 0,
     traffic_used     BIGINT DEFAULT 0,
     users_online     BIGINT DEFAULT 0,
@@ -535,14 +535,12 @@ CREATE INDEX IF NOT EXISTS idx_blacklist_node          ON blacklist_matches(node
 CREATE INDEX IF NOT EXISTS idx_blacklist_user          ON blacklist_matches(user_email);
 CREATE INDEX IF NOT EXISTS idx_blacklist_time          ON blacklist_matches(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_blacklist_user_time     ON blacklist_matches(user_email, timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_blacklist_matches_time  ON blacklist_matches(timestamp DESC);
 
 -- alerts
 CREATE INDEX IF NOT EXISTS idx_alerts_sent    ON alerts(sent);
 CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at);
 
 -- hourly_stats
-CREATE INDEX IF NOT EXISTS idx_hourly_hour       ON hourly_stats(hour);
 CREATE INDEX IF NOT EXISTS idx_hourly_stats_hour ON hourly_stats(hour DESC);
 
 -- user_destinations
@@ -558,9 +556,7 @@ CREATE INDEX IF NOT EXISTS idx_threat_type ON threat_matches(threat_type);
 CREATE INDEX IF NOT EXISTS idx_user_threat_type  ON user_threat_stats(threat_type);
 CREATE INDEX IF NOT EXISTS idx_user_threat_count ON user_threat_stats(match_count DESC);
 
--- threat hourly/daily
-CREATE INDEX IF NOT EXISTS idx_threat_hourly_time ON threat_hourly_stats(hour DESC);
-CREATE INDEX IF NOT EXISTS idx_threat_daily_time  ON threat_daily_stats(day DESC);
+-- threat hourly/daily (leading PK columns already indexed)
 
 -- threat_geo_stats
 CREATE INDEX IF NOT EXISTS idx_threat_geo_country ON threat_geo_stats(country_code);
@@ -585,9 +581,7 @@ CREATE INDEX IF NOT EXISTS idx_risk_score ON user_risk_profiles(risk_score DESC)
 CREATE INDEX IF NOT EXISTS idx_dns_domain_hits ON dns_domain_stats(total_hits DESC);
 CREATE INDEX IF NOT EXISTS idx_dns_domain_risk ON dns_domain_stats(risk_level);
 
--- dns hourly/daily
-CREATE INDEX IF NOT EXISTS idx_dns_hourly ON dns_hourly_stats(hour DESC);
-CREATE INDEX IF NOT EXISTS idx_dns_daily  ON dns_daily_stats(day DESC);
+-- dns hourly/daily (hour/day are PKs; no separate index needed)
 
 -- user_dns_stats
 CREATE INDEX IF NOT EXISTS idx_user_dns_blocked ON user_dns_stats(blocked_queries DESC);
@@ -597,12 +591,10 @@ CREATE INDEX IF NOT EXISTS idx_reports_generated ON reports(generated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_type      ON reports(type);
 
 -- ip_user_map / hwid_user_map
-CREATE INDEX IF NOT EXISTS idx_ip_user_map_ip       ON ip_user_map(ip_address);
 CREATE INDEX IF NOT EXISTS idx_ip_user_map_user     ON ip_user_map(user_email);
 CREATE INDEX IF NOT EXISTS idx_ip_user_map_lastseen ON ip_user_map(last_seen DESC);
 CREATE INDEX IF NOT EXISTS idx_ip_user_map_count    ON ip_user_map(request_count DESC);
 
-CREATE INDEX IF NOT EXISTS idx_hwid_user_map_hwid  ON hwid_user_map(hwid);
 CREATE INDEX IF NOT EXISTS idx_hwid_user_map_user  ON hwid_user_map(user_email);
 CREATE INDEX IF NOT EXISTS idx_hwid_user_map_count ON hwid_user_map(request_count DESC);
 
@@ -612,7 +604,6 @@ CREATE INDEX IF NOT EXISTS idx_fingerprint_ip   ON user_fingerprints(ip_address)
 CREATE INDEX IF NOT EXISTS idx_fingerprint_hwid ON user_fingerprints(hwid);
 
 -- user_clusters
-CREATE INDEX IF NOT EXISTS idx_cluster_id   ON user_clusters(cluster_id);
 CREATE INDEX IF NOT EXISTS idx_cluster_user ON user_clusters(user_email);
 
 -- user_ai_profile
@@ -643,8 +634,7 @@ CREATE INDEX IF NOT EXISTS idx_remna_hwid_active ON remna_hwid_devices(last_acti
 CREATE INDEX IF NOT EXISTS idx_remna_nodes_connected ON remna_nodes(is_connected);
 CREATE INDEX IF NOT EXISTS idx_remna_nodes_country   ON remna_nodes(country_code);
 
--- online_snapshots
-CREATE INDEX IF NOT EXISTS idx_online_snapshots_ts ON online_snapshots(ts DESC);
+-- online_snapshots (ts is PK; no separate index needed)
 
 -- bridged_flows
 CREATE INDEX IF NOT EXISTS idx_bridged_flows_user ON bridged_flows(user_email, ts DESC);
