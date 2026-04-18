@@ -1,3 +1,5 @@
+//go:build sqlite_legacy
+
 package storage
 
 import (
@@ -35,21 +37,6 @@ func (s *Storage) UpdateNodeUniqueUsers(ctx context.Context, nodeID string) erro
 		WHERE node_id = ?
 	`, nodeID, nodeID)
 	return err
-}
-
-// SetNodeRemnaMap wires agent NODE_ID → Remnawave node name so online user
-// counts can be sourced from the Remnawave sync (XTLS tracked sessions)
-// instead of being inferred from access-log recency. Pass nil/empty to fall
-// back to the access-log heuristic.
-func (s *Storage) SetNodeRemnaMap(m map[string]string) {
-	if m == nil {
-		s.nodeRemnaMap = nil
-		return
-	}
-	s.nodeRemnaMap = make(map[string]string, len(m))
-	for k, v := range m {
-		s.nodeRemnaMap[k] = v
-	}
 }
 
 // GetNodeStats gets statistics for all nodes (cached)

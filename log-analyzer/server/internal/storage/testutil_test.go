@@ -87,3 +87,19 @@ func randomSuffix() string {
 	}
 	return hex.EncodeToString(b[:])
 }
+
+func TestStorageNew_Postgres(t *testing.T) {
+	s := newTestStorage(t)
+	if s == nil {
+		t.Fatal("storage is nil")
+	}
+	// Smoke: a trivial ping-through-pool query works.
+	ctx := context.Background()
+	var got int
+	if err := s.DB().QueryRowContext(ctx, "SELECT 1").Scan(&got); err != nil {
+		t.Fatalf("SELECT 1: %v", err)
+	}
+	if got != 1 {
+		t.Fatalf("got %d want 1", got)
+	}
+}
