@@ -115,6 +115,11 @@ func NewFeedLoader() *FeedLoader {
 // When the same indicator comes from multiple sources, we keep the highest
 // ThreatType priority source as primary but record all contributing sources
 // and boost confidence (+5 per additional source, capped at 99).
+// Returns true when the indicator counts toward the feed (new, re-seen from
+// the same source, or merged from a different source). Returns false only
+// when the indicator is whitelisted and therefore ignored. Callers use the
+// bool to count how many indicators this feed contributed; subsequent reload
+// cycles must keep counting re-seen entries so feed status stays accurate.
 // Caller must hold f.mu.
 func (f *FeedLoader) upsertIndicator(ind *ThreatIndicator) bool {
 	if f.isWhitelisted(ind.Indicator) {
@@ -132,7 +137,7 @@ func (f *FeedLoader) upsertIndicator(ind *ThreatIndicator) bool {
 	for _, s := range existing.Sources {
 		if s == ind.Source {
 			existing.LastSeen = ind.LastSeen
-			return false
+			return true
 		}
 	}
 	// Different source — record it and boost confidence
@@ -151,7 +156,7 @@ func (f *FeedLoader) upsertIndicator(ind *ThreatIndicator) bool {
 		boost = 99
 	}
 	existing.Confidence = boost
-	return false
+	return true
 }
 
 // isWhitelisted checks if a domain (or its parent) is whitelisted.
@@ -187,27 +192,22 @@ func (f *FeedLoader) doRequest(url string) (*http.Response, error) {
 	return f.client.Do(req)
 }
 
-// loadWithRetry wraps a loader function with retry logic
+// loadWithRetry wraps a loader function with retry logic.
+// Retries only on transport/parse errors. A successful fetch that returns
+// zero indicators is a legitimate state (empty feed or everything
+// whitelisted) and is not retried.
 func (f *FeedLoader) loadWithRetry(ctx context.Context, source ThreatSource, loader func(context.Context) (int, error)) (int, error) {
 	var lastErr error
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		count, err := loader(ctx)
 
-		// Success with data
-		if err == nil && count > 0 {
+		if err == nil {
 			return count, nil
 		}
 
-		// Error occurred
-		if err != nil {
-			lastErr = err
-			log.Printf("threatintel: %s attempt %d/%d failed: %v", source, attempt, maxRetries, err)
-		} else if count == 0 {
-			// No error but zero results - treat as temporary failure
-			lastErr = fmt.Errorf("received 0 indicators")
-			log.Printf("threatintel: %s attempt %d/%d returned 0 indicators, retrying...", source, attempt, maxRetries)
-		}
+		lastErr = err
+		log.Printf("threatintel: %s attempt %d/%d failed: %v", source, attempt, maxRetries, err)
 
 		// Don't sleep after last attempt
 		if attempt < maxRetries {
