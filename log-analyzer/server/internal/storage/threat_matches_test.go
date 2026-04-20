@@ -284,3 +284,45 @@ func TestSaveThreatMatch_PerUserCategoryTrim(t *testing.T) {
 		t.Errorf("expected <= %d remaining, got %d", MaxThreatMatchesPerUserCategory, remaining)
 	}
 }
+
+// SaveThreatMatch for (userA, typeX) must not touch rows in other partitions.
+// Prevents regression to global DELETE that scanned full table every insert
+// and cost ~3 cores on prod with 190k rows.
+func TestSaveThreatMatch_TrimScopedToInsertedPartition(t *testing.T) {
+	s := newTestStorage(t)
+	ctx := context.Background()
+
+	// Seed 105 rows for (other@, social) directly, bypassing SaveThreatMatch
+	// so nothing trims them yet.
+	over := MaxThreatMatchesPerUserCategory + 5
+	base := time.Now().Add(-2 * time.Hour)
+	for i := 0; i < over; i++ {
+		_, err := s.db.ExecContext(ctx, `
+			INSERT INTO threat_matches (user_email, node_id, source_ip, destination,
+				threat_type, source, confidence, description, matched_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`, "other@example.com", "n1", "1.1.1.1", "x.example.com:443",
+			"social", "test", 50, "seed", base.Add(time.Duration(i)*time.Second))
+		if err != nil {
+			t.Fatalf("seed #%d: %v", i, err)
+		}
+	}
+
+	// Act in an unrelated partition.
+	if err := s.SaveThreatMatch(ctx, newThreatMatch("me@example.com", "malware")); err != nil {
+		t.Fatalf("SaveThreatMatch: %v", err)
+	}
+
+	// Other partition must be intact (fails under global trim — old behavior).
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM threat_matches
+		WHERE user_email = $1 AND threat_type = $2
+	`, "other@example.com", "social").Scan(&count)
+	if err != nil {
+		t.Fatalf("count other: %v", err)
+	}
+	if count != over {
+		t.Errorf("unrelated partition trimmed: expected %d rows, got %d", over, count)
+	}
+}

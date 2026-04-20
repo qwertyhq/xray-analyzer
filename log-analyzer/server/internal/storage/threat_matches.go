@@ -112,22 +112,19 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 	`, dayKey, string(match.ThreatType), dayKey, string(match.ThreatType))
 
 	// Trim recent records: keep only the most recent MaxThreatMatchesPerUserCategory
-	// per (user_email, threat_type). This preserves each user's per-category history
-	// independently, so a quiet-category user doesn't lose matches when a loud
-	// category (social/ads) pushes them out globally.
+	// in the partition we just inserted into. Scoped to one (user_email, threat_type)
+	// pair so the DELETE is bounded — it walks idx_threat_user_type_time and deletes
+	// at most one row per save instead of scanning the whole table.
 	_, err = s.db.ExecContext(ctx, `
 		DELETE FROM threat_matches
-		WHERE id NOT IN (
-			SELECT id FROM (
-				SELECT id, ROW_NUMBER() OVER (
-					PARTITION BY user_email, threat_type
-					ORDER BY matched_at DESC
-				) as rn
-				FROM threat_matches
-			) ranked
-			WHERE rn <= $1
+		WHERE user_email = $1 AND threat_type = $2
+		  AND id NOT IN (
+			SELECT id FROM threat_matches
+			WHERE user_email = $1 AND threat_type = $2
+			ORDER BY matched_at DESC
+			LIMIT $3
 		)
-	`, MaxThreatMatchesPerUserCategory)
+	`, match.UserEmail, string(match.ThreatType), MaxThreatMatchesPerUserCategory)
 
 	return err
 }

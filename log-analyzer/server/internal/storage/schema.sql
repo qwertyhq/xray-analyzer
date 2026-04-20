@@ -551,6 +551,9 @@ CREATE INDEX IF NOT EXISTS idx_user_dest_time  ON user_destinations(last_seen DE
 CREATE INDEX IF NOT EXISTS idx_threat_user ON threat_matches(user_email);
 CREATE INDEX IF NOT EXISTS idx_threat_time ON threat_matches(matched_at DESC);
 CREATE INDEX IF NOT EXISTS idx_threat_type ON threat_matches(threat_type);
+-- Covers the per-(user, type) trim on SaveThreatMatch hot path.
+CREATE INDEX IF NOT EXISTS idx_threat_user_type_time
+    ON threat_matches(user_email, threat_type, matched_at DESC);
 
 -- user_threat_stats
 CREATE INDEX IF NOT EXISTS idx_user_threat_type  ON user_threat_stats(threat_type);
