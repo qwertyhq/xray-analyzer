@@ -158,6 +158,11 @@ func main() {
 				} else if deleted > 0 {
 					log.Printf("cleanup: deleted %d old threat matches", deleted)
 				}
+				// Cleanup old bridged flows (keep 14 days). Without this the
+				// table grows ~7M rows/day unbounded.
+				if err := store.CleanupBridgedFlows(ctx, 14); err != nil {
+					log.Printf("cleanup bridged flows error: %v", err)
+				}
 				// Cleanup analyzer alert cache
 				anal.CleanupAlertCache()
 			}
