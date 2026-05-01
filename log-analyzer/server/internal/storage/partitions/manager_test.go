@@ -102,6 +102,28 @@ func TestTick_FullCycle(t *testing.T) {
 	}
 }
 
+func TestHealthy_PassWhenPartitionsExist(t *testing.T) {
+	pool := newTestPool(t)
+	m := NewManager(pool, []Table{{Name: "bridged_flows", RetentionDays: 14}})
+	ctx := context.Background()
+	if err := m.EnsureFuturePartitions(ctx); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if err := m.Healthy(ctx); err != nil {
+		t.Errorf("Healthy() = %v want nil", err)
+	}
+}
+
+func TestHealthy_FailWhenMissing(t *testing.T) {
+	pool := newTestPool(t)
+	m := NewManager(pool, []Table{{Name: "bridged_flows", RetentionDays: 14}})
+	ctx := context.Background()
+	// Don't call EnsureFuturePartitions — today's partition is absent.
+	if err := m.Healthy(ctx); err == nil {
+		t.Errorf("Healthy() should error when partitions missing")
+	}
+}
+
 func TestDropExpiredPartitions_DropsOldKeepsRecent(t *testing.T) {
 	pool := newTestPool(t)
 	m := NewManager(pool, []Table{{Name: "bridged_flows", RetentionDays: 14}})
