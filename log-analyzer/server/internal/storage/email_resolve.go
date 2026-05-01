@@ -11,8 +11,8 @@ import (
 // Remnawave user UUID for storage. Resolution order:
 //  1. If the input is already a valid UUID, returns it unchanged.
 //  2. Looks up remna_users by username or email.
-//  3. If the input is purely numeric, looks up remna_users by US_ID pattern
-//     in description.
+//  3. If numeric, looks up remna_users by id (bigint), then us_id (text),
+//     then by US_ID pattern embedded in description (legacy fallback).
 //  4. Falls back to a deterministic SHA-1 derivative of the input,
 //     additionally writing (uuid, original_email) into email_index so the UI
 //     can resolve the original string later.
@@ -39,8 +39,31 @@ func (s *Storage) ResolveUserEmailToUUID(ctx context.Context, email string) (uui
 		}
 	}
 
-	// Step 3: numeric string → US_ID lookup via description field.
+	// Step 3: numeric → look up by remna_users.id (bigint, primary mapping
+	// from xray's email field), then us_id (text), then description LIKE.
 	if isNumericString(email) {
+		// 3a: remna_users.id — the bigint identifier xray emits as `email`.
+		err = s.db.QueryRowContext(ctx, `
+			SELECT uuid::text FROM remna_users WHERE id = $1::bigint LIMIT 1
+		`, email).Scan(&idStr)
+		if err == nil && idStr != "" {
+			if id, perr := uuid.Parse(idStr); perr == nil {
+				return id, nil
+			}
+		}
+
+		// 3b: us_id — SHM-side identifier in dedicated text column.
+		err = s.db.QueryRowContext(ctx, `
+			SELECT uuid::text FROM remna_users WHERE us_id = $1 LIMIT 1
+		`, email).Scan(&idStr)
+		if err == nil && idStr != "" {
+			if id, perr := uuid.Parse(idStr); perr == nil {
+				return id, nil
+			}
+		}
+
+		// 3c: description LIKE '%US_ID: N%' — legacy pattern for users
+		// whose us_id column wasn't parsed out at sync time.
 		err = s.db.QueryRowContext(ctx, `
 			SELECT uuid::text FROM remna_users WHERE description LIKE $1 LIMIT 1
 		`, "%US_ID: "+email+"%").Scan(&idStr)
