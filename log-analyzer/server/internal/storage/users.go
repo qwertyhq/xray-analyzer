@@ -25,9 +25,9 @@ func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string,
 	}
 
 	// user_email is uuid NOT NULL.
-	userUUID, err := uuid.Parse(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
 	if err != nil {
-		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+		return fmt.Errorf("resolve user_email: %w", err)
 	}
 
 	var lastHit interface{}
@@ -565,9 +565,9 @@ func (s *Storage) GetUserBlacklistCount(ctx context.Context, nodeID, userEmail s
 	if err != nil {
 		return 0, nil // node not found → no matches
 	}
-	userUUID, err := uuid.Parse(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
 	if err != nil {
-		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+		return 0, fmt.Errorf("resolve user_email: %w", err)
 	}
 	var count int
 	err = s.pool.QueryRow(ctx, `
@@ -744,9 +744,9 @@ func (s *Storage) RecordUserIP(ctx context.Context, userEmail, ipAddress, nodeID
 	now := time.Now().UTC()
 
 	// user_email is uuid NOT NULL.
-	userUUID, err := uuid.Parse(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
 	if err != nil {
-		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+		return fmt.Errorf("resolve user_email: %w", err)
 	}
 
 	// node_id is nullable smallint FK — resolve if non-empty.
@@ -792,13 +792,11 @@ func (s *Storage) RecordUserIP(ctx context.Context, userEmail, ipAddress, nodeID
 // ip_address (inet) and node_id (smallint FK) are cast/joined to text.
 func (s *Storage) GetUserIPHistory(ctx context.Context, userEmail string) ([]*UserIPHistory, error) {
 	// Resolve userEmail to UUID(s).
-	var searchUUIDs []uuid.UUID
-	if u, err := uuid.Parse(userEmail); err == nil {
-		searchUUIDs = []uuid.UUID{u}
-	} else {
-		// Convert via SHA-1 for non-UUID strings (legacy / test identifiers).
-		searchUUIDs = []uuid.UUID{uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))}
+	resolvedUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
+	if err != nil {
+		return nil, fmt.Errorf("resolve user_email: %w", err)
 	}
+	searchUUIDs := []uuid.UUID{resolvedUUID}
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT host(h.ip_address),
@@ -894,11 +892,9 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 // getAbuserIPs gets IP details for a suspected abuser
 func (s *Storage) getAbuserIPs(ctx context.Context, userEmail string, since time.Time) ([]models.IPInfo, error) {
 	// Resolve userEmail to UUID.
-	var userUUID uuid.UUID
-	var err error
-	userUUID, err = uuid.Parse(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
 	if err != nil {
-		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+		return nil, fmt.Errorf("resolve user_email: %w", err)
 	}
 
 	rows, err := s.pool.Query(ctx, `

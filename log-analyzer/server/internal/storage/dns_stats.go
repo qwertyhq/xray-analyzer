@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
@@ -127,9 +127,9 @@ func (s *Storage) UpdateUserDNSStats(ctx context.Context, email string, domain s
 	}
 
 	// user_dns_stats.user_email is uuid NOT NULL.
-	userUUID, err := uuid.Parse(email)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, email)
 	if err != nil {
-		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(email))
+		return fmt.Errorf("resolve user_email: %w", err)
 	}
 
 	// Get existing top domains

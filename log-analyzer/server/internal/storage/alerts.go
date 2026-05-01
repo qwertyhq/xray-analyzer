@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,8 +11,8 @@ import (
 
 // CreateAlert creates a new alert.
 // alert.NodeID is a text node name; it is resolved to the nodes(id) smallint
-// FK via LookupNodeID. alert.UserEmail may be any string; non-UUID values
-// are converted via SHA-1 (emailToUUID) so exit-node synthetic IDs never fail.
+// FK via LookupNodeID. alert.UserEmail may be any string; non-UUID values are
+// resolved via ResolveUserEmailToUUID (remna_users lookup, then SHA-1 fallback).
 // alert.SourceIP is passed as text; Postgres casts it to inet.
 func (s *Storage) CreateAlert(ctx context.Context, alert *models.Alert) error {
 	now := time.Now().UTC()
@@ -21,7 +22,10 @@ func (s *Storage) CreateAlert(ctx context.Context, alert *models.Alert) error {
 		return err
 	}
 
-	userUUID := emailToUUID(alert.UserEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, alert.UserEmail)
+	if err != nil {
+		return fmt.Errorf("resolve user_email: %w", err)
+	}
 
 	// source_ip and destination are nullable; pass nil when empty.
 	var sourceIP interface{}

@@ -54,12 +54,10 @@ func (s *Storage) RecordUserDestination(ctx context.Context, userEmail, nodeID, 
 		return fmt.Errorf("resolve node_id %q: %w", nodeID, err)
 	}
 
-	// user_email is uuid NOT NULL. Parse or fail.
-	userUUID, err := uuid.Parse(userEmail)
+	// user_email is uuid NOT NULL.
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
 	if err != nil {
-		// Non-UUID identifiers (legacy / test strings) are stored as SHA-1 UUID
-		// so they round-trip: the detect* queries return the same UUID string.
-		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+		return fmt.Errorf("resolve user_email: %w", err)
 	}
 
 	_, err = s.pool.Exec(ctx, `
