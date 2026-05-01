@@ -68,6 +68,40 @@ func TestEnsureFuturePartitions_Idempotent(t *testing.T) {
 	}
 }
 
+func TestTick_FullCycle(t *testing.T) {
+	pool := newTestPool(t)
+	m := NewManager(pool, []Table{{Name: "bridged_flows", RetentionDays: 14}})
+	ctx := context.Background()
+
+	old := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -20)
+	next := old.AddDate(0, 0, 1)
+	oldName := "bridged_flows_" + old.Format("20060102")
+	_, err := pool.Exec(ctx, fmt.Sprintf(`
+		CREATE TABLE %s PARTITION OF bridged_flows
+		FOR VALUES FROM ('%s') TO ('%s')
+	`, oldName, old.Format(time.RFC3339), next.Format(time.RFC3339)))
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := m.Tick(ctx); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	var exists bool
+	_ = pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1)`, oldName).Scan(&exists)
+	if exists {
+		t.Errorf("old partition %s should have been dropped", oldName)
+	}
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	todayName := "bridged_flows_" + today.Format("20060102")
+	_ = pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1)`, todayName).Scan(&exists)
+	if !exists {
+		t.Errorf("today partition %s should exist", todayName)
+	}
+}
+
 func TestDropExpiredPartitions_DropsOldKeepsRecent(t *testing.T) {
 	pool := newTestPool(t)
 	m := NewManager(pool, []Table{{Name: "bridged_flows", RetentionDays: 14}})
