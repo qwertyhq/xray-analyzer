@@ -78,6 +78,26 @@ func (m *Manager) EnsureFuturePartitions(ctx context.Context) error {
 	return nil
 }
 
+// Healthy returns nil if every managed table has a partition for today.
+// Returns an error otherwise — fed into the /health endpoint.
+func (m *Manager) Healthy(ctx context.Context) error {
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	for _, tbl := range m.tables {
+		name := tbl.PartitionName(today)
+		var exists bool
+		err := m.pool.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1)`,
+			name).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("check %s: %w", name, err)
+		}
+		if !exists {
+			return fmt.Errorf("missing partition %s for today", name)
+		}
+	}
+	return nil
+}
+
 // DropExpiredPartitions drops partitions older than RetentionDays.
 func (m *Manager) DropExpiredPartitions(ctx context.Context) error {
 	today := time.Now().UTC().Truncate(24 * time.Hour)

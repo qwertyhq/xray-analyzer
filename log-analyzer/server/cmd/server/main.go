@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/url"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/remnawave"
 	"github.com/xray-log-analyzer/server/internal/server"
 	"github.com/xray-log-analyzer/server/internal/storage"
+	"github.com/xray-log-analyzer/server/internal/storage/partitions"
 	"github.com/xray-log-analyzer/server/internal/telegram"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
@@ -44,6 +46,25 @@ func main() {
 	}
 	defer store.Close()
 	log.Println("storage: initialized")
+
+	// Start partition manager — creates today+2 future partitions and drops
+	// expired ones on startup, then re-runs every 6 hours.
+	pm := partitions.NewManager(store.Pool(), []partitions.Table{
+		{Name: "bridged_flows", RetentionDays: 14},
+		{Name: "alerts", RetentionDays: 30},
+		{Name: "blacklist_matches", RetentionDays: 30},
+		{Name: "threat_matches", RetentionDays: 30},
+		{Name: "anomalies", RetentionDays: 30},
+	})
+	if err := pm.Tick(ctx); err != nil {
+		log.Fatalf("partition manager initial tick: %v", err)
+	}
+	go func() {
+		if err := pm.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("partition manager: %v", err)
+		}
+	}()
+	log.Println("partition manager: started")
 
 	// Wire agent→Remnawave node-name mapping so /api/nodes can surface live
 	// XTLS-tracked online counts instead of the access-log heuristic.
@@ -158,11 +179,6 @@ func main() {
 				} else if deleted > 0 {
 					log.Printf("cleanup: deleted %d old threat matches", deleted)
 				}
-				// Cleanup old bridged flows (keep 14 days). Without this the
-				// table grows ~7M rows/day unbounded.
-				if err := store.CleanupBridgedFlows(ctx, 14); err != nil {
-					log.Printf("cleanup bridged flows error: %v", err)
-				}
 				// Cleanup analyzer alert cache
 				anal.CleanupAlertCache()
 			}
@@ -172,6 +188,7 @@ func main() {
 	// Initialize and start server
 	srv := server.New(cfg.ListenAddr, cfg.AllowedOrigins, cfg.APIToken, cfg.AgentToken, anal, store, bl)
 	srv.SetThreatIntel(threatIntelSvc)
+	srv.SetPartitionManager(pm)
 	if redisClient != nil {
 		srv.SetRedis(redisClient, 10*time.Second)
 		log.Println("server: HTTP response cache enabled (Redis L2, TTL=10s)")
