@@ -666,6 +666,18 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON ai_chat_messages(session
 CREATE INDEX IF NOT EXISTS idx_chat_messages_time    ON ai_chat_messages(created_at);
 
 -- =============================================================================
+-- email_index: reverse lookup for SHA-1-derived user_email UUIDs that could
+-- not be resolved to a Remnawave user. Allows UI to display the original raw
+-- identifier for unknown synthetic IDs (e.g. "5117", "u-out").
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS email_index (
+    uuid           uuid        PRIMARY KEY,
+    original_email text        NOT NULL,
+    first_seen     timestamptz NOT NULL DEFAULT now()
+);
+
+-- =============================================================================
 -- Seed rows
 -- =============================================================================
 
