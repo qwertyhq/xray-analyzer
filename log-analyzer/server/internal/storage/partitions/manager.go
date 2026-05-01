@@ -59,8 +59,23 @@ func (m *Manager) Tick(ctx context.Context) error {
 
 // EnsureFuturePartitions creates today and the next 2 days' partitions if missing.
 func (m *Manager) EnsureFuturePartitions(ctx context.Context) error {
-	_ = fmt.Sprintf
-	return nil // implemented in Step 1.2
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	for _, tbl := range m.tables {
+		for offset := 0; offset <= 2; offset++ {
+			start := today.AddDate(0, 0, offset)
+			end := start.AddDate(0, 0, 1)
+			name := tbl.PartitionName(start)
+			sql := fmt.Sprintf(`
+				CREATE TABLE IF NOT EXISTS %s
+				PARTITION OF %s
+				FOR VALUES FROM ('%s') TO ('%s')
+			`, name, tbl.Name, start.Format(time.RFC3339), end.Format(time.RFC3339))
+			if _, err := m.pool.Exec(ctx, sql); err != nil {
+				return fmt.Errorf("ensure %s: %w", name, err)
+			}
+		}
+	}
+	return nil
 }
 
 // DropExpiredPartitions drops partitions older than RetentionDays.
