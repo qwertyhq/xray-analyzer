@@ -597,11 +597,16 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 		return nil, err
 	}
 
-	err = s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT user_email) FROM user_stats
-	`).Scan(&stats.TotalUniqueUsers)
-	if err != nil {
-		return nil, err
+	// Prefer Remnawave's authoritative user count (synced from panel API).
+	// Falls back to traffic-based unique-user count if remna sync hasn't run.
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM remna_users`).Scan(&stats.TotalUniqueUsers)
+	if err != nil || stats.TotalUniqueUsers == 0 {
+		err = s.db.QueryRowContext(ctx, `
+			SELECT COUNT(DISTINCT user_email) FROM user_stats
+		`).Scan(&stats.TotalUniqueUsers)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Prefer Remnawave's XTLS-tracked online count (sum across mapped nodes)
