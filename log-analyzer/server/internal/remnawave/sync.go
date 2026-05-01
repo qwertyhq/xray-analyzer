@@ -461,12 +461,20 @@ func (s *SyncService) GetUserByID(id int64) *User {
 	return s.usersByID[id]
 }
 
-// GetUserByIDOrUsername returns a user by numeric ID (if input is numeric) or username
+// GetUserByIDOrUsername returns a user by UUID, numeric ID, or username.
+// After the schema v2 refactor, storage tables hold user_email as a real
+// Remnawave UUID (resolved via remna_users.id/us_id at write time), so the
+// UUID lookup path is the common case.
 func (s *SyncService) GetUserByIDOrUsername(idOrUsername string) *User {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Try as numeric ID first
+	// Try as UUID first (post-v2 storage path)
+	if user := s.users[idOrUsername]; user != nil {
+		return user
+	}
+
+	// Try as numeric ID
 	if id, err := strconv.ParseInt(idOrUsername, 10, 64); err == nil {
 		if user := s.usersByID[id]; user != nil {
 			return user
