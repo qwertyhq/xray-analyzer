@@ -124,6 +124,29 @@ func TestHealthy_FailWhenMissing(t *testing.T) {
 	}
 }
 
+func TestHealthy_FailWhenDefaultPartitionNonEmpty(t *testing.T) {
+	pool := newTestPool(t)
+	m := NewManager(pool, []Table{{Name: "bridged_flows", RetentionDays: 14}})
+	ctx := context.Background()
+
+	if err := m.EnsureFuturePartitions(ctx); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+
+	// Insert a row with a far-future timestamp so it lands in bridged_flows_default
+	// (no named partition covers 2099).
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO bridged_flows (ts, payload) VALUES ($1, 'test')`,
+		"2099-01-01T00:00:00Z",
+	); err != nil {
+		t.Fatalf("seed default partition: %v", err)
+	}
+
+	if err := m.Healthy(ctx); err == nil {
+		t.Errorf("Healthy() should fail when default partition is non-empty")
+	}
+}
+
 func TestDropExpiredPartitions_DropsOldKeepsRecent(t *testing.T) {
 	pool := newTestPool(t)
 	m := NewManager(pool, []Table{{Name: "bridged_flows", RetentionDays: 14}})

@@ -78,11 +78,16 @@ func (m *Manager) EnsureFuturePartitions(ctx context.Context) error {
 	return nil
 }
 
-// Healthy returns nil if every managed table has a partition for today.
-// Returns an error otherwise — fed into the /health endpoint.
+// Healthy returns nil if every managed table has a partition for today and
+// its _default partition is empty. Returns an error otherwise — fed into the
+// /health endpoint.
+//
+// Check order: missing today-partition takes precedence over non-empty default,
+// so the most actionable error surfaces first.
 func (m *Manager) Healthy(ctx context.Context) error {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	for _, tbl := range m.tables {
+		// 1. Today's named partition must exist.
 		name := tbl.PartitionName(today)
 		var exists bool
 		err := m.pool.QueryRow(ctx,
@@ -93,6 +98,19 @@ func (m *Manager) Healthy(ctx context.Context) error {
 		}
 		if !exists {
 			return fmt.Errorf("missing partition %s for today", name)
+		}
+
+		// 2. The _default catch-all partition must be empty. Rows there mean
+		// the partition manager missed a scheduling window and rows fell through.
+		var defaultRows int
+		err = m.pool.QueryRow(ctx,
+			fmt.Sprintf(`SELECT COUNT(*) FROM %s_default`, tbl.Name),
+		).Scan(&defaultRows)
+		if err != nil {
+			return fmt.Errorf("count default %s_default: %w", tbl.Name, err)
+		}
+		if defaultRows > 0 {
+			return fmt.Errorf("%s_default has %d rows — partition manager missed a window", tbl.Name, defaultRows)
 		}
 	}
 	return nil
