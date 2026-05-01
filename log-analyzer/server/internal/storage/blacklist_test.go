@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/models"
 )
 
@@ -161,5 +162,36 @@ func TestBlacklist_GetUserBlacklistMatches_Pagination(t *testing.T) {
 	}
 	if len(resp2.Matches) != 1 {
 		t.Errorf("page 3 len = %d, want 1", len(resp2.Matches))
+	}
+}
+
+func TestRecordBlacklistMatch_NonUUIDEmail(t *testing.T) {
+	s := newTestStorage(t)
+	ctx := context.Background()
+
+	const syntheticEmail = "5117"
+	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte(syntheticEmail))
+
+	now := time.Now().UTC()
+	if err := s.RecordBlacklistMatch(ctx, &models.BlacklistMatch{
+		NodeID:      "node-synthetic-bl",
+		UserEmail:   syntheticEmail,
+		SourceIP:    "203.0.113.5",
+		Destination: "example.com:443",
+		MatchedRule: "test-rule",
+		Timestamp:   now,
+	}); err != nil {
+		t.Fatalf("non-UUID email should succeed via SHA-1 fallback: %v", err)
+	}
+
+	var got uuid.UUID
+	err := s.pool.QueryRow(ctx,
+		`SELECT user_email FROM blacklist_matches WHERE destination = $1`, "example.com:443",
+	).Scan(&got)
+	if err != nil {
+		t.Fatalf("query inserted row: %v", err)
+	}
+	if got != expected {
+		t.Errorf("user_email = %s, want %s (SHA-1 of %q)", got, expected, syntheticEmail)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/models"
 )
 
@@ -159,5 +160,38 @@ func TestAlerts_GetUserAlerts_OtherUserNotVisible(t *testing.T) {
 	}
 	if resp.Total != 0 {
 		t.Errorf("stranger should see 0 alerts, got %d", resp.Total)
+	}
+}
+
+func TestCreateAlert_NonUUIDEmail(t *testing.T) {
+	s := newTestStorage(t)
+	ctx := context.Background()
+
+	const syntheticEmail = "5117"
+	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte(syntheticEmail))
+
+	a := &models.Alert{
+		Type:    "blacklist",
+		NodeID:  "node-synthetic",
+		UserEmail: syntheticEmail,
+		Count:   1,
+		Message: "synthetic id test",
+	}
+	if err := s.CreateAlert(ctx, a); err != nil {
+		t.Fatalf("non-UUID email should succeed via SHA-1 fallback: %v", err)
+	}
+	if a.ID == 0 {
+		t.Fatal("expected non-zero alert ID after insert")
+	}
+
+	var got uuid.UUID
+	err := s.pool.QueryRow(ctx,
+		`SELECT user_email FROM alerts WHERE id = $1`, a.ID,
+	).Scan(&got)
+	if err != nil {
+		t.Fatalf("query inserted row: %v", err)
+	}
+	if got != expected {
+		t.Errorf("user_email = %s, want %s (SHA-1 of %q)", got, expected, syntheticEmail)
 	}
 }

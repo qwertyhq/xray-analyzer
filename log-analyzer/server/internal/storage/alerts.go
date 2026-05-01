@@ -10,7 +10,8 @@ import (
 
 // CreateAlert creates a new alert.
 // alert.NodeID is a text node name; it is resolved to the nodes(id) smallint
-// FK via LookupNodeID. alert.UserEmail must be a valid UUID string.
+// FK via LookupNodeID. alert.UserEmail may be any string; non-UUID values
+// are converted via SHA-1 (emailToUUID) so exit-node synthetic IDs never fail.
 // alert.SourceIP is passed as text; Postgres casts it to inet.
 func (s *Storage) CreateAlert(ctx context.Context, alert *models.Alert) error {
 	now := time.Now().UTC()
@@ -20,10 +21,7 @@ func (s *Storage) CreateAlert(ctx context.Context, alert *models.Alert) error {
 		return err
 	}
 
-	userUUID, err := uuid.Parse(alert.UserEmail)
-	if err != nil {
-		return err
-	}
+	userUUID := emailToUUID(alert.UserEmail)
 
 	// source_ip and destination are nullable; pass nil when empty.
 	var sourceIP interface{}

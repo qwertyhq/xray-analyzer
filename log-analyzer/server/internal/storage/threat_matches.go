@@ -24,16 +24,13 @@ const MaxThreatMatchesPerUserCategory = 100
 const MaxThreatMatches = 500
 
 // SaveThreatMatch saves a threat match to the database, updates statistics, and cleans up old records.
-// match.UserEmail must be a valid UUID string.
+// match.UserEmail may be any string; non-UUID values are converted via SHA-1 (emailToUUID).
 // match.NodeID is a text node name; resolved to nodes(id) smallint FK via LookupNodeID.
 // match.SourceIP is passed as text; Postgres casts to inet.
 func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.ThreatMatch) error {
 	now := time.Now()
 
-	userUUID, err := uuid.Parse(match.UserEmail)
-	if err != nil {
-		return fmt.Errorf("invalid user_email UUID %q: %w", match.UserEmail, err)
-	}
+	userUUID := emailToUUID(match.UserEmail)
 
 	nodeID, err := s.LookupNodeID(ctx, match.NodeID, "exit")
 	if err != nil {

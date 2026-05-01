@@ -49,13 +49,11 @@ func (s *Storage) RecordBridgedFlow(ctx context.Context, f *BridgedFlow) error {
 		return fmt.Errorf("resolve exit_node_id: %w", err)
 	}
 
-	// user_email is uuid in the DB. Parse it; accept zero-UUID if blank.
+	// user_email is uuid in the DB. Use emailToUUID which falls back to SHA-1
+	// for synthetic identifiers (e.g. "5117", "u-out") from exit-node logs.
 	var userUUID uuid.UUID
 	if f.UserEmail != "" {
-		userUUID, err = uuid.Parse(f.UserEmail)
-		if err != nil {
-			return fmt.Errorf("invalid user_email UUID %q: %w", f.UserEmail, err)
-		}
+		userUUID = emailToUUID(f.UserEmail)
 	}
 
 	_, err = s.pool.Exec(ctx, `

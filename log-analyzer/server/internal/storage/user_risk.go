@@ -13,15 +13,6 @@ import (
 
 // ==================== User Risk Profile Functions ====================
 
-// emailToUUID converts an email/identifier string to a uuid.UUID for DB queries.
-// Valid UUID strings parse directly; others are converted via SHA-1.
-func emailToUUID(email string) uuid.UUID {
-	if u, err := uuid.Parse(email); err == nil {
-		return u
-	}
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(email))
-}
-
 // CalculateUserRiskProfile calculates and saves risk profile for a user
 func (s *Storage) CalculateUserRiskProfile(ctx context.Context, email string) (*threatintel.UserRiskProfile, error) {
 	profile := &threatintel.UserRiskProfile{

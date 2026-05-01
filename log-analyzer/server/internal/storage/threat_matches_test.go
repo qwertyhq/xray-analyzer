@@ -354,3 +354,27 @@ func TestSaveThreatMatch_TrimScopedToInsertedPartition(t *testing.T) {
 		t.Errorf("unrelated partition trimmed: expected %d rows, got %d", over, count)
 	}
 }
+
+func TestSaveThreatMatch_NonUUIDEmail(t *testing.T) {
+	s := newTestStorage(t)
+	ctx := context.Background()
+
+	const syntheticEmail = "5117"
+	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte(syntheticEmail))
+
+	match := newThreatMatch(syntheticEmail, "malware")
+	if err := s.SaveThreatMatch(ctx, match); err != nil {
+		t.Fatalf("non-UUID email should succeed via SHA-1 fallback: %v", err)
+	}
+
+	var got uuid.UUID
+	err := s.pool.QueryRow(ctx,
+		`SELECT user_email FROM threat_matches WHERE destination = $1`, match.Destination,
+	).Scan(&got)
+	if err != nil {
+		t.Fatalf("query inserted row: %v", err)
+	}
+	if got != expected {
+		t.Errorf("user_email = %s, want %s (SHA-1 of %q)", got, expected, syntheticEmail)
+	}
+}

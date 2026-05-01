@@ -13,7 +13,7 @@ import (
 
 // RecordBlacklistMatch records a blacklist match.
 // match.NodeID is resolved to nodes(id) smallint FK via LookupNodeID.
-// match.UserEmail must be a valid UUID string.
+// match.UserEmail may be any string; non-UUID values are converted via SHA-1 (emailToUUID).
 // match.SourceIP is passed as text; Postgres casts to inet.
 func (s *Storage) RecordBlacklistMatch(ctx context.Context, match *models.BlacklistMatch) error {
 	nodeID, err := s.LookupNodeID(ctx, match.NodeID, "exit")
@@ -21,10 +21,7 @@ func (s *Storage) RecordBlacklistMatch(ctx context.Context, match *models.Blackl
 		return fmt.Errorf("resolve node_id: %w", err)
 	}
 
-	userUUID, err := uuid.Parse(match.UserEmail)
-	if err != nil {
-		return fmt.Errorf("invalid user_email UUID %q: %w", match.UserEmail, err)
-	}
+	userUUID := emailToUUID(match.UserEmail)
 
 	now := time.Now().UTC()
 	_, err = s.pool.Exec(ctx, `

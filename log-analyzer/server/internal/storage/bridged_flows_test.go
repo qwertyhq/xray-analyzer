@@ -250,3 +250,41 @@ func TestBridgedFlows_Cleanup(t *testing.T) {
 		t.Errorf("after cleanup: %d rows, want 1", cnt)
 	}
 }
+
+func TestRecordBridgedFlow_NonUUIDEmail(t *testing.T) {
+	s := newTestStorage(t)
+	ctx := context.Background()
+
+	const syntheticEmail = "5117"
+	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte(syntheticEmail))
+
+	// LookupNodeID upserts the node so it exists in the nodes table.
+	if _, err := s.LookupNodeID(ctx, "ru-bridge", "bridge"); err != nil {
+		t.Fatalf("LookupNodeID bridge: %v", err)
+	}
+	if _, err := s.LookupNodeID(ctx, "germany-1", "exit"); err != nil {
+		t.Fatalf("LookupNodeID exit: %v", err)
+	}
+
+	if err := s.RecordBridgedFlow(ctx, &BridgedFlow{
+		UserEmail:    syntheticEmail,
+		RealClientIP: "203.0.113.5",
+		BridgeNodeID: "ru-bridge",
+		ExitNodeID:   "germany-1",
+		Destination:  "example-bf.com:443",
+		Timestamp:    time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("non-UUID email should succeed via SHA-1 fallback: %v", err)
+	}
+
+	var got uuid.UUID
+	err := s.pool.QueryRow(ctx,
+		`SELECT user_email FROM bridged_flows WHERE destination = $1`, "example-bf.com:443",
+	).Scan(&got)
+	if err != nil {
+		t.Fatalf("query inserted row: %v", err)
+	}
+	if got != expected {
+		t.Errorf("user_email = %s, want %s (SHA-1 of %q)", got, expected, syntheticEmail)
+	}
+}
