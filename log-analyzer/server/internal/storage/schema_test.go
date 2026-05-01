@@ -64,6 +64,7 @@ func TestSchemaAppliesCleanly(t *testing.T) {
 		"hwid_user_map",
 		"ip_user_map",
 		"node_stats",
+		"nodes",
 		"online_snapshots",
 		"remna_hwid_devices",
 		"remna_nodes",
