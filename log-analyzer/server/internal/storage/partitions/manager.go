@@ -80,5 +80,44 @@ func (m *Manager) EnsureFuturePartitions(ctx context.Context) error {
 
 // DropExpiredPartitions drops partitions older than RetentionDays.
 func (m *Manager) DropExpiredPartitions(ctx context.Context) error {
-	return nil // implemented in Step 1.3
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	for _, tbl := range m.tables {
+		cutoff := today.AddDate(0, 0, -tbl.RetentionDays)
+		rows, err := m.pool.Query(ctx, `
+			SELECT child.relname
+			FROM pg_inherits i
+			JOIN pg_class parent ON parent.oid = i.inhparent
+			JOIN pg_class child  ON child.oid  = i.inhrelid
+			WHERE parent.relname = $1
+		`, tbl.Name)
+		if err != nil {
+			return fmt.Errorf("list %s partitions: %w", tbl.Name, err)
+		}
+		var toDrop []string
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				rows.Close()
+				return err
+			}
+			if len(name) < len(tbl.Name)+9 {
+				continue
+			}
+			suffix := name[len(tbl.Name)+1:]
+			day, err := time.Parse("20060102", suffix)
+			if err != nil {
+				continue
+			}
+			if day.Before(cutoff) {
+				toDrop = append(toDrop, name)
+			}
+		}
+		rows.Close()
+		for _, name := range toDrop {
+			if _, err := m.pool.Exec(ctx, "DROP TABLE IF EXISTS "+name); err != nil {
+				return fmt.Errorf("drop %s: %w", name, err)
+			}
+		}
+	}
+	return nil
 }
