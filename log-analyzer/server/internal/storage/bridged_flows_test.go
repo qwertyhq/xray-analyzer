@@ -256,7 +256,15 @@ func TestRecordBridgedFlow_NonUUIDEmail(t *testing.T) {
 	ctx := context.Background()
 
 	const syntheticEmail = "5117"
-	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte(syntheticEmail))
+	knownUUID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+
+	// Pre-seed remna_users so ResolveUserEmailToUUID finds it by username.
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO remna_users (uuid, username, status)
+		VALUES ($1, $2, 'ACTIVE')
+	`, knownUUID, syntheticEmail); err != nil {
+		t.Fatalf("seed remna_users: %v", err)
+	}
 
 	// LookupNodeID upserts the node so it exists in the nodes table.
 	if _, err := s.LookupNodeID(ctx, "ru-bridge", "bridge"); err != nil {
@@ -274,7 +282,7 @@ func TestRecordBridgedFlow_NonUUIDEmail(t *testing.T) {
 		Destination:  "example-bf.com:443",
 		Timestamp:    time.Now().UTC(),
 	}); err != nil {
-		t.Fatalf("non-UUID email should succeed via SHA-1 fallback: %v", err)
+		t.Fatalf("non-UUID email should succeed via remna_users lookup: %v", err)
 	}
 
 	var got uuid.UUID
@@ -284,7 +292,44 @@ func TestRecordBridgedFlow_NonUUIDEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query inserted row: %v", err)
 	}
-	if got != expected {
-		t.Errorf("user_email = %s, want %s (SHA-1 of %q)", got, expected, syntheticEmail)
+	if got != knownUUID {
+		t.Errorf("user_email = %s, want %s (remna_users uuid for %q)", got, knownUUID, syntheticEmail)
+	}
+}
+
+func TestRecordBridgedFlow_EmailIndexFallback(t *testing.T) {
+	s := newTestStorage(t)
+	ctx := context.Background()
+
+	const unknownEmail = "totally-unknown-id-not-in-remna"
+
+	if _, err := s.LookupNodeID(ctx, "ru-bridge", "bridge"); err != nil {
+		t.Fatalf("LookupNodeID bridge: %v", err)
+	}
+	if _, err := s.LookupNodeID(ctx, "germany-1", "exit"); err != nil {
+		t.Fatalf("LookupNodeID exit: %v", err)
+	}
+
+	if err := s.RecordBridgedFlow(ctx, &BridgedFlow{
+		UserEmail:    unknownEmail,
+		RealClientIP: "203.0.113.6",
+		BridgeNodeID: "ru-bridge",
+		ExitNodeID:   "germany-1",
+		Destination:  "unknown-fallback.com:443",
+		Timestamp:    time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("unknown email should succeed via SHA-1 fallback: %v", err)
+	}
+
+	// email_index must have a row with original_email = unknownEmail.
+	var storedEmail string
+	err := s.pool.QueryRow(ctx,
+		`SELECT original_email FROM email_index WHERE original_email = $1`, unknownEmail,
+	).Scan(&storedEmail)
+	if err != nil {
+		t.Fatalf("email_index row not written: %v", err)
+	}
+	if storedEmail != unknownEmail {
+		t.Errorf("email_index.original_email = %q, want %q", storedEmail, unknownEmail)
 	}
 }

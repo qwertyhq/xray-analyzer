@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
@@ -21,10 +20,10 @@ func seedThreatMatch(t *testing.T, s *Storage, email, threatType string, at time
 		t.Fatalf("seedThreatMatch LookupNodeID: %v", err)
 	}
 
-	// Resolve email to UUID.
-	userUUID, err := uuid.Parse(email)
+	// Resolve email to UUID via ResolveUserEmailToUUID for consistency.
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, email)
 	if err != nil {
-		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(email))
+		t.Fatalf("seedThreatMatch ResolveUserEmailToUUID: %v", err)
 	}
 
 	_, err = s.pool.Exec(ctx, `

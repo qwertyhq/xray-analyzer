@@ -24,15 +24,15 @@ func seedThreatTypeStats(t *testing.T, s *Storage, threatType string, count int6
 }
 
 // seedUserThreatStats inserts a row into user_threat_stats.
-// email is resolved to a deterministic UUID via testUUID() to satisfy the uuid column.
+// email is resolved via ResolveUserEmailToUUID for consistency with the storage layer.
 func seedUserThreatStats(t *testing.T, s *Storage, email, threatType string, count int64) {
 	t.Helper()
-	userUUID, err := uuid.Parse(email)
+	ctx := context.Background()
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, email)
 	if err != nil {
-		// convert non-UUID test strings to deterministic UUID
-		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(email))
+		t.Fatalf("seedUserThreatStats ResolveUserEmailToUUID: %v", err)
 	}
-	_, err = s.pool.Exec(context.Background(), `
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_threat_stats (user_email, threat_type, match_count, last_match)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (user_email, threat_type) DO UPDATE SET

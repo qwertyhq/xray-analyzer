@@ -360,11 +360,19 @@ func TestSaveThreatMatch_NonUUIDEmail(t *testing.T) {
 	ctx := context.Background()
 
 	const syntheticEmail = "5117"
-	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte(syntheticEmail))
+	knownUUID := uuid.MustParse("11111111-1111-4111-8111-111111111114")
+
+	// Pre-seed remna_users so ResolveUserEmailToUUID finds it by username.
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO remna_users (uuid, username, status)
+		VALUES ($1, $2, 'ACTIVE')
+	`, knownUUID, syntheticEmail); err != nil {
+		t.Fatalf("seed remna_users: %v", err)
+	}
 
 	match := newThreatMatch(syntheticEmail, "malware")
 	if err := s.SaveThreatMatch(ctx, match); err != nil {
-		t.Fatalf("non-UUID email should succeed via SHA-1 fallback: %v", err)
+		t.Fatalf("non-UUID email should succeed via remna_users lookup: %v", err)
 	}
 
 	var got uuid.UUID
@@ -374,7 +382,7 @@ func TestSaveThreatMatch_NonUUIDEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query inserted row: %v", err)
 	}
-	if got != expected {
-		t.Errorf("user_email = %s, want %s (SHA-1 of %q)", got, expected, syntheticEmail)
+	if got != knownUUID {
+		t.Errorf("user_email = %s, want %s (remna_users uuid for %q)", got, knownUUID, syntheticEmail)
 	}
 }

@@ -168,17 +168,25 @@ func TestCreateAlert_NonUUIDEmail(t *testing.T) {
 	ctx := context.Background()
 
 	const syntheticEmail = "5117"
-	expected := uuid.NewSHA1(uuid.NameSpaceURL, []byte(syntheticEmail))
+	knownUUID := uuid.MustParse("11111111-1111-4111-8111-111111111112")
+
+	// Pre-seed remna_users so ResolveUserEmailToUUID finds it by username.
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO remna_users (uuid, username, status)
+		VALUES ($1, $2, 'ACTIVE')
+	`, knownUUID, syntheticEmail); err != nil {
+		t.Fatalf("seed remna_users: %v", err)
+	}
 
 	a := &models.Alert{
-		Type:    "blacklist",
-		NodeID:  "node-synthetic",
+		Type:      "blacklist",
+		NodeID:    "node-synthetic",
 		UserEmail: syntheticEmail,
-		Count:   1,
-		Message: "synthetic id test",
+		Count:     1,
+		Message:   "synthetic id test",
 	}
 	if err := s.CreateAlert(ctx, a); err != nil {
-		t.Fatalf("non-UUID email should succeed via SHA-1 fallback: %v", err)
+		t.Fatalf("non-UUID email should succeed via remna_users lookup: %v", err)
 	}
 	if a.ID == 0 {
 		t.Fatal("expected non-zero alert ID after insert")
@@ -191,7 +199,7 @@ func TestCreateAlert_NonUUIDEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query inserted row: %v", err)
 	}
-	if got != expected {
-		t.Errorf("user_email = %s, want %s (SHA-1 of %q)", got, expected, syntheticEmail)
+	if got != knownUUID {
+		t.Errorf("user_email = %s, want %s (remna_users uuid for %q)", got, knownUUID, syntheticEmail)
 	}
 }
