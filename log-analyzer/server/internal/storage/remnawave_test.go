@@ -15,7 +15,7 @@ func TestRemnawave_UpsertAndGetUser(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	user := &remnawave.RemnaUserData{
-		UUID:                 "test-uuid-1",
+		UUID:                 testUUID("test-user-1"),
 		ID:                   42,
 		ShortUUID:            "short1",
 		Username:             "testuser",
@@ -111,7 +111,7 @@ func TestRemnawave_GetRemnaStats(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	for i, status := range []string{"ACTIVE", "ACTIVE", "DISABLED", "EXPIRED"} {
 		u := &remnawave.RemnaUserData{
-			UUID:                 "stats-uuid-" + itoa(i),
+			UUID:                 testUUID("stats-user-" + itoa(i)),
 			ID:                   int64(100 + i),
 			Username:             "statsuser" + itoa(i),
 			Status:               status,
@@ -148,9 +148,9 @@ func TestRemnawave_GetRemnaUsers_Search(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	users := []*remnawave.RemnaUserData{
-		{UUID: "srch-1", ID: 201, Username: "alice", Status: "ACTIVE", TrafficLimitStrategy: "MONTH", CreatedAt: now, UpdatedAt: now, SyncedAt: now},
-		{UUID: "srch-2", ID: 202, Username: "bob", Status: "ACTIVE", TrafficLimitStrategy: "MONTH", CreatedAt: now, UpdatedAt: now, SyncedAt: now},
-		{UUID: "srch-3", ID: 203, Username: "charlie", Status: "DISABLED", TrafficLimitStrategy: "MONTH", CreatedAt: now, UpdatedAt: now, SyncedAt: now},
+		{UUID: testUUID("srch-alice"), ID: 201, Username: "alice", Status: "ACTIVE", TrafficLimitStrategy: "MONTH", CreatedAt: now, UpdatedAt: now, SyncedAt: now},
+		{UUID: testUUID("srch-bob"), ID: 202, Username: "bob", Status: "ACTIVE", TrafficLimitStrategy: "MONTH", CreatedAt: now, UpdatedAt: now, SyncedAt: now},
+		{UUID: testUUID("srch-charlie"), ID: 203, Username: "charlie", Status: "DISABLED", TrafficLimitStrategy: "MONTH", CreatedAt: now, UpdatedAt: now, SyncedAt: now},
 	}
 	for _, u := range users {
 		if err := s.UpsertRemnaUser(ctx, u); err != nil {
@@ -188,8 +188,9 @@ func TestRemnawave_HwidDevice(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	// Insert a user first (FK)
+	hwidUserUUID := testUUID("hwid-user")
 	u := &remnawave.RemnaUserData{
-		UUID:                 "hwid-user-uuid",
+		UUID:                 hwidUserUUID,
 		ID:                   301,
 		Username:             "hwiduser",
 		Status:               "ACTIVE",
@@ -204,7 +205,7 @@ func TestRemnawave_HwidDevice(t *testing.T) {
 
 	device := &remnawave.RemnaHwidData{
 		Hwid:        "device-hwid-abc",
-		UserUUID:    "hwid-user-uuid",
+		UserUUID:    hwidUserUUID,
 		Username:    "hwiduser",
 		FirstSeenAt: now,
 		SyncedAt:    now,
@@ -213,7 +214,7 @@ func TestRemnawave_HwidDevice(t *testing.T) {
 		t.Fatalf("UpsertRemnaHwidDevice: %v", err)
 	}
 
-	devices, err := s.GetRemnaUserHwids(ctx, "hwid-user-uuid")
+	devices, err := s.GetRemnaUserHwids(ctx, hwidUserUUID)
 	if err != nil {
 		t.Fatalf("GetRemnaUserHwids: %v", err)
 	}

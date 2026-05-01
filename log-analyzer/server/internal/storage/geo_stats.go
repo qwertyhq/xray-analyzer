@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
@@ -36,7 +37,12 @@ func (s *Storage) SaveUserLocation(ctx context.Context, userEmail, countryCode, 
 		return nil
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	userUUID, err := uuid.Parse(userEmail)
+	if err != nil {
+		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+	}
+
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_locations (user_email, country_code, country_name, city, latitude, longitude, last_seen, request_count)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW(), 1)
 		ON CONFLICT (user_email, country_code) DO UPDATE SET
@@ -45,7 +51,7 @@ func (s *Storage) SaveUserLocation(ctx context.Context, userEmail, countryCode, 
 			longitude = CASE WHEN $11 != 0 THEN $12 ELSE user_locations.longitude END,
 			last_seen = NOW(),
 			request_count = user_locations.request_count + 1
-	`, userEmail, countryCode, countryName, city, lat, lon, city, city, lat, lat, lon, lon)
+	`, userUUID, countryCode, countryName, city, lat, lon, city, city, lat, lat, lon, lon)
 
 	return err
 }
@@ -169,45 +175,43 @@ func (s *Storage) GetUserLocations(ctx context.Context, userEmail string, limit 
 		limit = 10
 	}
 
-	var rows *sql.Rows
-	var err error
+	scanLocs := func(query string, args ...interface{}) ([]*threatintel.UserLocation, error) {
+		rows, err := s.pool.Query(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var result []*threatintel.UserLocation
+		for rows.Next() {
+			loc := &threatintel.UserLocation{}
+			if e := rows.Scan(&loc.UserEmail, &loc.CountryCode, &loc.CountryName, &loc.City, &loc.LastSeen, &loc.RequestCount); e != nil {
+				continue
+			}
+			result = append(result, loc)
+		}
+		return result, rows.Err()
+	}
 
 	if userEmail != "" {
-		rows, err = s.db.QueryContext(ctx, `
-			SELECT user_email, country_code, country_name, city, last_seen, request_count
+		userUUID, err := uuid.Parse(userEmail)
+		if err != nil {
+			userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+		}
+		return scanLocs(`
+			SELECT user_email::text, country_code, country_name, COALESCE(city,''), last_seen, request_count
 			FROM user_locations
 			WHERE user_email = $1
 			ORDER BY last_seen DESC
 			LIMIT $2
-		`, userEmail, limit)
-	} else {
-		rows, err = s.db.QueryContext(ctx, `
-			SELECT user_email, country_code, country_name, city, last_seen, request_count
-			FROM user_locations
-			ORDER BY last_seen DESC
-			LIMIT $1
-		`, limit)
+		`, userUUID, limit)
 	}
 
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var result []*threatintel.UserLocation
-	for rows.Next() {
-		loc := &threatintel.UserLocation{}
-		var city sql.NullString
-		if err := rows.Scan(&loc.UserEmail, &loc.CountryCode, &loc.CountryName, &city, &loc.LastSeen, &loc.RequestCount); err != nil {
-			continue
-		}
-		if city.Valid {
-			loc.City = city.String
-		}
-		result = append(result, loc)
-	}
-
-	return result, nil
+	return scanLocs(`
+		SELECT user_email::text, country_code, country_name, COALESCE(city,''), last_seen, request_count
+		FROM user_locations
+		ORDER BY last_seen DESC
+		LIMIT $1
+	`, limit)
 }
 
 // GetConnectionGeoStats returns geographic statistics for ALL connections (not just threats)
@@ -304,8 +308,8 @@ func (s *Storage) GetLocationsWithoutCoords(ctx context.Context, limit int) ([]*
 		limit = 100
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, country_code, COALESCE(city, '') as city
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_email::text, country_code, COALESCE(city, '') as city
 		FROM user_locations
 		WHERE (latitude IS NULL OR latitude = 0) AND (longitude IS NULL OR longitude = 0)
 		ORDER BY request_count DESC
@@ -330,12 +334,16 @@ func (s *Storage) GetLocationsWithoutCoords(ctx context.Context, limit int) ([]*
 
 // UpdateLocationCoords updates coordinates for a specific user location
 func (s *Storage) UpdateLocationCoords(ctx context.Context, userEmail, countryCode, city string, lat, lon float64) error {
-	_, err := s.db.ExecContext(ctx, `
+	userUUID, err := uuid.Parse(userEmail)
+	if err != nil {
+		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+	}
+	_, err = s.pool.Exec(ctx, `
 		UPDATE user_locations
 		SET city = CASE WHEN $1 != '' THEN $2 ELSE city END,
 			latitude = $3,
 			longitude = $4
 		WHERE user_email = $5 AND country_code = $6
-	`, city, city, lat, lon, userEmail, countryCode)
+	`, city, city, lat, lon, userUUID, countryCode)
 	return err
 }

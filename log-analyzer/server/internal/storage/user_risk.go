@@ -7,10 +7,20 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
 // ==================== User Risk Profile Functions ====================
+
+// emailToUUID converts an email/identifier string to a uuid.UUID for DB queries.
+// Valid UUID strings parse directly; others are converted via SHA-1.
+func emailToUUID(email string) uuid.UUID {
+	if u, err := uuid.Parse(email); err == nil {
+		return u
+	}
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(email))
+}
 
 // CalculateUserRiskProfile calculates and saves risk profile for a user
 func (s *Storage) CalculateUserRiskProfile(ctx context.Context, email string) (*threatintel.UserRiskProfile, error) {
@@ -20,8 +30,10 @@ func (s *Storage) CalculateUserRiskProfile(ctx context.Context, email string) (*
 		RiskFactors:   []threatintel.RiskFactor{},
 	}
 
+	userUUID := emailToUUID(email)
+
 	// Get basic match stats
-	row := s.db.QueryRowContext(ctx, `
+	row := s.pool.QueryRow(ctx, `
 		SELECT
 			COUNT(*) as total_matches,
 			MIN(matched_at) as first_seen,
@@ -29,7 +41,7 @@ func (s *Storage) CalculateUserRiskProfile(ctx context.Context, email string) (*
 			COUNT(DISTINCT DATE(matched_at)) as days_active
 		FROM threat_matches
 		WHERE user_email = $1
-	`, email)
+	`, userUUID)
 
 	var firstSeen, lastActivity *time.Time
 	if err := row.Scan(&profile.TotalMatches, &firstSeen, &lastActivity, &profile.DaysActive); err != nil && err != sql.ErrNoRows {
@@ -44,12 +56,12 @@ func (s *Storage) CalculateUserRiskProfile(ctx context.Context, email string) (*
 	}
 
 	// Get threats by type
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		SELECT threat_type, COUNT(*) as cnt
 		FROM threat_matches
 		WHERE user_email = $1
 		GROUP BY threat_type
-	`, email)
+	`, userUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -68,34 +80,32 @@ func (s *Storage) CalculateUserRiskProfile(ctx context.Context, email string) (*
 	}
 
 	// Get unique countries
-	row = s.db.QueryRowContext(ctx, `
+	if err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(DISTINCT country_code)
 		FROM user_locations
 		WHERE user_email = $1
-	`, email)
-	if err := row.Scan(&profile.UniqueCountries); err != nil && err != sql.ErrNoRows {
+	`, userUUID).Scan(&profile.UniqueCountries); err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("scan unique countries: %w", err)
 	}
 
 	// Get anomaly count
-	row = s.db.QueryRowContext(ctx, `
+	if err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM anomalies
 		WHERE user_email = $1 AND resolved = 0
-	`, email)
-	if err := row.Scan(&profile.AnomalyCount); err != nil && err != sql.ErrNoRows {
+	`, userUUID).Scan(&profile.AnomalyCount); err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("scan anomaly count: %w", err)
 	}
 
 	// Get top domains
-	domainRows, err := s.db.QueryContext(ctx, `
+	domainRows, err := s.pool.Query(ctx, `
 		SELECT destination, COUNT(*) as cnt
 		FROM threat_matches
 		WHERE user_email = $1
 		GROUP BY destination
 		ORDER BY cnt DESC
 		LIMIT 5
-	`, email)
+	`, userUUID)
 	if err != nil {
 		return nil, fmt.Errorf("query top domains: %w", err)
 	}
@@ -233,26 +243,23 @@ func getRiskLevel(score int) threatintel.RiskLevel {
 
 // calculateRiskTrend compares current activity with previous period
 func (s *Storage) calculateRiskTrend(ctx context.Context, email string) string {
+	userUUID := emailToUUID(email)
 	var recent, previous int
 
-	// Count matches in last 7 days
-	row := s.db.QueryRowContext(ctx, `
+	if err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM threat_matches
 		WHERE user_email = $1 AND matched_at > NOW() - INTERVAL '7 days'
-	`, email)
-	if err := row.Scan(&recent); err != nil {
-		return "stable" // Default on error
+	`, userUUID).Scan(&recent); err != nil {
+		return "stable"
 	}
 
-	// Count matches in previous 7 days
-	row = s.db.QueryRowContext(ctx, `
+	if err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM threat_matches
 		WHERE user_email = $1
 		AND matched_at > NOW() - INTERVAL '14 days'
 		AND matched_at <= NOW() - INTERVAL '7 days'
-	`, email)
-	if err := row.Scan(&previous); err != nil {
-		return "stable" // Default on error
+	`, userUUID).Scan(&previous); err != nil {
+		return "stable"
 	}
 
 	if recent > previous+2 {
@@ -269,7 +276,9 @@ func (s *Storage) SaveUserRiskProfile(ctx context.Context, profile *threatintel.
 	topDomains, _ := json.Marshal(profile.TopDomains)
 	riskFactors, _ := json.Marshal(profile.RiskFactors)
 
-	_, err := s.db.ExecContext(ctx, `
+	userUUID := emailToUUID(profile.UserEmail)
+
+	_, err := s.pool.Exec(ctx, `
 		INSERT INTO user_risk_profiles (
 			user_email, risk_level, risk_score, total_matches, threats_by_type,
 			unique_countries, anomaly_count, first_seen, last_activity,
@@ -288,7 +297,7 @@ func (s *Storage) SaveUserRiskProfile(ctx context.Context, profile *threatintel.
 			risk_factors = EXCLUDED.risk_factors,
 			trend_direction = EXCLUDED.trend_direction,
 			updated_at = NOW()
-	`, profile.UserEmail, string(profile.RiskLevel), profile.RiskScore,
+	`, userUUID, string(profile.RiskLevel), profile.RiskScore,
 		profile.TotalMatches, string(threatsByType), profile.UniqueCountries,
 		profile.AnomalyCount, profile.FirstSeen, profile.LastActivity,
 		profile.DaysActive, string(topDomains), string(riskFactors), profile.TrendDirection)
@@ -304,19 +313,22 @@ func (s *Storage) GetUserRiskProfile(ctx context.Context, email string) (*threat
 		TopDomains:    []string{},
 	}
 
+	userUUID := emailToUUID(email)
+
 	var threatsByType, topDomains, riskFactors sql.NullString
 	var firstSeen, lastActivity *time.Time
 	var riskLevel string
+	var storedUUID uuid.UUID
 
-	row := s.db.QueryRowContext(ctx, `
+	row := s.pool.QueryRow(ctx, `
 		SELECT user_email, risk_level, risk_score, total_matches, threats_by_type,
 			   unique_countries, anomaly_count, first_seen, last_activity,
 			   days_active, top_domains, risk_factors, trend_direction
 		FROM user_risk_profiles
 		WHERE user_email = $1
-	`, email)
+	`, userUUID)
 
-	err := row.Scan(&profile.UserEmail, &riskLevel, &profile.RiskScore,
+	err := row.Scan(&storedUUID, &riskLevel, &profile.RiskScore,
 		&profile.TotalMatches, &threatsByType, &profile.UniqueCountries,
 		&profile.AnomalyCount, &firstSeen, &lastActivity,
 		&profile.DaysActive, &topDomains, &riskFactors, &profile.TrendDirection)
@@ -326,8 +338,13 @@ func (s *Storage) GetUserRiskProfile(ctx context.Context, email string) (*threat
 		return s.CalculateUserRiskProfile(ctx, email)
 	}
 	if err != nil {
+		// pgx uses pgconn.PgError not sql.ErrNoRows — check for "no rows" differently
+		if err.Error() == "no rows in result set" {
+			return s.CalculateUserRiskProfile(ctx, email)
+		}
 		return nil, err
 	}
+	profile.UserEmail = email // preserve original string form
 
 	profile.RiskLevel = threatintel.RiskLevel(riskLevel)
 
@@ -364,16 +381,15 @@ func (s *Storage) GetUserRiskSummary(ctx context.Context) (*threatintel.UserRisk
 	}
 
 	// Get total users and risk distribution
-	row := s.db.QueryRowContext(ctx, `
+	if err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(*), COALESCE(AVG(risk_score), 0)
 		FROM user_risk_profiles
-	`)
-	if err := row.Scan(&summary.TotalUsers, &summary.AverageRiskScore); err != nil && err != sql.ErrNoRows {
+	`).Scan(&summary.TotalUsers, &summary.AverageRiskScore); err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("scan user risk summary: %w", err)
 	}
 
 	// Get distribution by risk level
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		SELECT risk_level, COUNT(*)
 		FROM user_risk_profiles
 		GROUP BY risk_level
@@ -396,16 +412,13 @@ func (s *Storage) GetUserRiskSummary(ctx context.Context) (*threatintel.UserRisk
 	}
 
 	// Get high risk users (score >= 50)
-	highRiskRows, err := s.db.QueryContext(ctx, `
-		SELECT p.user_email, COALESCE(r.username, p.user_email) as display_name,
+	highRiskRows, err := s.pool.Query(ctx, `
+		SELECT p.user_email::text, COALESCE(r.username, p.user_email::text) AS display_name,
 			   p.risk_level, p.risk_score, p.total_matches, p.threats_by_type,
 			   p.unique_countries, p.anomaly_count, p.first_seen, p.last_activity,
 			   p.days_active, p.top_domains, p.risk_factors, p.trend_direction
 		FROM user_risk_profiles p
-		LEFT JOIN remna_users r ON (
-			p.user_email = r.username
-			OR CAST(r.id AS TEXT) = p.user_email
-		)
+		LEFT JOIN remna_users r ON r.uuid = p.user_email
 		WHERE p.risk_score >= 50
 		ORDER BY p.risk_score DESC
 		LIMIT 10
@@ -456,11 +469,10 @@ func (s *Storage) GetUserRiskSummary(ctx context.Context) (*threatintel.UserRisk
 	}
 
 	// Count recent escalations (risk increased in last 24h)
-	row = s.db.QueryRowContext(ctx, `
+	if err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM user_risk_profiles
 		WHERE trend_direction = 'up' AND updated_at > NOW() - INTERVAL '24 hours'
-	`)
-	if err := row.Scan(&summary.RecentEscalations); err != nil && err != sql.ErrNoRows {
+	`).Scan(&summary.RecentEscalations); err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("scan recent escalations: %w", err)
 	}
 
@@ -469,8 +481,9 @@ func (s *Storage) GetUserRiskSummary(ctx context.Context) (*threatintel.UserRisk
 
 // RecalculateAllUserRiskProfiles recalculates risk profiles for all users with threat activity
 func (s *Storage) RecalculateAllUserRiskProfiles(ctx context.Context) error {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT DISTINCT user_email FROM threat_matches WHERE user_email != ''
+	// user_email is uuid — cast to text for passing back to CalculateUserRiskProfile.
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT user_email::text FROM threat_matches
 	`)
 	if err != nil {
 		return err

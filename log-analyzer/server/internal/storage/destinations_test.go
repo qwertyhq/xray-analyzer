@@ -10,7 +10,7 @@ func TestDestinations_RecordAndRead(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "dest-user@example.com"
+	email := testUUID("dest-user")
 	nodeID := "node-dest-1"
 	dst := "example.com"
 	since := time.Now().UTC().Add(-1 * time.Hour)
@@ -47,7 +47,7 @@ func TestDestinations_IncrementCount(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "incr-user@example.com"
+	email := testUUID("incr-user")
 	nodeID := "node-incr"
 	dst := "counter.io"
 	since := time.Now().UTC().Add(-1 * time.Hour)
@@ -71,7 +71,7 @@ func TestDestinations_SinceFilter(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "since-user@example.com"
+	email := testUUID("since-user")
 	nodeID := "node-since"
 
 	// Record now — should be visible
@@ -94,23 +94,20 @@ func TestDestinations_Cleanup(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "cleanup-user@example.com"
+	email := testUUID("cleanup-dest-user")
 
 	// Insert a record, then immediately clean up with retentionDays=0 (removes everything)
 	if err := s.RecordUserDestination(ctx, email, "n1", "old.com"); err != nil {
 		t.Fatal(err)
 	}
 
-	// retention=0 means cutoff = now, so everything older than now is deleted
-	// To reliably delete the row, use a negative retention (future cutoff)
-	// Actually retentionDays=0 → cutoff=today; row's last_seen is just now so < cutoff may miss by ms.
 	// Use -1 retention to push cutoff 1 day into the future.
 	if err := s.CleanupUserDestinations(ctx, -1); err != nil {
 		t.Fatalf("CleanupUserDestinations: %v", err)
 	}
 
 	var cnt int
-	if err := s.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM user_destinations WHERE user_email = $1", email).Scan(&cnt); err != nil {
+	if err := s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM user_destinations").Scan(&cnt); err != nil {
 		t.Fatal(err)
 	}
 	if cnt != 0 {

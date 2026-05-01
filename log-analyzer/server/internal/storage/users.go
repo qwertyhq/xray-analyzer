@@ -8,23 +8,41 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/models"
 )
 
-// UpdateUserStats updates statistics for a user
+// UpdateUserStats updates statistics for a user.
+// nodeID is a text node name resolved to the nodes(id) smallint FK.
+// userEmail must be a valid UUID string; non-UUID strings are converted to SHA-1 UUID.
 func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string, requests int, blacklistHits int, lastBlacklistDomain string, uniqueDestinations int, lastIP string) error {
 	now := time.Now().UTC()
+
+	// Resolve text node name to smallint FK.
+	nid, err := s.LookupNodeID(ctx, nodeID, "exit")
+	if err != nil {
+		return fmt.Errorf("resolve node_id %q: %w", nodeID, err)
+	}
+
+	// user_email is uuid NOT NULL.
+	userUUID, err := uuid.Parse(userEmail)
+	if err != nil {
+		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+	}
 
 	var lastHit interface{}
 	if blacklistHits > 0 {
 		lastHit = now
-	} else {
-		lastHit = nil
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	var lastIPVal interface{}
+	if lastIP != "" {
+		lastIPVal = lastIP
+	}
+
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_stats (node_id, user_email, total_requests, blacklist_hits, unique_destinations, last_seen, last_ip, last_blacklist_hit, last_blacklist_domain)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::inet, $8, $9)
 		ON CONFLICT (node_id, user_email) DO UPDATE SET
 			total_requests = user_stats.total_requests + EXCLUDED.total_requests,
 			blacklist_hits = user_stats.blacklist_hits + EXCLUDED.blacklist_hits,
@@ -33,29 +51,26 @@ func (s *Storage) UpdateUserStats(ctx context.Context, nodeID, userEmail string,
 			last_ip = COALESCE(EXCLUDED.last_ip, user_stats.last_ip),
 			last_blacklist_hit = COALESCE(EXCLUDED.last_blacklist_hit, user_stats.last_blacklist_hit),
 			last_blacklist_domain = COALESCE(EXCLUDED.last_blacklist_domain, user_stats.last_blacklist_domain)
-	`, nodeID, userEmail, requests, blacklistHits, uniqueDestinations, now, lastIP, lastHit, lastBlacklistDomain)
+	`, int16(nid), userUUID, requests, blacklistHits, uniqueDestinations, now, lastIPVal, lastHit, lastBlacklistDomain)
 	return err
 }
 
 // GetTopBlacklistUsers gets users with most blacklist hits
 func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*models.UserStats, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		SELECT
-			u.node_id,
-			u.user_email,
-			COALESCE(r.username, u.user_email) as display_name,
+			n.node_id AS node_id,
+			u.user_email::text,
+			COALESCE(r.username, u.user_email::text) AS display_name,
 			u.total_requests,
 			u.blacklist_hits,
 			u.last_seen,
-			COALESCE(u.last_ip, '') as last_ip,
+			COALESCE(u.last_ip::text, '') AS last_ip,
 			u.last_blacklist_hit,
-			COALESCE(u.last_blacklist_domain, '') as last_blacklist_domain
+			COALESCE(u.last_blacklist_domain, '') AS last_blacklist_domain
 		FROM user_stats u
-		LEFT JOIN remna_users r ON (
-			r.username = u.user_email
-			OR CAST(r.id AS TEXT) = u.user_email
-			OR r.us_id = u.user_email
-		)
+		JOIN nodes n ON n.id = u.node_id
+		LEFT JOIN remna_users r ON r.uuid = u.user_email
 		WHERE u.blacklist_hits > 0
 		ORDER BY u.blacklist_hits DESC, u.total_requests DESC
 		LIMIT $1
@@ -86,7 +101,7 @@ func (s *Storage) GetTopBlacklistUsers(ctx context.Context, limit int) ([]*model
 }
 
 // GetAllUsers gets all users sorted by requests (aggregated across nodes)
-// Joins with remna_users to get display names for numeric user IDs (cached)
+// Joins with remna_users to get display names. node_id is resolved to text via nodes table.
 func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserStats, error) {
 	cacheKey := fmt.Sprintf("all_users_%d", limit)
 
@@ -94,36 +109,33 @@ func (s *Storage) GetAllUsers(ctx context.Context, limit int) ([]*models.UserSta
 		return cached.([]*models.UserStats), nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		WITH user_agg AS (
 			SELECT
-				STRING_AGG(DISTINCT node_id, ',') as nodes,
-				user_email,
-				COALESCE(SUM(total_requests), 0) as total_requests,
-				COALESCE(SUM(blacklist_hits), 0) as blacklist_hits,
-				MAX(last_seen) as last_seen,
-				MAX(last_ip) as last_ip,
-				MAX(last_blacklist_hit) as last_blacklist_hit,
-				MAX(last_blacklist_domain) as last_blacklist_domain
-			FROM user_stats
-			GROUP BY user_email
+				STRING_AGG(DISTINCT n.node_id, ',') AS nodes,
+				us.user_email,
+				COALESCE(SUM(us.total_requests), 0) AS total_requests,
+				COALESCE(SUM(us.blacklist_hits), 0) AS blacklist_hits,
+				MAX(us.last_seen) AS last_seen,
+				MAX(us.last_ip::text) AS last_ip,
+				MAX(us.last_blacklist_hit) AS last_blacklist_hit,
+				MAX(us.last_blacklist_domain) AS last_blacklist_domain
+			FROM user_stats us
+			JOIN nodes n ON n.id = us.node_id
+			GROUP BY us.user_email
 		)
 		SELECT
 			u.nodes,
-			u.user_email,
-			COALESCE(r.username, u.user_email) as display_name,
+			u.user_email::text,
+			COALESCE(r.username, u.user_email::text) AS display_name,
 			u.total_requests,
 			u.blacklist_hits,
 			u.last_seen,
-			COALESCE(u.last_ip, '') as last_ip,
+			COALESCE(u.last_ip, '') AS last_ip,
 			u.last_blacklist_hit,
-			COALESCE(u.last_blacklist_domain, '') as last_blacklist_domain
+			COALESCE(u.last_blacklist_domain, '') AS last_blacklist_domain
 		FROM user_agg u
-		LEFT JOIN remna_users r ON (
-			r.username = u.user_email
-			OR CAST(r.id AS TEXT) = u.user_email
-			OR r.us_id = u.user_email
-		)
+		LEFT JOIN remna_users r ON r.uuid = u.user_email
 		ORDER BY u.total_requests DESC
 		LIMIT $1
 	`, limit)
@@ -549,11 +561,19 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 
 // GetUserBlacklistCount gets the count of blacklist hits for a user since a given time
 func (s *Storage) GetUserBlacklistCount(ctx context.Context, nodeID, userEmail string, since time.Time) (int, error) {
+	nid, err := s.LookupNodeID(ctx, nodeID, "exit")
+	if err != nil {
+		return 0, nil // node not found → no matches
+	}
+	userUUID, err := uuid.Parse(userEmail)
+	if err != nil {
+		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+	}
 	var count int
-	err := s.db.QueryRowContext(ctx, `
+	err = s.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM blacklist_matches
 		WHERE node_id = $1 AND user_email = $2 AND timestamp > $3
-	`, nodeID, userEmail, since.UTC()).Scan(&count)
+	`, int16(nid), userUUID, since.UTC()).Scan(&count)
 	return count, err
 }
 
@@ -617,17 +637,18 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 
 // GetUserAnomalies finds users with unusual activity spikes
 func (s *Storage) GetUserAnomalies(ctx context.Context, limit int) ([]models.Anomaly, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		SELECT
-			user_email,
-			node_id,
-			blacklist_hits,
-			total_requests,
-			COALESCE(last_blacklist_domain, '') as last_blacklist_domain,
-			last_seen
-		FROM user_stats
-		WHERE blacklist_hits > 10
-		ORDER BY blacklist_hits DESC
+			us.user_email::text,
+			n.node_id,
+			us.blacklist_hits,
+			us.total_requests,
+			COALESCE(us.last_blacklist_domain, '') AS last_blacklist_domain,
+			us.last_seen
+		FROM user_stats us
+		JOIN nodes n ON n.id = us.node_id
+		WHERE us.blacklist_hits > 10
+		ORDER BY us.blacklist_hits DESC
 		LIMIT $1
 	`, limit)
 	if err != nil {
@@ -666,15 +687,16 @@ func (s *Storage) GetUserAnomalies(ctx context.Context, limit int) ([]models.Ano
 
 // GetRecentAlerts gets recent alerts
 func (s *Storage) GetRecentAlerts(ctx context.Context, limit int) ([]*models.Alert, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, type, node_id, user_email,
-			   COALESCE(source_ip, '') as source_ip,
-			   COALESCE(destination, '') as destination,
-			   count, message,
-			   created_at,
-			   sent
-		FROM alerts
-		ORDER BY created_at DESC
+	rows, err := s.pool.Query(ctx, `
+		SELECT a.id, a.type, n.node_id, a.user_email::text,
+			   COALESCE(a.source_ip::text, '') AS source_ip,
+			   COALESCE(a.destination, '') AS destination,
+			   a.count, a.message,
+			   a.created_at,
+			   a.sent
+		FROM alerts a
+		JOIN nodes n ON n.id = a.node_id
+		ORDER BY a.created_at DESC
 		LIMIT $1
 	`, limit)
 	if err != nil {
@@ -712,7 +734,8 @@ type UserIPHistory struct {
 	RequestCount int64     `json:"request_count"`
 }
 
-// RecordUserIP records or updates a user's IP address in history
+// RecordUserIP records or updates a user's IP address in history.
+// userEmail is parsed to UUID; nodeID is resolved to smallint FK.
 func (s *Storage) RecordUserIP(ctx context.Context, userEmail, ipAddress, nodeID, countryCode, countryName, city string) error {
 	if ipAddress == "" {
 		return nil
@@ -720,9 +743,24 @@ func (s *Storage) RecordUserIP(ctx context.Context, userEmail, ipAddress, nodeID
 
 	now := time.Now().UTC()
 
-	_, err := s.db.ExecContext(ctx, `
+	// user_email is uuid NOT NULL.
+	userUUID, err := uuid.Parse(userEmail)
+	if err != nil {
+		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+	}
+
+	// node_id is nullable smallint FK — resolve if non-empty.
+	var nodeIntID interface{}
+	if nodeID != "" {
+		nid, err := s.LookupNodeID(ctx, nodeID, "exit")
+		if err == nil {
+			nodeIntID = int16(nid)
+		}
+	}
+
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_ip_history (user_email, ip_address, node_id, country_code, country_name, city, first_seen, last_seen, request_count)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1)
+		VALUES ($1, $2::inet, $3, $4, $5, $6, $7, $8, 1)
 		ON CONFLICT (user_email, ip_address) DO UPDATE SET
 			node_id = COALESCE(EXCLUDED.node_id, user_ip_history.node_id),
 			country_code = COALESCE(EXCLUDED.country_code, user_ip_history.country_code),
@@ -730,14 +768,14 @@ func (s *Storage) RecordUserIP(ctx context.Context, userEmail, ipAddress, nodeID
 			city = COALESCE(EXCLUDED.city, user_ip_history.city),
 			last_seen = EXCLUDED.last_seen,
 			request_count = user_ip_history.request_count + 1
-	`, userEmail, ipAddress, nodeID, countryCode, countryName, city, now, now)
+	`, userUUID, ipAddress, nodeIntID, countryCode, countryName, city, now, now)
 
 	if err != nil {
 		return err
 	}
 
 	// Keep only last 20 IPs per user (delete oldest)
-	_, err = s.db.ExecContext(ctx, `
+	_, err = s.pool.Exec(ctx, `
 		DELETE FROM user_ip_history
 		WHERE user_email = $1 AND id NOT IN (
 			SELECT id FROM user_ip_history
@@ -745,29 +783,38 @@ func (s *Storage) RecordUserIP(ctx context.Context, userEmail, ipAddress, nodeID
 			ORDER BY last_seen DESC
 			LIMIT 20
 		)
-	`, userEmail, userEmail)
+	`, userUUID, userUUID)
 
 	return err
 }
 
-// GetUserIPHistory gets the IP history for a user (last 20 IPs)
+// GetUserIPHistory gets the IP history for a user (last 20 IPs).
+// ip_address (inet) and node_id (smallint FK) are cast/joined to text.
 func (s *Storage) GetUserIPHistory(ctx context.Context, userEmail string) ([]*UserIPHistory, error) {
-	searchIDs := s.BuildFullSearchIDs(ctx, userEmail)
+	// Resolve userEmail to UUID(s).
+	var searchUUIDs []uuid.UUID
+	if u, err := uuid.Parse(userEmail); err == nil {
+		searchUUIDs = []uuid.UUID{u}
+	} else {
+		// Convert via SHA-1 for non-UUID strings (legacy / test identifiers).
+		searchUUIDs = []uuid.UUID{uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))}
+	}
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT ip_address,
-			   COALESCE(node_id, '') as node_id,
-			   COALESCE(country_code, '') as country_code,
-			   COALESCE(country_name, '') as country_name,
-			   COALESCE(city, '') as city,
-			   first_seen,
-			   last_seen,
-			   request_count
-		FROM user_ip_history
-		WHERE user_email = ANY($1)
-		ORDER BY last_seen DESC
+		SELECT host(h.ip_address),
+			   COALESCE(n.node_id, '') AS node_id,
+			   COALESCE(h.country_code, '') AS country_code,
+			   COALESCE(h.country_name, '') AS country_name,
+			   COALESCE(h.city, '') AS city,
+			   h.first_seen,
+			   h.last_seen,
+			   h.request_count
+		FROM user_ip_history h
+		LEFT JOIN nodes n ON n.id = h.node_id
+		WHERE h.user_email = ANY($1)
+		ORDER BY h.last_seen DESC
 		LIMIT 20
-	`, searchIDs)
+	`, searchUUIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -787,22 +834,20 @@ func (s *Storage) GetUserIPHistory(ctx context.Context, userEmail string) ([]*Us
 
 // GetSubscriptionAbusers finds users with suspiciously many unique IPs (potential account sharing)
 func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, minIPs int) ([]*models.SubscriptionAbuse, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		SELECT
-			h.user_email,
-			COALESCE(r.username, h.user_email) as display_name,
-			COUNT(DISTINCT h.ip_address) as unique_ips,
-			COUNT(DISTINCT h.node_id) as unique_nodes,
-			COUNT(DISTINCT h.country_code) as unique_countries,
-			STRING_AGG(DISTINCT h.country_code, ',') as countries,
-			STRING_AGG(DISTINCT h.node_id, ',') as nodes,
-			SUM(h.request_count) as total_requests,
-			MAX(h.last_seen) as last_seen
+			h.user_email::text,
+			COALESCE(r.username, h.user_email::text) AS display_name,
+			COUNT(DISTINCT h.ip_address) AS unique_ips,
+			COUNT(DISTINCT h.node_id) AS unique_nodes,
+			COUNT(DISTINCT h.country_code) AS unique_countries,
+			COALESCE(STRING_AGG(DISTINCT h.country_code, ','), '') AS countries,
+			COALESCE(STRING_AGG(DISTINCT n.node_id, ','), '') AS nodes,
+			SUM(h.request_count) AS total_requests,
+			MAX(h.last_seen) AS last_seen
 		FROM user_ip_history h
-		LEFT JOIN remna_users r ON (
-			CAST(r.id AS TEXT) = h.user_email
-			OR r.username = h.user_email
-		)
+		LEFT JOIN nodes n ON n.id = h.node_id
+		LEFT JOIN remna_users r ON r.uuid = h.user_email
 		WHERE h.last_seen >= $1
 		GROUP BY h.user_email, r.username
 		HAVING COUNT(DISTINCT h.ip_address) >= $2
@@ -816,11 +861,10 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 	var abusers []*models.SubscriptionAbuse
 	for rows.Next() {
 		a := &models.SubscriptionAbuse{}
-		var countriesStr string
-		var nodesStrPtr *string
+		var countriesStr, nodesStr string
 		var lastSeen *time.Time
 		if err := rows.Scan(&a.UserEmail, &a.Username, &a.UniqueIPs, &a.UniqueNodes, &a.UniqueCountries,
-			&countriesStr, &nodesStrPtr, &a.TotalRequests, &lastSeen); err != nil {
+			&countriesStr, &nodesStr, &a.TotalRequests, &lastSeen); err != nil {
 			return nil, err
 		}
 		if lastSeen != nil {
@@ -829,16 +873,15 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 		if countriesStr != "" {
 			a.Countries = splitAndTrim(countriesStr, ",")
 		}
-		if nodesStrPtr != nil {
-			a.Nodes = splitAndTrim(*nodesStrPtr, ",")
+		if nodesStr != "" {
+			a.Nodes = splitAndTrim(nodesStr, ",")
 		}
 		abusers = append(abusers, a)
 	}
 
 	// Load IP details for each abuser
-	sinceStr := since.UTC()
 	for _, abuser := range abusers {
-		ips, err := s.getAbuserIPs(ctx, abuser.UserEmail, sinceStr)
+		ips, err := s.getAbuserIPs(ctx, abuser.UserEmail, since.UTC())
 		if err != nil {
 			continue
 		}
@@ -850,19 +893,28 @@ func (s *Storage) GetSubscriptionAbusers(ctx context.Context, since time.Time, m
 
 // getAbuserIPs gets IP details for a suspected abuser
 func (s *Storage) getAbuserIPs(ctx context.Context, userEmail string, since time.Time) ([]models.IPInfo, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	// Resolve userEmail to UUID.
+	var userUUID uuid.UUID
+	var err error
+	userUUID, err = uuid.Parse(userEmail)
+	if err != nil {
+		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+	}
+
+	rows, err := s.pool.Query(ctx, `
 		SELECT
-			ip_address,
-			COALESCE(country_code, '') as country_code,
-			COALESCE(city, '') as city,
-			COALESCE(node_id, '') as node_id,
-			request_count,
-			last_seen
-		FROM user_ip_history
-		WHERE user_email = $1 AND last_seen >= $2
-		ORDER BY request_count DESC
+			host(h.ip_address),
+			COALESCE(h.country_code, '') AS country_code,
+			COALESCE(h.city, '') AS city,
+			COALESCE(n.node_id, '') AS node_id,
+			h.request_count,
+			h.last_seen
+		FROM user_ip_history h
+		LEFT JOIN nodes n ON n.id = h.node_id
+		WHERE h.user_email = $1 AND h.last_seen >= $2
+		ORDER BY h.request_count DESC
 		LIMIT 10
-	`, userEmail, since.UTC())
+	`, userUUID, since.UTC())
 	if err != nil {
 		return nil, err
 	}

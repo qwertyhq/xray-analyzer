@@ -16,8 +16,11 @@ func TestDetectPortScan_Slash16Sweep(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
 
+	// RecordUserDestination converts non-UUID strings to deterministic SHA-1 UUID.
+	// The detect* query returns that same UUID so we compare with testUUID(name).
+	scannerEmail := testUUID("scanner-1")
 	for i := 0; i < 25; i++ {
-		_ = st.RecordUserDestination(ctx, "scanner-1", "germany-1", fmt.Sprintf("147.251.6.%d:8317", i+1))
+		_ = st.RecordUserDestination(ctx, scannerEmail, "germany-1", fmt.Sprintf("147.251.6.%d:8317", i+1))
 	}
 
 	anomalies, err := st.detectPortScan(ctx, time.Now())
@@ -26,7 +29,7 @@ func TestDetectPortScan_Slash16Sweep(t *testing.T) {
 	}
 	var got *threatintel.Anomaly
 	for _, a := range anomalies {
-		if a.UserEmail == "scanner-1" {
+		if a.UserEmail == scannerEmail {
 			got = a
 			break
 		}
@@ -50,12 +53,13 @@ func TestDetectPortScan_WhatsAppOn443NotFlagged(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
 
+	whatsappEmail := testUUID("whatsapp-user")
 	// 100 IPs spread across 10 distinct /16s, all on :443 — normal CDN.
 	subnets := []string{"31.13.64", "31.13.65", "31.13.66", "157.240.1", "157.240.2",
 		"102.132.96", "163.70.128", "173.252.100", "179.60.192", "185.60.216"}
 	for _, s := range subnets {
 		for i := 0; i < 10; i++ {
-			_ = st.RecordUserDestination(ctx, "whatsapp-user", "germany-1", fmt.Sprintf("%s.%d:443", s, i+1))
+			_ = st.RecordUserDestination(ctx, whatsappEmail, "germany-1", fmt.Sprintf("%s.%d:443", s, i+1))
 		}
 	}
 
@@ -64,7 +68,7 @@ func TestDetectPortScan_WhatsAppOn443NotFlagged(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, a := range anomalies {
-		if a.UserEmail == "whatsapp-user" {
+		if a.UserEmail == whatsappEmail {
 			t.Errorf("WhatsApp false positive: %+v", a)
 		}
 	}
@@ -75,12 +79,13 @@ func TestDetectPortScan_WhatsAppOn443NotFlagged(t *testing.T) {
 func TestDetectPortScan_DomainTrafficNotFlagged(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
+	browserEmail := testUUID("browser")
 	for i := 0; i < 50; i++ {
-		_ = st.RecordUserDestination(ctx, "browser", "germany-1", fmt.Sprintf("site-%d.example.com:443", i))
+		_ = st.RecordUserDestination(ctx, browserEmail, "germany-1", fmt.Sprintf("site-%d.example.com:443", i))
 	}
 	anomalies, _ := st.detectPortScan(ctx, time.Now())
 	for _, a := range anomalies {
-		if a.UserEmail == "browser" {
+		if a.UserEmail == browserEmail {
 			t.Errorf("domain browsing flagged: %+v", a)
 		}
 	}
@@ -90,12 +95,13 @@ func TestDetectPortScan_DomainTrafficNotFlagged(t *testing.T) {
 func TestDetectPortScan_BelowThresholdNotFlagged(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
+	borderlineEmail := testUUID("borderline")
 	for i := 0; i < 15; i++ {
-		_ = st.RecordUserDestination(ctx, "borderline", "germany-1", fmt.Sprintf("10.0.0.%d:9999", i))
+		_ = st.RecordUserDestination(ctx, borderlineEmail, "germany-1", fmt.Sprintf("10.0.0.%d:9999", i))
 	}
 	anomalies, _ := st.detectPortScan(ctx, time.Now())
 	for _, a := range anomalies {
-		if a.UserEmail == "borderline" {
+		if a.UserEmail == borderlineEmail {
 			t.Errorf("borderline user flagged: %+v", a)
 		}
 	}
@@ -107,9 +113,10 @@ func TestDetectAbusePortFlood_SSHSweep(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
 
+	sshEmail := testUUID("ssh-bruteforcer")
 	// 20 distinct /24s, one IP each, all on :22 — scattered SSH brute.
 	for i := 0; i < 20; i++ {
-		_ = st.RecordUserDestination(ctx, "ssh-bruteforcer", "germany-1", fmt.Sprintf("10.%d.1.1:22", i+1))
+		_ = st.RecordUserDestination(ctx, sshEmail, "germany-1", fmt.Sprintf("10.%d.1.1:22", i+1))
 	}
 
 	anomalies, err := st.detectAbusePortFlood(ctx, time.Now())
@@ -118,7 +125,7 @@ func TestDetectAbusePortFlood_SSHSweep(t *testing.T) {
 	}
 	var got *threatintel.Anomaly
 	for _, a := range anomalies {
-		if a.UserEmail == "ssh-bruteforcer" {
+		if a.UserEmail == sshEmail {
 			got = a
 			break
 		}
@@ -140,13 +147,14 @@ func TestDetectAbusePortFlood_SMTPSpam(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
 
+	spammerEmail := testUUID("spammer")
 	for i := 0; i < 18; i++ {
-		_ = st.RecordUserDestination(ctx, "spammer", "germany-1", fmt.Sprintf("smtp-%d.example.com:587", i))
+		_ = st.RecordUserDestination(ctx, spammerEmail, "germany-1", fmt.Sprintf("smtp-%d.example.com:587", i))
 	}
 	anomalies, _ := st.detectAbusePortFlood(ctx, time.Now())
 	found := false
 	for _, a := range anomalies {
-		if a.UserEmail == "spammer" && a.Details["port"] == "587" {
+		if a.UserEmail == spammerEmail && a.Details["port"] == "587" {
 			found = true
 			break
 		}
@@ -161,12 +169,13 @@ func TestDetectAbusePortFlood_SMTPSpam(t *testing.T) {
 func TestDetectAbusePortFlood_WebNotFlagged(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
+	webEmail := testUUID("browser-web")
 	for i := 0; i < 50; i++ {
-		_ = st.RecordUserDestination(ctx, "browser", "germany-1", fmt.Sprintf("web-%d.com:443", i))
+		_ = st.RecordUserDestination(ctx, webEmail, "germany-1", fmt.Sprintf("web-%d.com:443", i))
 	}
 	anomalies, _ := st.detectAbusePortFlood(ctx, time.Now())
 	for _, a := range anomalies {
-		if a.UserEmail == "browser" {
+		if a.UserEmail == webEmail {
 			t.Errorf("web traffic flagged as abuse flood: %+v", a)
 		}
 	}
@@ -181,9 +190,10 @@ func TestDetectBurstScan_SSHSweepOnScatteredNetworks(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
 
+	hackerEmail := testUUID("mamka-hacker")
 	// 25 distinct SSH targets across /24s — no /16 concentration.
 	for i := 0; i < 25; i++ {
-		_ = st.RecordUserDestination(ctx, "mamka-hacker", "poland-1", fmt.Sprintf("10.%d.1.1:22", i+1))
+		_ = st.RecordUserDestination(ctx, hackerEmail, "poland-1", fmt.Sprintf("10.%d.1.1:22", i+1))
 	}
 
 	got, err := st.detectBurstScanAnyTarget(ctx, time.Now())
@@ -192,7 +202,7 @@ func TestDetectBurstScan_SSHSweepOnScatteredNetworks(t *testing.T) {
 	}
 	var hit *threatintel.Anomaly
 	for _, a := range got {
-		if a.UserEmail == "mamka-hacker" {
+		if a.UserEmail == hackerEmail {
 			hit = a
 			break
 		}
@@ -221,18 +231,19 @@ func TestDetectBurstScan_BenignPortsIgnored(t *testing.T) {
 		{"rtsp-cam", "554"},
 		{"xmpp-msg", "5222"},
 		{"bittorrent", "6881"},
-		{"web-user", "443"},
+		{"web-user-benign", "443"},
 	}
+	emailFor := func(name string) string { return testUUID(name) }
 	for _, c := range cases {
 		for i := 0; i < 30; i++ {
-			_ = st.RecordUserDestination(ctx, c.user, "poland-1", fmt.Sprintf("10.0.%d.%d:%s", i%256, i/256+1, c.port))
+			_ = st.RecordUserDestination(ctx, emailFor(c.user), "poland-1", fmt.Sprintf("10.0.%d.%d:%s", i%256, i/256+1, c.port))
 		}
 	}
 
 	got, _ := st.detectBurstScanAnyTarget(ctx, time.Now())
 	for _, a := range got {
 		for _, c := range cases {
-			if a.UserEmail == c.user {
+			if a.UserEmail == emailFor(c.user) {
 				t.Errorf("%s on :%s flagged as burst scan (false positive): %+v", c.user, c.port, a)
 			}
 		}
@@ -244,12 +255,13 @@ func TestDetectBurstScan_BenignPortsIgnored(t *testing.T) {
 func TestDetectBurstScan_BelowThresholdNotFlagged(t *testing.T) {
 	st := newTestStorage(t)
 	ctx := context.Background()
+	lowVolEmail := testUUID("low-vol")
 	for i := 0; i < 10; i++ {
-		_ = st.RecordUserDestination(ctx, "low-vol", "poland-1", fmt.Sprintf("10.%d.1.1:22", i+1))
+		_ = st.RecordUserDestination(ctx, lowVolEmail, "poland-1", fmt.Sprintf("10.%d.1.1:22", i+1))
 	}
 	got, _ := st.detectBurstScanAnyTarget(ctx, time.Now())
 	for _, a := range got {
-		if a.UserEmail == "low-vol" {
+		if a.UserEmail == lowVolEmail {
 			t.Errorf("user under threshold flagged: %+v", a)
 		}
 	}
@@ -263,10 +275,11 @@ func TestGetAttackAnomalies_FiltersByType(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
+	uEmail := testUUID("attack-filter-u")
 	insert := func(id, atype string) {
 		if err := st.SaveAnomaly(ctx, &threatintel.Anomaly{
 			ID: id, Type: threatintel.AnomalyType(atype), Severity: threatintel.SeverityHigh,
-			UserEmail: "u", Description: id, DetectedAt: now,
+			UserEmail: uEmail, Description: id, DetectedAt: now,
 		}); err != nil {
 			t.Fatalf("SaveAnomaly: %v", err)
 		}
@@ -302,8 +315,9 @@ func TestGetAttackAnomalies_SkipsResolved(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{ID: "active", Type: threatintel.AnomalyPortScan, Severity: threatintel.SeverityHigh, UserEmail: "u", Description: "a", DetectedAt: now})
-	_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{ID: "done", Type: threatintel.AnomalyPortScan, Severity: threatintel.SeverityHigh, UserEmail: "u", Description: "d", DetectedAt: now, Resolved: true})
+	uEmail := testUUID("attack-resolved-u")
+	_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{ID: "active", Type: threatintel.AnomalyPortScan, Severity: threatintel.SeverityHigh, UserEmail: uEmail, Description: "a", DetectedAt: now})
+	_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{ID: "done", Type: threatintel.AnomalyPortScan, Severity: threatintel.SeverityHigh, UserEmail: uEmail, Description: "d", DetectedAt: now, Resolved: true})
 
 	got, _ := st.GetAttackAnomalies(ctx, []string{"port_scan"}, time.Hour, 50, false)
 	if len(got) != 1 || got[0].ID != "active" {
@@ -323,11 +337,13 @@ func TestSaveAndGetAnomaly_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 
+	// UserEmail must be a valid UUID to round-trip through the uuid column.
+	userEmail := testUUID("round-trip-user")
 	a := &threatintel.Anomaly{
 		ID:          "test-round-trip-1",
 		Type:        threatintel.AnomalyPortScan,
 		Severity:    threatintel.SeverityHigh,
-		UserEmail:   "test@example.com",
+		UserEmail:   userEmail,
 		Description: "round trip test",
 		Details:     map[string]any{"port": "8317", "unique_ips": float64(25)},
 		DetectedAt:  now,
@@ -363,9 +379,10 @@ func TestResolveAnomaly(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
+	uEmail := testUUID("resolve-u")
 	_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{
 		ID: "resolve-me", Type: threatintel.AnomalyAbusePortFlood,
-		Severity: threatintel.SeverityHigh, UserEmail: "u",
+		Severity: threatintel.SeverityHigh, UserEmail: uEmail,
 		Description: "will be resolved", DetectedAt: now,
 	})
 
@@ -403,16 +420,19 @@ func TestGetAnomalySummary_CountsByType(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
+	u1Email := testUUID("summary-u1")
+	u2Email := testUUID("summary-u2")
+
 	for i := 0; i < 3; i++ {
 		_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{
 			ID: fmt.Sprintf("ps-%d", i), Type: threatintel.AnomalyPortScan,
-			Severity: threatintel.SeverityHigh, UserEmail: "u1",
+			Severity: threatintel.SeverityHigh, UserEmail: u1Email,
 			Description: "x", DetectedAt: now,
 		})
 	}
 	_ = st.SaveAnomaly(ctx, &threatintel.Anomaly{
 		ID: "af-1", Type: threatintel.AnomalyAbusePortFlood,
-		Severity: threatintel.SeverityHigh, UserEmail: "u2",
+		Severity: threatintel.SeverityHigh, UserEmail: u2Email,
 		Description: "x", DetectedAt: now,
 	})
 

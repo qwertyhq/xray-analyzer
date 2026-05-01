@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
@@ -125,9 +126,15 @@ func (s *Storage) UpdateUserDNSStats(ctx context.Context, email string, domain s
 		blockedInc = 1
 	}
 
+	// user_dns_stats.user_email is uuid NOT NULL.
+	userUUID, err := uuid.Parse(email)
+	if err != nil {
+		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(email))
+	}
+
 	// Get existing top domains
 	var existingDomains sql.NullString
-	s.db.QueryRowContext(ctx, `SELECT top_domains FROM user_dns_stats WHERE user_email = $1`, email).Scan(&existingDomains)
+	s.pool.QueryRow(ctx, `SELECT top_domains FROM user_dns_stats WHERE user_email = $1`, userUUID).Scan(&existingDomains)
 
 	var topDomains []string
 	if existingDomains.Valid {
@@ -143,7 +150,7 @@ func (s *Storage) UpdateUserDNSStats(ctx context.Context, email string, domain s
 
 	domainsJSON, _ := json.Marshal(topDomains)
 
-	_, err := s.db.ExecContext(ctx, `
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_dns_stats (user_email, total_queries, blocked_queries, top_domains, updated_at)
 		VALUES ($1, 1, $2, $3, NOW())
 		ON CONFLICT (user_email) DO UPDATE SET
@@ -151,7 +158,7 @@ func (s *Storage) UpdateUserDNSStats(ctx context.Context, email string, domain s
 			blocked_queries = user_dns_stats.blocked_queries + $4,
 			top_domains = $5,
 			updated_at = NOW()
-	`, email, blockedInc, string(domainsJSON), blockedInc, string(domainsJSON))
+	`, userUUID, blockedInc, string(domainsJSON), blockedInc, string(domainsJSON))
 
 	return err
 }
@@ -286,8 +293,8 @@ func (s *Storage) GetDNSQueryStats(ctx context.Context) (*threatintel.DNSQuerySt
 func (s *Storage) GetTopUsersByDNS(ctx context.Context, limit int) ([]*threatintel.UserDNSStats, error) {
 	var users []*threatintel.UserDNSStats
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, total_queries, blocked_queries, top_domains
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_email::text, total_queries, blocked_queries, COALESCE(top_domains, '')
 		FROM user_dns_stats
 		ORDER BY blocked_queries DESC
 		LIMIT $1
@@ -301,14 +308,14 @@ func (s *Storage) GetTopUsersByDNS(ctx context.Context, limit int) ([]*threatint
 		u := &threatintel.UserDNSStats{
 			TopDomains: []string{},
 		}
-		var topDomains sql.NullString
+		var topDomainsStr string
 
-		if rows.Scan(&u.UserEmail, &u.TotalQueries, &u.BlockedQueries, &topDomains) == nil {
+		if rows.Scan(&u.UserEmail, &u.TotalQueries, &u.BlockedQueries, &topDomainsStr) == nil {
 			if u.TotalQueries > 0 {
 				u.BlockRate = float64(u.BlockedQueries) / float64(u.TotalQueries) * 100
 			}
-			if topDomains.Valid {
-				json.Unmarshal([]byte(topDomains.String), &u.TopDomains)
+			if topDomainsStr != "" {
+				json.Unmarshal([]byte(topDomainsStr), &u.TopDomains)
 			}
 			// Calculate risk level based on block rate
 			switch {

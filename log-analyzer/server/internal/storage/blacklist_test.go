@@ -12,10 +12,11 @@ func TestBlacklist_RecordAndAnalytics(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	userUUID := testUUID("bl-user")
 	now := time.Now().UTC()
 	match := &models.BlacklistMatch{
 		NodeID:      "node-bl-1",
-		UserEmail:   "bl-user@example.com",
+		UserEmail:   userUUID,
 		SourceIP:    "10.0.0.1",
 		Destination: "evil.com",
 		MatchedRule: "malware",
@@ -57,10 +58,11 @@ func TestBlacklist_AnalyticsSinceExcludesOldRecords(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	userUUID := testUUID("old-user")
 	old := time.Now().UTC().Add(-48 * time.Hour)
 	match := &models.BlacklistMatch{
 		NodeID:      "node-bl-old",
-		UserEmail:   "old-user@example.com",
+		UserEmail:   userUUID,
 		SourceIP:    "10.0.0.2",
 		Destination: "old-evil.com",
 		MatchedRule: "spam",
@@ -85,13 +87,13 @@ func TestBlacklist_GetUserBlacklistDetails(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "detail-user@example.com"
+	userUUID := testUUID("detail-user")
 	now := time.Now().UTC()
 
 	for i := 0; i < 3; i++ {
 		if err := s.RecordBlacklistMatch(ctx, &models.BlacklistMatch{
 			NodeID:      "node-detail",
-			UserEmail:   email,
+			UserEmail:   userUUID,
 			SourceIP:    "1.2.3.4",
 			Destination: "site.com",
 			MatchedRule: "rule",
@@ -101,7 +103,7 @@ func TestBlacklist_GetUserBlacklistDetails(t *testing.T) {
 		}
 	}
 
-	details, err := s.GetUserBlacklistDetails(ctx, email, now.Add(-time.Hour))
+	details, err := s.GetUserBlacklistDetails(ctx, userUUID, now.Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("GetUserBlacklistDetails: %v", err)
 	}
@@ -109,8 +111,8 @@ func TestBlacklist_GetUserBlacklistDetails(t *testing.T) {
 		t.Errorf("got %d details, want 3", len(details))
 	}
 
-	// Unknown user should return empty
-	unknown, err := s.GetUserBlacklistDetails(ctx, "nobody@example.com", now.Add(-time.Hour))
+	// Unknown user (non-UUID) should return nil without error.
+	unknown, err := s.GetUserBlacklistDetails(ctx, "not-a-uuid", now.Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("GetUserBlacklistDetails (unknown): %v", err)
 	}
@@ -123,13 +125,13 @@ func TestBlacklist_GetUserBlacklistMatches_Pagination(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "page-bl@example.com"
+	userUUID := testUUID("page-bl")
 	now := time.Now().UTC()
 
 	for i := 0; i < 5; i++ {
 		if err := s.RecordBlacklistMatch(ctx, &models.BlacklistMatch{
 			NodeID:      "node-page",
-			UserEmail:   email,
+			UserEmail:   userUUID,
 			SourceIP:    "5.5.5.5",
 			Destination: "paged.com",
 			MatchedRule: "r",
@@ -139,7 +141,7 @@ func TestBlacklist_GetUserBlacklistMatches_Pagination(t *testing.T) {
 		}
 	}
 
-	resp, err := s.GetUserBlacklistMatches(ctx, email, now.Add(-time.Hour), 1, 2)
+	resp, err := s.GetUserBlacklistMatches(ctx, userUUID, now.Add(-time.Hour), 1, 2)
 	if err != nil {
 		t.Fatalf("GetUserBlacklistMatches page 1: %v", err)
 	}
@@ -153,7 +155,7 @@ func TestBlacklist_GetUserBlacklistMatches_Pagination(t *testing.T) {
 		t.Errorf("TotalPages = %d, want 3", resp.TotalPages)
 	}
 
-	resp2, err := s.GetUserBlacklistMatches(ctx, email, now.Add(-time.Hour), 3, 2)
+	resp2, err := s.GetUserBlacklistMatches(ctx, userUUID, now.Add(-time.Hour), 3, 2)
 	if err != nil {
 		t.Fatalf("GetUserBlacklistMatches page 3: %v", err)
 	}

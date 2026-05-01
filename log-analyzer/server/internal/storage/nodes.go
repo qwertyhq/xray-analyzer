@@ -8,6 +8,30 @@ import (
 	"github.com/xray-log-analyzer/server/internal/models"
 )
 
+// LookupNodeID resolves a text node_id (e.g. "ru-bridge") to its smallint
+// primary key in the nodes table, inserting a new row if it does not yet exist.
+// The returned NodeID is always non-zero on success.
+func (s *Storage) LookupNodeID(ctx context.Context, nodeID, role string) (NodeID, error) {
+	if nodeID == "" {
+		return 0, fmt.Errorf("empty node_id")
+	}
+	if role == "" {
+		role = "exit" // default role
+	}
+	var id int16
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO nodes (node_id, role)
+		VALUES ($1, $2)
+		ON CONFLICT (node_id) DO UPDATE
+			SET last_seen = now()
+		RETURNING id
+	`, nodeID, role).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("lookup node %s: %w", nodeID, err)
+	}
+	return NodeID(id), nil
+}
+
 // UpdateNodeStats updates statistics for a node
 func (s *Storage) UpdateNodeStats(ctx context.Context, nodeID string, requests int, blacklistHits int, batchCount int) error {
 	if nodeID == "" {
@@ -29,11 +53,16 @@ func (s *Storage) UpdateNodeStats(ctx context.Context, nodeID string, requests i
 
 // UpdateNodeUniqueUsers updates unique users count for a node
 func (s *Storage) UpdateNodeUniqueUsers(ctx context.Context, nodeID string) error {
-	_, err := s.db.ExecContext(ctx, `
+	// user_stats.node_id is smallint FK; resolve text → id first.
+	nid, err := s.LookupNodeID(ctx, nodeID, "exit")
+	if err != nil {
+		return nil // node not registered yet — nothing to update
+	}
+	_, err = s.pool.Exec(ctx, `
 		UPDATE node_stats
 		SET unique_users = (SELECT COUNT(DISTINCT user_email) FROM user_stats WHERE node_id = $1)
 		WHERE node_id = $2
-	`, nodeID, nodeID)
+	`, int16(nid), nodeID)
 	return err
 }
 
@@ -50,24 +79,27 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 	// synced yet.
 	windowAgo := time.Now().UTC().Add(-5 * time.Minute)
 
+	// user_stats.node_id is a smallint FK into nodes(id), while node_stats.node_id is text.
+	// Bridge through the nodes table so the types are compatible.
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
-			n.node_id,
-			n.total_requests,
-			n.blacklist_hits,
-			n.unique_users,
+			ns.node_id,
+			ns.total_requests,
+			ns.blacklist_hits,
+			ns.unique_users,
 			COALESCE(online.cnt, 0) AS online_users,
-			n.last_seen,
-			n.last_batch_time,
-			n.last_batch_count
-		FROM node_stats n
+			ns.last_seen,
+			ns.last_batch_time,
+			ns.last_batch_count
+		FROM node_stats ns
 		LEFT JOIN (
-			SELECT node_id, COUNT(DISTINCT user_email) AS cnt
-			FROM user_stats
-			WHERE last_seen > $1
-			GROUP BY node_id
-		) online ON online.node_id = n.node_id
-		ORDER BY n.total_requests DESC
+			SELECT nd.node_id AS node_text_id, COUNT(DISTINCT us.user_email) AS cnt
+			FROM user_stats us
+			JOIN nodes nd ON nd.id = us.node_id
+			WHERE us.last_seen > $1
+			GROUP BY nd.node_id
+		) online ON online.node_text_id = ns.node_id
+		ORDER BY ns.total_requests DESC
 	`, windowAgo)
 	if err != nil {
 		return nil, err
@@ -135,28 +167,37 @@ func (s *Storage) remnaOnlineCounts(ctx context.Context) (map[string]int, error)
 
 // DeleteNode removes a node and all its related data
 func (s *Storage) DeleteNode(ctx context.Context, nodeID string) error {
+	// Resolve text node_id to the smallint FK used in child tables.
+	// If the node doesn't exist in nodes table yet, nothing to cascade.
+	var nid int16
+	_ = s.pool.QueryRow(ctx, `SELECT id FROM nodes WHERE node_id = $1`, nodeID).Scan(&nid)
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	// Delete from all related tables
-	if _, err := tx.ExecContext(ctx, "DELETE FROM user_stats WHERE node_id = $1", nodeID); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("delete user_stats: %w", err)
+	// Tables that reference nodes(id) as smallint FK — use resolved id.
+	if nid > 0 {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM user_stats WHERE node_id = $1", nid); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("delete user_stats: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM blacklist_matches WHERE node_id = $1", nid); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("delete blacklist_matches: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM alerts WHERE node_id = $1", nid); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("delete alerts: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM hourly_stats WHERE node_id = $1", nid); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("delete hourly_stats: %w", err)
+		}
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM blacklist_matches WHERE node_id = $1", nodeID); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("delete blacklist_matches: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM alerts WHERE node_id = $1", nodeID); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("delete alerts: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM hourly_stats WHERE node_id = $1", nodeID); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("delete hourly_stats: %w", err)
-	}
+
+	// node_stats uses text node_id as PK.
 	if _, err := tx.ExecContext(ctx, "DELETE FROM node_stats WHERE node_id = $1", nodeID); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("delete node_stats: %w", err)

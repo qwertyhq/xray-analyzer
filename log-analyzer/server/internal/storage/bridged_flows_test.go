@@ -4,7 +4,14 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+// testUUID generates a deterministic UUID from a name for tests.
+func testUUID(name string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(name)).String()
+}
 
 func makeFlow(userEmail, realIP, bridgeNode, exitNode, dst string, ts time.Time) *BridgedFlow {
 	return &BridgedFlow{
@@ -21,14 +28,15 @@ func TestBridgedFlows_RecordAndGet(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	userUUID := testUUID("bf-user")
 	now := time.Now().UTC()
-	f := makeFlow("bf-user@example.com", "10.0.0.1", "bridge-1", "exit-1", "example.com", now)
+	f := makeFlow(userUUID, "10.0.0.1", "bridge-1", "exit-1", "example.com", now)
 
 	if err := s.RecordBridgedFlow(ctx, f); err != nil {
 		t.Fatalf("RecordBridgedFlow: %v", err)
 	}
 
-	flows, err := s.GetBridgedFlows(ctx, BridgedFlowsFilter{UserEmail: "bf-user@example.com"})
+	flows, err := s.GetBridgedFlows(ctx, BridgedFlowsFilter{UserEmail: userUUID})
 	if err != nil {
 		t.Fatalf("GetBridgedFlows: %v", err)
 	}
@@ -36,8 +44,8 @@ func TestBridgedFlows_RecordAndGet(t *testing.T) {
 		t.Fatalf("len = %d, want 1", len(flows))
 	}
 	got := flows[0]
-	if got.UserEmail != f.UserEmail {
-		t.Errorf("UserEmail = %q, want %q", got.UserEmail, f.UserEmail)
+	if got.UserEmail != userUUID {
+		t.Errorf("UserEmail = %q, want %q", got.UserEmail, userUUID)
 	}
 	if got.RealClientIP != f.RealClientIP {
 		t.Errorf("RealClientIP = %q, want %q", got.RealClientIP, f.RealClientIP)
@@ -66,11 +74,12 @@ func TestBridgedFlows_GetFilter_Destination(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	u := testUUID("filter-dest-user")
 	now := time.Now().UTC()
 	flows := []*BridgedFlow{
-		makeFlow("u@example.com", "10.0.0.1", "b1", "e1", "alpha.com", now),
-		makeFlow("u@example.com", "10.0.0.2", "b1", "e1", "beta.com", now),
-		makeFlow("u@example.com", "10.0.0.3", "b1", "e1", "gamma.com", now),
+		makeFlow(u, "10.0.0.1", "b1", "e1", "alpha.com", now),
+		makeFlow(u, "10.0.0.2", "b1", "e1", "beta.com", now),
+		makeFlow(u, "10.0.0.3", "b1", "e1", "gamma.com", now),
 	}
 	for _, fl := range flows {
 		if err := s.RecordBridgedFlow(ctx, fl); err != nil {
@@ -94,13 +103,14 @@ func TestBridgedFlows_GetFilter_Since(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	u := testUUID("filter-since-user")
 	past := time.Now().UTC().Add(-2 * time.Hour)
 	recent := time.Now().UTC().Add(-30 * time.Minute)
 
-	if err := s.RecordBridgedFlow(ctx, makeFlow("u@example.com", "1.1.1.1", "b1", "e1", "old.com", past)); err != nil {
+	if err := s.RecordBridgedFlow(ctx, makeFlow(u, "1.1.1.1", "b1", "e1", "old.com", past)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RecordBridgedFlow(ctx, makeFlow("u@example.com", "2.2.2.2", "b1", "e1", "new.com", recent)); err != nil {
+	if err := s.RecordBridgedFlow(ctx, makeFlow(u, "2.2.2.2", "b1", "e1", "new.com", recent)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -122,12 +132,20 @@ func TestBridgedFlows_LookupBridgeCandidates(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UTC()
+	userUUID := testUUID("cand-user")
 
-	// Seed user_ip_history directly
-	_, err := s.DB().ExecContext(ctx, `
+	// First ensure node exists in nodes table.
+	bridgeNID, err := s.LookupNodeID(ctx, "bridge-node-A", "bridge")
+	if err != nil {
+		t.Fatalf("LookupNodeID: %v", err)
+	}
+
+	// Seed user_ip_history directly using the smallint node id.
+	uid, _ := uuid.Parse(userUUID)
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_ip_history (user_email, ip_address, node_id, first_seen, last_seen)
-		VALUES ($1, $2, $3, $4, $5)
-	`, "cand@example.com", "192.168.1.1", "bridge-node-A", now.Add(-2*time.Second), now)
+		VALUES ($1, $2::inet, $3, $4, $5)
+	`, uid, "192.168.1.1", int16(bridgeNID), now.Add(-2*time.Second), now)
 	if err != nil {
 		t.Fatalf("seed user_ip_history: %v", err)
 	}
@@ -139,8 +157,8 @@ func TestBridgedFlows_LookupBridgeCandidates(t *testing.T) {
 	if len(candidates) == 0 {
 		t.Fatal("expected at least one candidate")
 	}
-	if candidates[0].UserEmail != "cand@example.com" {
-		t.Errorf("UserEmail = %q, want cand@example.com", candidates[0].UserEmail)
+	if candidates[0].UserEmail != userUUID {
+		t.Errorf("UserEmail = %q, want %q", candidates[0].UserEmail, userUUID)
 	}
 	if candidates[0].IPAddress != "192.168.1.1" {
 		t.Errorf("IPAddress = %q, want 192.168.1.1", candidates[0].IPAddress)
@@ -165,16 +183,24 @@ func TestBridgedFlows_LookupRealClientIP(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UTC()
+	userUUID := testUUID("real-ip-user")
 
-	_, err := s.DB().ExecContext(ctx, `
+	// Ensure node in nodes table.
+	bridgeNID, err := s.LookupNodeID(ctx, "bridge-B", "bridge")
+	if err != nil {
+		t.Fatalf("LookupNodeID: %v", err)
+	}
+
+	uid, _ := uuid.Parse(userUUID)
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_ip_history (user_email, ip_address, node_id, first_seen, last_seen)
-		VALUES ($1, $2, $3, $4, $5)
-	`, "real@example.com", "10.10.10.10", "bridge-B", now.Add(-5*time.Minute), now)
+		VALUES ($1, $2::inet, $3, $4, $5)
+	`, uid, "10.10.10.10", int16(bridgeNID), now.Add(-5*time.Minute), now)
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
-	ip, node, ok := s.LookupRealClientIP(ctx, "real@example.com", now, 1*time.Hour, []string{"bridge-B"})
+	ip, node, ok := s.LookupRealClientIP(ctx, userUUID, now, 1*time.Hour, []string{"bridge-B"})
 	if !ok {
 		t.Fatal("expected ok=true")
 	}
@@ -190,7 +216,8 @@ func TestBridgedFlows_LookupRealClientIP_NotFound(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	_, _, ok := s.LookupRealClientIP(ctx, "ghost@example.com", time.Now(), time.Hour, []string{"some-node"})
+	ghostUUID := testUUID("ghost-user")
+	_, _, ok := s.LookupRealClientIP(ctx, ghostUUID, time.Now(), time.Hour, []string{"some-node"})
 	if ok {
 		t.Error("expected ok=false for unknown user")
 	}
@@ -200,13 +227,14 @@ func TestBridgedFlows_Cleanup(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	u := testUUID("cleanup-user")
 	oldTs := time.Now().UTC().Add(-40 * 24 * time.Hour)
 	recentTs := time.Now().UTC().Add(-1 * time.Hour)
 
-	if err := s.RecordBridgedFlow(ctx, makeFlow("u@e.com", "1.1.1.1", "b", "e", "old.com", oldTs)); err != nil {
+	if err := s.RecordBridgedFlow(ctx, makeFlow(u, "1.1.1.1", "b", "e", "old.com", oldTs)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RecordBridgedFlow(ctx, makeFlow("u@e.com", "2.2.2.2", "b", "e", "new.com", recentTs)); err != nil {
+	if err := s.RecordBridgedFlow(ctx, makeFlow(u, "2.2.2.2", "b", "e", "new.com", recentTs)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -215,7 +243,7 @@ func TestBridgedFlows_Cleanup(t *testing.T) {
 	}
 
 	var cnt int
-	if err := s.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM bridged_flows").Scan(&cnt); err != nil {
+	if err := s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM bridged_flows").Scan(&cnt); err != nil {
 		t.Fatal(err)
 	}
 	if cnt != 1 {

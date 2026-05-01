@@ -103,7 +103,7 @@ func TestUpdateUserDNSStats(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "alice@example.com"
+	email := testUUID("dns-alice")
 	domain := "blocked.example.com"
 
 	if err := s.UpdateUserDNSStats(ctx, email, domain, true); err != nil {

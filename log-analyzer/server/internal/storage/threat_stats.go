@@ -90,8 +90,8 @@ func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, li
 		return cached.([]*threatintel.CategoryUserStats), nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, threat_type, match_count
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_email::text, threat_type, match_count
 		FROM user_threat_stats
 		WHERE threat_type = $1
 		ORDER BY match_count DESC
@@ -114,12 +114,12 @@ func (s *Storage) GetTopUsersByCategory(ctx context.Context, category string, li
 		return nil, err
 	}
 
-	// Get top domains for each user
+	// Get top domains for each user (user_threat_domains.user_email is uuid)
 	for _, st := range stats {
-		domainRows, err := s.db.QueryContext(ctx, `
+		domainRows, err := s.pool.Query(ctx, `
 			SELECT domain, hit_count
 			FROM user_threat_domains
-			WHERE user_email = $1 AND threat_type = $2
+			WHERE user_email = $1::uuid AND threat_type = $2
 			ORDER BY hit_count DESC
 			LIMIT 5
 		`, st.UserEmail, category)
@@ -164,8 +164,8 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 	}
 
 	// First try user_threat_stats table (persisted aggregated stats)
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, match_count, last_match
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_email::text, match_count, last_match
 		FROM user_threat_stats
 		WHERE threat_type = $1
 		ORDER BY last_match DESC
@@ -192,8 +192,8 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 
 	// If no results from user_threat_stats, fallback to threat_matches table
 	if len(stats) == 0 {
-		fallbackRows, err := s.db.QueryContext(ctx, `
-			SELECT user_email, COUNT(*) as match_count, MAX(matched_at) as last_match
+		fallbackRows, err := s.pool.Query(ctx, `
+			SELECT user_email::text, COUNT(*) AS match_count, MAX(matched_at) AS last_match
 			FROM threat_matches
 			WHERE threat_type = $1
 			GROUP BY user_email
@@ -218,10 +218,10 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 
 	// Get top 5 domains for each user
 	for _, st := range stats {
-		// First try user_threat_domains
-		domainRows, err := s.db.QueryContext(ctx, `
+		// First try user_threat_domains (user_email is uuid — cast input text)
+		domainRows, err := s.pool.Query(ctx, `
 			SELECT domain FROM user_threat_domains
-			WHERE user_email = $1 AND threat_type = $2
+			WHERE user_email = $1::uuid AND threat_type = $2
 			ORDER BY hit_count DESC
 			LIMIT 5
 		`, st.UserEmail, category)
@@ -239,9 +239,9 @@ func (s *Storage) GetRecentUsersByCategory(ctx context.Context, category string,
 
 		// If no domains from user_threat_domains, get from threat_matches
 		if len(st.Domains) == 0 {
-			matchDomainRows, err := s.db.QueryContext(ctx, `
+			matchDomainRows, err := s.pool.Query(ctx, `
 				SELECT DISTINCT destination FROM threat_matches
-				WHERE user_email = $1 AND threat_type = $2
+				WHERE user_email = $1::uuid AND threat_type = $2
 				ORDER BY destination
 				LIMIT 5
 			`, st.UserEmail, category)
@@ -274,24 +274,23 @@ func (s *Storage) GetUsersByCategory(ctx context.Context, category string, page,
 
 	// Get total count
 	var total int
-	err := s.db.QueryRowContext(ctx, `
+	if err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(DISTINCT user_email) FROM (
 			SELECT user_email FROM user_threat_stats WHERE threat_type = $1
 			UNION
 			SELECT user_email FROM threat_matches WHERE threat_type = $2
 		) sub
-	`, category, category).Scan(&total)
-	if err != nil {
+	`, category, category).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	// Get users with pagination - merge from both tables
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, SUM(match_count) as total_matches, MAX(last_match) as last_match
+	// Get users with pagination — user_email is uuid, cast to text in output.
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_email::text, SUM(match_count) AS total_matches, MAX(last_match) AS last_match
 		FROM (
 			SELECT user_email, match_count, last_match FROM user_threat_stats WHERE threat_type = $1
 			UNION ALL
-			SELECT user_email, 1 as match_count, matched_at as last_match FROM threat_matches
+			SELECT user_email, 1 AS match_count, matched_at AS last_match FROM threat_matches
 			WHERE threat_type = $2 AND user_email NOT IN (SELECT user_email FROM user_threat_stats WHERE threat_type = $3)
 		) sub
 		GROUP BY user_email
@@ -314,11 +313,11 @@ func (s *Storage) GetUsersByCategory(ctx context.Context, category string, page,
 		stats = append(stats, &st)
 	}
 
-	// Get domains for each user
+	// Get domains for each user (uuid cast for input)
 	for _, st := range stats {
-		domainRows, err := s.db.QueryContext(ctx, `
+		domainRows, err := s.pool.Query(ctx, `
 			SELECT domain FROM user_threat_domains
-			WHERE user_email = $1 AND threat_type = $2
+			WHERE user_email = $1::uuid AND threat_type = $2
 			ORDER BY hit_count DESC
 			LIMIT 5
 		`, st.UserEmail, category)
@@ -336,9 +335,9 @@ func (s *Storage) GetUsersByCategory(ctx context.Context, category string, page,
 
 		// Fallback to threat_matches
 		if len(st.Domains) == 0 {
-			matchDomainRows, _ := s.db.QueryContext(ctx, `
+			matchDomainRows, _ := s.pool.Query(ctx, `
 				SELECT DISTINCT destination FROM threat_matches
-				WHERE user_email = $1 AND threat_type = $2
+				WHERE user_email = $1::uuid AND threat_type = $2
 				LIMIT 5
 			`, st.UserEmail, category)
 			if matchDomainRows != nil {

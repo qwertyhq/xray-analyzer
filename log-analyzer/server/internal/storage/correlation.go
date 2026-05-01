@@ -10,40 +10,60 @@ import (
 
 // RecordIPUserMapping records that a user connected from an IP
 func (s *Storage) RecordIPUserMapping(ctx context.Context, ip, userEmail, nodeID string) error {
-	_, err := s.db.ExecContext(ctx, `
+	userUUID := emailToUUID(userEmail)
+
+	// node_id is nullable smallint FK — resolve if non-empty.
+	var nodeIntID interface{}
+	if nodeID != "" {
+		if nid, err := s.LookupNodeID(ctx, nodeID, "exit"); err == nil {
+			nodeIntID = int16(nid)
+		}
+	}
+
+	_, err := s.pool.Exec(ctx, `
 		INSERT INTO ip_user_map (ip_address, user_email, node_id, first_seen, last_seen, request_count)
-		VALUES ($1, $2, $3, NOW(), NOW(), 1)
+		VALUES ($1::inet, $2, $3, NOW(), NOW(), 1)
 		ON CONFLICT (ip_address, user_email) DO UPDATE SET
 			last_seen = NOW(),
 			request_count = ip_user_map.request_count + 1,
 			node_id = COALESCE(EXCLUDED.node_id, ip_user_map.node_id)
-	`, ip, userEmail, nodeID)
+	`, ip, userUUID, nodeIntID)
 	return err
 }
 
 // RecordHWIDUserMapping records that a user connected with an HWID
 func (s *Storage) RecordHWIDUserMapping(ctx context.Context, hwid, userEmail, platform string) error {
-	_, err := s.db.ExecContext(ctx, `
+	userUUID := emailToUUID(userEmail)
+	_, err := s.pool.Exec(ctx, `
 		INSERT INTO hwid_user_map (hwid, user_email, platform, first_seen, last_seen, request_count)
 		VALUES ($1, $2, $3, NOW(), NOW(), 1)
 		ON CONFLICT (hwid, user_email) DO UPDATE SET
 			last_seen = NOW(),
 			request_count = hwid_user_map.request_count + 1,
 			platform = COALESCE(EXCLUDED.platform, hwid_user_map.platform)
-	`, hwid, userEmail, platform)
+	`, hwid, userUUID, platform)
 	return err
 }
 
 // RecordUserFingerprint records a unique combination of user+IP+HWID
 func (s *Storage) RecordUserFingerprint(ctx context.Context, userEmail, ip, hwid, userAgent, nodeID string) error {
-	_, err := s.db.ExecContext(ctx, `
+	userUUID := emailToUUID(userEmail)
+
+	var nodeIntID interface{}
+	if nodeID != "" {
+		if nid, err := s.LookupNodeID(ctx, nodeID, "exit"); err == nil {
+			nodeIntID = int16(nid)
+		}
+	}
+
+	_, err := s.pool.Exec(ctx, `
 		INSERT INTO user_fingerprints (user_email, ip_address, hwid, user_agent, node_id, first_seen, last_seen, session_count)
-		VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), 1)
+		VALUES ($1, $2::inet, $3, $4, $5, NOW(), NOW(), 1)
 		ON CONFLICT (user_email, ip_address, hwid) DO UPDATE SET
 			last_seen = NOW(),
 			session_count = user_fingerprints.session_count + 1,
 			user_agent = COALESCE(EXCLUDED.user_agent, user_fingerprints.user_agent)
-	`, userEmail, ip, hwid, userAgent, nodeID)
+	`, userUUID, ip, hwid, userAgent, nodeIntID)
 	return err
 }
 
@@ -54,10 +74,13 @@ func (s *Storage) GetUsersForIP(ctx context.Context, ip string) ([]IPUserMapping
 		return cached.([]IPUserMapping), nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT ip_address, user_email, node_id, first_seen, last_seen, request_count
-		FROM ip_user_map WHERE ip_address = $1
-		ORDER BY last_seen DESC
+	rows, err := s.pool.Query(ctx, `
+		SELECT host(m.ip_address), m.user_email::text,
+		       COALESCE(n.node_id, ''), m.first_seen, m.last_seen, m.request_count
+		FROM ip_user_map m
+		LEFT JOIN nodes n ON n.id = m.node_id
+		WHERE m.ip_address = $1::inet
+		ORDER BY m.last_seen DESC
 	`, ip)
 	if err != nil {
 		return nil, err
@@ -67,15 +90,8 @@ func (s *Storage) GetUsersForIP(ctx context.Context, ip string) ([]IPUserMapping
 	var result []IPUserMapping
 	for rows.Next() {
 		var m IPUserMapping
-		var nodeID sql.NullString
-		var firstSeen, lastSeen time.Time
-		if err := rows.Scan(&m.IPAddress, &m.UserEmail, &nodeID, &firstSeen, &lastSeen, &m.RequestCount); err != nil {
+		if err := rows.Scan(&m.IPAddress, &m.UserEmail, &m.NodeID, &m.FirstSeen, &m.LastSeen, &m.RequestCount); err != nil {
 			continue
-		}
-		m.FirstSeen = firstSeen
-		m.LastSeen = lastSeen
-		if nodeID.Valid {
-			m.NodeID = nodeID.String
 		}
 		result = append(result, m)
 	}
@@ -91,8 +107,8 @@ func (s *Storage) GetUsersForHWID(ctx context.Context, hwid string) ([]HWIDUserM
 		return cached.([]HWIDUserMapping), nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT hwid, user_email, platform, first_seen, last_seen, request_count
+	rows, err := s.pool.Query(ctx, `
+		SELECT hwid, user_email::text, COALESCE(platform, ''), first_seen, last_seen, request_count
 		FROM hwid_user_map WHERE hwid = $1
 		ORDER BY last_seen DESC
 	`, hwid)
@@ -104,15 +120,8 @@ func (s *Storage) GetUsersForHWID(ctx context.Context, hwid string) ([]HWIDUserM
 	var result []HWIDUserMapping
 	for rows.Next() {
 		var m HWIDUserMapping
-		var platform sql.NullString
-		var firstSeen, lastSeen time.Time
-		if err := rows.Scan(&m.HWID, &m.UserEmail, &platform, &firstSeen, &lastSeen, &m.RequestCount); err != nil {
+		if err := rows.Scan(&m.HWID, &m.UserEmail, &m.Platform, &m.FirstSeen, &m.LastSeen, &m.RequestCount); err != nil {
 			continue
-		}
-		m.FirstSeen = firstSeen
-		m.LastSeen = lastSeen
-		if platform.Valid {
-			m.Platform = platform.String
 		}
 		result = append(result, m)
 	}
@@ -123,13 +132,14 @@ func (s *Storage) GetUsersForHWID(ctx context.Context, hwid string) ([]HWIDUserM
 
 // GetSharedIPUsers returns users that share IPs with the given user
 func (s *Storage) GetSharedIPUsers(ctx context.Context, userEmail string) ([]SharedUserInfo, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT DISTINCT m2.user_email, m1.ip_address, m2.last_seen, m2.request_count
+	userUUID := emailToUUID(userEmail)
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT m2.user_email::text, host(m1.ip_address), m2.last_seen, m2.request_count
 		FROM ip_user_map m1
 		JOIN ip_user_map m2 ON m1.ip_address = m2.ip_address
 		WHERE m1.user_email = $1 AND m2.user_email != $2
 		ORDER BY m2.last_seen DESC
-	`, userEmail, userEmail)
+	`, userUUID, userUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -138,11 +148,9 @@ func (s *Storage) GetSharedIPUsers(ctx context.Context, userEmail string) ([]Sha
 	var result []SharedUserInfo
 	for rows.Next() {
 		var u SharedUserInfo
-		var lastSeen time.Time
-		if err := rows.Scan(&u.UserEmail, &u.SharedValue, &lastSeen, &u.RequestCount); err != nil {
+		if err := rows.Scan(&u.UserEmail, &u.SharedValue, &u.LastSeen, &u.RequestCount); err != nil {
 			continue
 		}
-		u.LastSeen = lastSeen
 		u.Reason = "shared_ip"
 		result = append(result, u)
 	}
@@ -151,13 +159,14 @@ func (s *Storage) GetSharedIPUsers(ctx context.Context, userEmail string) ([]Sha
 
 // GetSharedHWIDUsers returns users that share HWIDs with the given user
 func (s *Storage) GetSharedHWIDUsers(ctx context.Context, userEmail string) ([]SharedUserInfo, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT DISTINCT m2.user_email, m1.hwid, m2.last_seen, m2.request_count
+	userUUID := emailToUUID(userEmail)
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT m2.user_email::text, m1.hwid, m2.last_seen, m2.request_count
 		FROM hwid_user_map m1
 		JOIN hwid_user_map m2 ON m1.hwid = m2.hwid
 		WHERE m1.user_email = $1 AND m2.user_email != $2
 		ORDER BY m2.last_seen DESC
-	`, userEmail, userEmail)
+	`, userUUID, userUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -166,11 +175,9 @@ func (s *Storage) GetSharedHWIDUsers(ctx context.Context, userEmail string) ([]S
 	var result []SharedUserInfo
 	for rows.Next() {
 		var u SharedUserInfo
-		var lastSeen time.Time
-		if err := rows.Scan(&u.UserEmail, &u.SharedValue, &lastSeen, &u.RequestCount); err != nil {
+		if err := rows.Scan(&u.UserEmail, &u.SharedValue, &u.LastSeen, &u.RequestCount); err != nil {
 			continue
 		}
-		u.LastSeen = lastSeen
 		u.Reason = "shared_hwid"
 		result = append(result, u)
 	}
@@ -179,11 +186,16 @@ func (s *Storage) GetSharedHWIDUsers(ctx context.Context, userEmail string) ([]S
 
 // GetUserFingerprints returns all fingerprints for a user
 func (s *Storage) GetUserFingerprints(ctx context.Context, userEmail string) ([]UserFingerprint, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_email, ip_address, hwid, user_agent, node_id, first_seen, last_seen, session_count
-		FROM user_fingerprints WHERE user_email = $1
-		ORDER BY last_seen DESC
-	`, userEmail)
+	userUUID := emailToUUID(userEmail)
+	rows, err := s.pool.Query(ctx, `
+		SELECT f.id, f.user_email::text, host(f.ip_address),
+		       COALESCE(f.hwid, ''), COALESCE(f.user_agent, ''),
+		       COALESCE(n.node_id, ''), f.first_seen, f.last_seen, f.session_count
+		FROM user_fingerprints f
+		LEFT JOIN nodes n ON n.id = f.node_id
+		WHERE f.user_email = $1
+		ORDER BY f.last_seen DESC
+	`, userUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -192,21 +204,8 @@ func (s *Storage) GetUserFingerprints(ctx context.Context, userEmail string) ([]
 	var result []UserFingerprint
 	for rows.Next() {
 		var f UserFingerprint
-		var hwid, userAgent, nodeID sql.NullString
-		var firstSeen, lastSeen time.Time
-		if err := rows.Scan(&f.ID, &f.UserEmail, &f.IPAddress, &hwid, &userAgent, &nodeID, &firstSeen, &lastSeen, &f.SessionCount); err != nil {
+		if err := rows.Scan(&f.ID, &f.UserEmail, &f.IPAddress, &f.HWID, &f.UserAgent, &f.NodeID, &f.FirstSeen, &f.LastSeen, &f.SessionCount); err != nil {
 			continue
-		}
-		f.FirstSeen = firstSeen
-		f.LastSeen = lastSeen
-		if hwid.Valid {
-			f.HWID = hwid.String
-		}
-		if userAgent.Valid {
-			f.UserAgent = userAgent.String
-		}
-		if nodeID.Valid {
-			f.NodeID = nodeID.String
 		}
 		result = append(result, f)
 	}
@@ -220,7 +219,13 @@ func (s *Storage) UpsertUserAIProfile(ctx context.Context, profile *UserAIProfil
 	typicalHours, _ := json.Marshal(profile.TypicalHours)
 	riskFactors, _ := json.Marshal(profile.RiskFactors)
 
-	_, err := s.db.ExecContext(ctx, `
+	userUUID := emailToUUID(profile.UserEmail)
+	// remna_uuid is type uuid — pass NULL for empty string to avoid parse error.
+	var remnaUUIDVal interface{}
+	if profile.RemnaUUID != "" {
+		remnaUUIDVal = profile.RemnaUUID
+	}
+	_, err := s.pool.Exec(ctx, `
 		INSERT INTO user_ai_profile (
 			user_email, unique_ips, unique_hwids, unique_fingerprints, unique_countries, unique_nodes,
 			total_requests, total_sessions, avg_session_duration_sec,
@@ -259,80 +264,77 @@ func (s *Storage) UpsertUserAIProfile(ctx context.Context, profile *UserAIProfil
 			remna_hwid_devices = EXCLUDED.remna_hwid_devices,
 			remna_hwid_limit = EXCLUDED.remna_hwid_limit,
 			updated_at = NOW()
-	`, profile.UserEmail, profile.UniqueIPs, profile.UniqueHWIDs, profile.UniqueFingerprints, profile.UniqueCountries, profile.UniqueNodes,
+	`, userUUID, profile.UniqueIPs, profile.UniqueHWIDs, profile.UniqueFingerprints, profile.UniqueCountries, profile.UniqueNodes,
 		profile.TotalRequests, profile.TotalSessions, profile.AvgSessionDurationSec,
 		profile.TotalThreatMatches, string(threatCategories),
 		profile.SharedIPUsers, profile.SharedHWIDUsers, string(clusterIDs),
 		profile.FirstSeen, profile.LastSeen, profile.ActiveDays, string(typicalHours),
 		profile.RiskScore, string(riskFactors),
-		profile.RemnaUUID, profile.RemnaStatus, profile.RemnaTrafficUsed, profile.RemnaTrafficLimit, profile.RemnaExpireAt, profile.RemnaHWIDDevices, profile.RemnaHWIDLimit)
+		remnaUUIDVal, profile.RemnaStatus, profile.RemnaTrafficUsed, profile.RemnaTrafficLimit, profile.RemnaExpireAt, profile.RemnaHWIDDevices, profile.RemnaHWIDLimit)
 	return err
 }
 
 // GetUserAIProfile retrieves the AI profile for a user
 func (s *Storage) GetUserAIProfile(ctx context.Context, userEmail string) (*UserAIProfile, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT user_email, unique_ips, unique_hwids, unique_fingerprints, unique_countries, unique_nodes,
+	userUUID := emailToUUID(userEmail)
+	row := s.pool.QueryRow(ctx, `
+		SELECT user_email::text, unique_ips, unique_hwids, unique_fingerprints, unique_countries, unique_nodes,
 			total_requests, total_sessions, avg_session_duration_sec,
-			total_threat_matches, threat_categories,
-			shared_ip_users, shared_hwid_users, cluster_ids,
-			first_seen, last_seen, active_days, typical_hours,
-			risk_score, risk_factors,
-			remna_uuid, remna_status, remna_traffic_used, remna_traffic_limit, remna_expire_at, remna_hwid_devices, remna_hwid_limit,
-			updated_at
+			total_threat_matches, COALESCE(threat_categories, ''),
+			shared_ip_users, shared_hwid_users, COALESCE(cluster_ids, ''),
+			first_seen, last_seen, active_days, COALESCE(typical_hours, ''),
+			risk_score, COALESCE(risk_factors, ''),
+			COALESCE(remna_uuid::text, ''), COALESCE(remna_status, ''),
+			remna_traffic_used, remna_traffic_limit, remna_expire_at,
+			remna_hwid_devices, remna_hwid_limit, updated_at
 		FROM user_ai_profile WHERE user_email = $1
-	`, userEmail)
+	`, userUUID)
 
 	var p UserAIProfile
-	var threatCategories, clusterIDs, typicalHours, riskFactors sql.NullString
-	var firstSeen, lastSeen, remnaExpireAt, updatedAt sql.NullTime
-	var remnaUUID, remnaStatus sql.NullString
+	var threatCatStr, clusterIDsStr, typicalHoursStr, riskFactorsStr string
+	var firstSeen, lastSeen, updatedAt *time.Time
+	var remnaExpireAt *time.Time
 
 	err := row.Scan(&p.UserEmail, &p.UniqueIPs, &p.UniqueHWIDs, &p.UniqueFingerprints, &p.UniqueCountries, &p.UniqueNodes,
 		&p.TotalRequests, &p.TotalSessions, &p.AvgSessionDurationSec,
-		&p.TotalThreatMatches, &threatCategories,
-		&p.SharedIPUsers, &p.SharedHWIDUsers, &clusterIDs,
-		&firstSeen, &lastSeen, &p.ActiveDays, &typicalHours,
-		&p.RiskScore, &riskFactors,
-		&remnaUUID, &remnaStatus, &p.RemnaTrafficUsed, &p.RemnaTrafficLimit, &remnaExpireAt, &p.RemnaHWIDDevices, &p.RemnaHWIDLimit,
-		&updatedAt)
+		&p.TotalThreatMatches, &threatCatStr,
+		&p.SharedIPUsers, &p.SharedHWIDUsers, &clusterIDsStr,
+		&firstSeen, &lastSeen, &p.ActiveDays, &typicalHoursStr,
+		&p.RiskScore, &riskFactorsStr,
+		&p.RemnaUUID, &p.RemnaStatus,
+		&p.RemnaTrafficUsed, &p.RemnaTrafficLimit, &remnaExpireAt,
+		&p.RemnaHWIDDevices, &p.RemnaHWIDLimit, &updatedAt)
 
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
 	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return nil, nil
+		}
 		return nil, err
 	}
 
-	if threatCategories.Valid {
-		json.Unmarshal([]byte(threatCategories.String), &p.ThreatCategories)
+	if threatCatStr != "" {
+		json.Unmarshal([]byte(threatCatStr), &p.ThreatCategories)
 	}
-	if clusterIDs.Valid {
-		json.Unmarshal([]byte(clusterIDs.String), &p.ClusterIDs)
+	if clusterIDsStr != "" {
+		json.Unmarshal([]byte(clusterIDsStr), &p.ClusterIDs)
 	}
-	if typicalHours.Valid {
-		json.Unmarshal([]byte(typicalHours.String), &p.TypicalHours)
+	if typicalHoursStr != "" {
+		json.Unmarshal([]byte(typicalHoursStr), &p.TypicalHours)
 	}
-	if riskFactors.Valid {
-		json.Unmarshal([]byte(riskFactors.String), &p.RiskFactors)
+	if riskFactorsStr != "" {
+		json.Unmarshal([]byte(riskFactorsStr), &p.RiskFactors)
 	}
-	if firstSeen.Valid {
-		p.FirstSeen = firstSeen.Time
+	if firstSeen != nil {
+		p.FirstSeen = *firstSeen
 	}
-	if lastSeen.Valid {
-		p.LastSeen = lastSeen.Time
+	if lastSeen != nil {
+		p.LastSeen = *lastSeen
 	}
-	if updatedAt.Valid {
-		p.UpdatedAt = updatedAt.Time
+	if updatedAt != nil {
+		p.UpdatedAt = *updatedAt
 	}
-	if remnaUUID.Valid {
-		p.RemnaUUID = remnaUUID.String
-	}
-	if remnaStatus.Valid {
-		p.RemnaStatus = remnaStatus.String
-	}
-	if remnaExpireAt.Valid {
-		p.RemnaExpireAt = &remnaExpireAt.Time
+	if remnaExpireAt != nil {
+		p.RemnaExpireAt = remnaExpireAt
 	}
 
 	return &p, nil
@@ -346,21 +348,18 @@ func (s *Storage) GetAllUserAIProfiles(ctx context.Context, limit int, minRiskSc
 		return cached.([]UserAIProfile), nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT p.user_email, COALESCE(r.username, ''), p.unique_ips, p.unique_hwids, p.unique_fingerprints, p.unique_countries, p.unique_nodes,
+	rows, err := s.pool.Query(ctx, `
+		SELECT p.user_email::text, COALESCE(r.username, ''), p.unique_ips, p.unique_hwids, p.unique_fingerprints, p.unique_countries, p.unique_nodes,
 			p.total_requests, p.total_sessions, p.avg_session_duration_sec,
-			p.total_threat_matches, p.threat_categories,
-			p.shared_ip_users, p.shared_hwid_users, p.cluster_ids,
-			p.first_seen, p.last_seen, p.active_days, p.typical_hours,
-			p.risk_score, p.risk_factors,
-			p.remna_uuid, p.remna_status, p.remna_traffic_used, p.remna_traffic_limit, p.remna_expire_at, p.remna_hwid_devices, p.remna_hwid_limit,
-			p.updated_at
+			p.total_threat_matches, COALESCE(p.threat_categories, ''),
+			p.shared_ip_users, p.shared_hwid_users, COALESCE(p.cluster_ids, ''),
+			p.first_seen, p.last_seen, p.active_days, COALESCE(p.typical_hours, ''),
+			p.risk_score, COALESCE(p.risk_factors, ''),
+			COALESCE(p.remna_uuid::text, ''), COALESCE(p.remna_status, ''),
+			p.remna_traffic_used, p.remna_traffic_limit, p.remna_expire_at,
+			p.remna_hwid_devices, p.remna_hwid_limit, p.updated_at
 		FROM user_ai_profile p
-		LEFT JOIN remna_users r ON (
-			p.user_email = r.username
-			OR CAST(r.id AS TEXT) = p.user_email
-			OR p.remna_uuid = r.uuid
-		)
+		LEFT JOIN remna_users r ON p.remna_uuid::text = r.uuid::text
 		WHERE p.risk_score >= $1
 		ORDER BY p.risk_score DESC, p.total_threat_matches DESC
 		LIMIT $2
@@ -373,55 +372,48 @@ func (s *Storage) GetAllUserAIProfiles(ctx context.Context, limit int, minRiskSc
 	var result []UserAIProfile
 	for rows.Next() {
 		var p UserAIProfile
-		var remnaUsername sql.NullString
-		var threatCategories, clusterIDs, typicalHours, riskFactors sql.NullString
-		var firstSeen, lastSeen, remnaExpireAt, updatedAt sql.NullTime
-		var remnaUUID, remnaStatus sql.NullString
+		var remnaUsername string
+		var threatCatStr, clusterIDsStr, typicalHoursStr, riskFactorsStr string
+		var firstSeen, lastSeen, updatedAt *time.Time
+		var remnaExpireAt *time.Time
 
 		err := rows.Scan(&p.UserEmail, &remnaUsername, &p.UniqueIPs, &p.UniqueHWIDs, &p.UniqueFingerprints, &p.UniqueCountries, &p.UniqueNodes,
 			&p.TotalRequests, &p.TotalSessions, &p.AvgSessionDurationSec,
-			&p.TotalThreatMatches, &threatCategories,
-			&p.SharedIPUsers, &p.SharedHWIDUsers, &clusterIDs,
-			&firstSeen, &lastSeen, &p.ActiveDays, &typicalHours,
-			&p.RiskScore, &riskFactors,
-			&remnaUUID, &remnaStatus, &p.RemnaTrafficUsed, &p.RemnaTrafficLimit, &remnaExpireAt, &p.RemnaHWIDDevices, &p.RemnaHWIDLimit,
-			&updatedAt)
+			&p.TotalThreatMatches, &threatCatStr,
+			&p.SharedIPUsers, &p.SharedHWIDUsers, &clusterIDsStr,
+			&firstSeen, &lastSeen, &p.ActiveDays, &typicalHoursStr,
+			&p.RiskScore, &riskFactorsStr,
+			&p.RemnaUUID, &p.RemnaStatus,
+			&p.RemnaTrafficUsed, &p.RemnaTrafficLimit, &remnaExpireAt,
+			&p.RemnaHWIDDevices, &p.RemnaHWIDLimit, &updatedAt)
 		if err != nil {
 			continue
 		}
 
-		if remnaUsername.Valid && remnaUsername.String != "" {
-			p.RemnaUsername = remnaUsername.String
+		p.RemnaUsername = remnaUsername
+		if threatCatStr != "" {
+			json.Unmarshal([]byte(threatCatStr), &p.ThreatCategories)
 		}
-		if threatCategories.Valid {
-			json.Unmarshal([]byte(threatCategories.String), &p.ThreatCategories)
+		if clusterIDsStr != "" {
+			json.Unmarshal([]byte(clusterIDsStr), &p.ClusterIDs)
 		}
-		if clusterIDs.Valid {
-			json.Unmarshal([]byte(clusterIDs.String), &p.ClusterIDs)
+		if typicalHoursStr != "" {
+			json.Unmarshal([]byte(typicalHoursStr), &p.TypicalHours)
 		}
-		if typicalHours.Valid {
-			json.Unmarshal([]byte(typicalHours.String), &p.TypicalHours)
+		if riskFactorsStr != "" {
+			json.Unmarshal([]byte(riskFactorsStr), &p.RiskFactors)
 		}
-		if riskFactors.Valid {
-			json.Unmarshal([]byte(riskFactors.String), &p.RiskFactors)
+		if firstSeen != nil {
+			p.FirstSeen = *firstSeen
 		}
-		if firstSeen.Valid {
-			p.FirstSeen = firstSeen.Time
+		if lastSeen != nil {
+			p.LastSeen = *lastSeen
 		}
-		if lastSeen.Valid {
-			p.LastSeen = lastSeen.Time
+		if updatedAt != nil {
+			p.UpdatedAt = *updatedAt
 		}
-		if updatedAt.Valid {
-			p.UpdatedAt = updatedAt.Time
-		}
-		if remnaUUID.Valid {
-			p.RemnaUUID = remnaUUID.String
-		}
-		if remnaStatus.Valid {
-			p.RemnaStatus = remnaStatus.String
-		}
-		if remnaExpireAt.Valid {
-			p.RemnaExpireAt = &remnaExpireAt.Time
+		if remnaExpireAt != nil {
+			p.RemnaExpireAt = remnaExpireAt
 		}
 
 		result = append(result, p)

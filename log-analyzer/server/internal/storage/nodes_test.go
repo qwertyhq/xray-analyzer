@@ -6,6 +6,56 @@ import (
 	"time"
 )
 
+func TestLookupNodeID_AutoInsert(t *testing.T) {
+	s := newTestStorage(t)
+	ctx := context.Background()
+	id1, err := s.LookupNodeID(ctx, "ru-bridge", "bridge")
+	if err != nil {
+		t.Fatalf("first lookup: %v", err)
+	}
+	if id1 == 0 {
+		t.Fatal("expected non-zero NodeID")
+	}
+	id2, err := s.LookupNodeID(ctx, "ru-bridge", "bridge")
+	if err != nil {
+		t.Fatalf("second lookup: %v", err)
+	}
+	if id1 != id2 {
+		t.Errorf("expected same id; got %d then %d", id1, id2)
+	}
+}
+
+func TestLookupNodeID_DifferentNodes(t *testing.T) {
+	s := newTestStorage(t)
+	ctx := context.Background()
+	a, _ := s.LookupNodeID(ctx, "germany-1", "exit")
+	b, _ := s.LookupNodeID(ctx, "germany-2", "exit")
+	if a == b {
+		t.Errorf("different node_ids should get different ids")
+	}
+}
+
+func TestLookupNodeID_EmptyNodeID(t *testing.T) {
+	s := newTestStorage(t)
+	ctx := context.Background()
+	_, err := s.LookupNodeID(ctx, "", "exit")
+	if err == nil {
+		t.Error("expected error for empty node_id")
+	}
+}
+
+func TestLookupNodeID_DefaultRole(t *testing.T) {
+	s := newTestStorage(t)
+	ctx := context.Background()
+	id, err := s.LookupNodeID(ctx, "default-role-node", "")
+	if err != nil {
+		t.Fatalf("lookup with empty role: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("expected non-zero NodeID")
+	}
+}
+
 func TestNodes_UpdateNodeStats_Basic(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()

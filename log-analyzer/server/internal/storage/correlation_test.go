@@ -10,12 +10,14 @@ func TestRecordIPUserMapping_UpsertAndRead(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	aliceUUID := testUUID("corr-alice")
+
 	// First insert
-	if err := s.RecordIPUserMapping(ctx, "1.2.3.4", "alice@example.com", "node1"); err != nil {
+	if err := s.RecordIPUserMapping(ctx, "1.2.3.4", aliceUUID, "node1"); err != nil {
 		t.Fatalf("first RecordIPUserMapping: %v", err)
 	}
 	// Second call — should upsert (request_count++)
-	if err := s.RecordIPUserMapping(ctx, "1.2.3.4", "alice@example.com", "node1"); err != nil {
+	if err := s.RecordIPUserMapping(ctx, "1.2.3.4", aliceUUID, "node1"); err != nil {
 		t.Fatalf("second RecordIPUserMapping: %v", err)
 	}
 
@@ -27,8 +29,8 @@ func TestRecordIPUserMapping_UpsertAndRead(t *testing.T) {
 		t.Fatalf("expected 1 user, got %d", len(users))
 	}
 	u := users[0]
-	if u.UserEmail != "alice@example.com" {
-		t.Errorf("expected alice, got %s", u.UserEmail)
+	if u.UserEmail != aliceUUID {
+		t.Errorf("expected %s, got %s", aliceUUID, u.UserEmail)
 	}
 	if u.RequestCount < 2 {
 		t.Errorf("expected request_count >= 2, got %d", u.RequestCount)
@@ -39,10 +41,12 @@ func TestRecordHWIDUserMapping_UpsertAndRead(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	if err := s.RecordHWIDUserMapping(ctx, "hwid-abc", "bob@example.com", "android"); err != nil {
+	bobUUID := testUUID("corr-bob")
+
+	if err := s.RecordHWIDUserMapping(ctx, "hwid-abc", bobUUID, "android"); err != nil {
 		t.Fatalf("first RecordHWIDUserMapping: %v", err)
 	}
-	if err := s.RecordHWIDUserMapping(ctx, "hwid-abc", "bob@example.com", "android"); err != nil {
+	if err := s.RecordHWIDUserMapping(ctx, "hwid-abc", bobUUID, "android"); err != nil {
 		t.Fatalf("second RecordHWIDUserMapping: %v", err)
 	}
 
@@ -54,8 +58,8 @@ func TestRecordHWIDUserMapping_UpsertAndRead(t *testing.T) {
 		t.Fatalf("expected 1 user, got %d", len(users))
 	}
 	u := users[0]
-	if u.UserEmail != "bob@example.com" {
-		t.Errorf("expected bob, got %s", u.UserEmail)
+	if u.UserEmail != bobUUID {
+		t.Errorf("expected %s, got %s", bobUUID, u.UserEmail)
 	}
 	if u.RequestCount < 2 {
 		t.Errorf("expected request_count >= 2, got %d", u.RequestCount)
@@ -69,14 +73,16 @@ func TestRecordUserFingerprint_UpsertAndRead(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	if err := s.RecordUserFingerprint(ctx, "carol@example.com", "10.0.0.1", "fp-hwid", "Mozilla/5.0", "node2"); err != nil {
+	carolUUID := testUUID("corr-carol")
+
+	if err := s.RecordUserFingerprint(ctx, carolUUID, "10.0.0.1", "fp-hwid", "Mozilla/5.0", "node2"); err != nil {
 		t.Fatalf("first RecordUserFingerprint: %v", err)
 	}
-	if err := s.RecordUserFingerprint(ctx, "carol@example.com", "10.0.0.1", "fp-hwid", "Mozilla/5.0", "node2"); err != nil {
+	if err := s.RecordUserFingerprint(ctx, carolUUID, "10.0.0.1", "fp-hwid", "Mozilla/5.0", "node2"); err != nil {
 		t.Fatalf("second RecordUserFingerprint: %v", err)
 	}
 
-	fps, err := s.GetUserFingerprints(ctx, "carol@example.com")
+	fps, err := s.GetUserFingerprints(ctx, carolUUID)
 	if err != nil {
 		t.Fatalf("GetUserFingerprints: %v", err)
 	}
@@ -96,11 +102,14 @@ func TestGetSharedIPUsers(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	// Two users on the same IP
-	s.RecordIPUserMapping(ctx, "5.5.5.5", "alice@example.com", "n1")
-	s.RecordIPUserMapping(ctx, "5.5.5.5", "bob@example.com", "n1")
+	aliceUUID := testUUID("shared-ip-alice")
+	bobUUID := testUUID("shared-ip-bob")
 
-	shared, err := s.GetSharedIPUsers(ctx, "alice@example.com")
+	// Two users on the same IP
+	s.RecordIPUserMapping(ctx, "5.5.5.5", aliceUUID, "n1")
+	s.RecordIPUserMapping(ctx, "5.5.5.5", bobUUID, "n1")
+
+	shared, err := s.GetSharedIPUsers(ctx, aliceUUID)
 	if err != nil {
 		t.Fatalf("GetSharedIPUsers: %v", err)
 	}
@@ -109,7 +118,7 @@ func TestGetSharedIPUsers(t *testing.T) {
 	}
 	found := false
 	for _, u := range shared {
-		if u.UserEmail == "bob@example.com" {
+		if u.UserEmail == bobUUID {
 			found = true
 			if u.Reason != "shared_ip" {
 				t.Errorf("expected reason shared_ip, got %s", u.Reason)
@@ -117,7 +126,7 @@ func TestGetSharedIPUsers(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("bob not found in shared IP users")
+		t.Errorf("bob (%s) not found in shared IP users: %+v", bobUUID, shared)
 	}
 }
 
@@ -125,10 +134,13 @@ func TestGetSharedHWIDUsers(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	s.RecordHWIDUserMapping(ctx, "shared-hwid", "alice@example.com", "ios")
-	s.RecordHWIDUserMapping(ctx, "shared-hwid", "dave@example.com", "ios")
+	aliceUUID := testUUID("shared-hwid-alice")
+	daveUUID := testUUID("shared-hwid-dave")
 
-	shared, err := s.GetSharedHWIDUsers(ctx, "alice@example.com")
+	s.RecordHWIDUserMapping(ctx, "shared-hwid", aliceUUID, "ios")
+	s.RecordHWIDUserMapping(ctx, "shared-hwid", daveUUID, "ios")
+
+	shared, err := s.GetSharedHWIDUsers(ctx, aliceUUID)
 	if err != nil {
 		t.Fatalf("GetSharedHWIDUsers: %v", err)
 	}
@@ -145,10 +157,10 @@ func TestGetTopSharedIPs(t *testing.T) {
 	ctx := context.Background()
 
 	// IP shared by two users
-	s.RecordIPUserMapping(ctx, "9.9.9.9", "u1@example.com", "n1")
-	s.RecordIPUserMapping(ctx, "9.9.9.9", "u2@example.com", "n1")
+	s.RecordIPUserMapping(ctx, "9.9.9.9", testUUID("top-ip-u1"), "n1")
+	s.RecordIPUserMapping(ctx, "9.9.9.9", testUUID("top-ip-u2"), "n1")
 	// Unshared IP
-	s.RecordIPUserMapping(ctx, "8.8.8.8", "u1@example.com", "n1")
+	s.RecordIPUserMapping(ctx, "8.8.8.8", testUUID("top-ip-u1"), "n1")
 
 	results, err := s.GetTopSharedIPs(ctx, 10)
 	if err != nil {
@@ -173,11 +185,11 @@ func TestGetTopSharedHWIDs(t *testing.T) {
 	ctx := context.Background()
 
 	// HWID shared by three users
-	s.RecordHWIDUserMapping(ctx, "multi-hwid", "ua@example.com", "android")
-	s.RecordHWIDUserMapping(ctx, "multi-hwid", "ub@example.com", "android")
-	s.RecordHWIDUserMapping(ctx, "multi-hwid", "uc@example.com", "android")
+	s.RecordHWIDUserMapping(ctx, "multi-hwid", testUUID("top-hwid-ua"), "android")
+	s.RecordHWIDUserMapping(ctx, "multi-hwid", testUUID("top-hwid-ub"), "android")
+	s.RecordHWIDUserMapping(ctx, "multi-hwid", testUUID("top-hwid-uc"), "android")
 	// Unshared
-	s.RecordHWIDUserMapping(ctx, "solo-hwid", "ua@example.com", "ios")
+	s.RecordHWIDUserMapping(ctx, "solo-hwid", testUUID("top-hwid-ua"), "ios")
 
 	results, err := s.GetTopSharedHWIDs(ctx, 10)
 	if err != nil {
@@ -198,16 +210,19 @@ func TestGetCorrelationStats(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	xUUID := testUUID("corr-stats-x")
+	yUUID := testUUID("corr-stats-y")
+
 	// Seed shared IP
-	s.RecordIPUserMapping(ctx, "7.7.7.7", "x@example.com", "n")
-	s.RecordIPUserMapping(ctx, "7.7.7.7", "y@example.com", "n")
+	s.RecordIPUserMapping(ctx, "7.7.7.7", xUUID, "n")
+	s.RecordIPUserMapping(ctx, "7.7.7.7", yUUID, "n")
 
 	// Seed shared HWID
-	s.RecordHWIDUserMapping(ctx, "h1", "x@example.com", "win")
-	s.RecordHWIDUserMapping(ctx, "h1", "y@example.com", "win")
+	s.RecordHWIDUserMapping(ctx, "h1", xUUID, "win")
+	s.RecordHWIDUserMapping(ctx, "h1", yUUID, "win")
 
 	// Seed fingerprint
-	s.RecordUserFingerprint(ctx, "x@example.com", "7.7.7.7", "h1", "", "n")
+	s.RecordUserFingerprint(ctx, xUUID, "7.7.7.7", "h1", "", "n")
 
 	stats, err := s.GetCorrelationStats(ctx)
 	if err != nil {
@@ -228,9 +243,10 @@ func TestUpsertAndGetUserAIProfile(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	aiEmail := testUUID("ai-profile-user")
 	now := time.Now().Truncate(time.Second)
 	profile := &UserAIProfile{
-		UserEmail:          "ai@example.com",
+		UserEmail:          aiEmail,
 		UniqueIPs:          3,
 		UniqueHWIDs:        2,
 		UniqueFingerprints: 5,
@@ -249,7 +265,7 @@ func TestUpsertAndGetUserAIProfile(t *testing.T) {
 		t.Fatalf("UpsertUserAIProfile: %v", err)
 	}
 
-	got, err := s.GetUserAIProfile(ctx, "ai@example.com")
+	got, err := s.GetUserAIProfile(ctx, aiEmail)
 	if err != nil {
 		t.Fatalf("GetUserAIProfile: %v", err)
 	}
@@ -275,7 +291,7 @@ func TestUpsertAndGetUserAIProfile(t *testing.T) {
 	if err := s.UpsertUserAIProfile(ctx, profile); err != nil {
 		t.Fatalf("second UpsertUserAIProfile: %v", err)
 	}
-	got2, err := s.GetUserAIProfile(ctx, "ai@example.com")
+	got2, err := s.GetUserAIProfile(ctx, aiEmail)
 	if err != nil {
 		t.Fatalf("second GetUserAIProfile: %v", err)
 	}
@@ -291,7 +307,7 @@ func TestGetUserAIProfile_NotFound(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	got, err := s.GetUserAIProfile(ctx, "nobody@example.com")
+	got, err := s.GetUserAIProfile(ctx, testUUID("ai-nobody"))
 	if err != nil {
 		t.Fatalf("GetUserAIProfile on missing: %v", err)
 	}
@@ -304,10 +320,12 @@ func TestGetAllUserAIProfiles(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	highEmail := testUUID("ai-high-risk")
+	lowEmail := testUUID("ai-low-risk")
 	now := time.Now()
 	// Insert two profiles
-	p1 := &UserAIProfile{UserEmail: "high@example.com", RiskScore: 80, FirstSeen: now, LastSeen: now}
-	p2 := &UserAIProfile{UserEmail: "low@example.com", RiskScore: 10, FirstSeen: now, LastSeen: now}
+	p1 := &UserAIProfile{UserEmail: highEmail, RiskScore: 80, FirstSeen: now, LastSeen: now}
+	p2 := &UserAIProfile{UserEmail: lowEmail, RiskScore: 10, FirstSeen: now, LastSeen: now}
 	s.UpsertUserAIProfile(ctx, p1)
 	s.UpsertUserAIProfile(ctx, p2)
 
@@ -319,7 +337,7 @@ func TestGetAllUserAIProfiles(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 profile with risk >= 50, got %d", len(results))
 	}
-	if results[0].UserEmail != "high@example.com" {
-		t.Errorf("expected high@example.com, got %s", results[0].UserEmail)
+	if results[0].UserEmail != highEmail {
+		t.Errorf("expected %s, got %s", highEmail, results[0].UserEmail)
 	}
 }

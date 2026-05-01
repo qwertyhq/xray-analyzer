@@ -2,78 +2,112 @@ package storage
 
 import (
 	"context"
-	"strconv"
+	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/models"
 )
 
-// buildDestSearchIDs builds the list of user identifiers to search for in
-// user_destinations. Mirrors BuildFullSearchIDs (from users.go, still fenced)
-// but uses $N placeholders and the pgx pool for the remna_users lookup.
-func (s *Storage) buildDestSearchIDs(ctx context.Context, userEmail string) []string {
-	seen := make(map[string]bool)
-	var ids []string
-	add := func(v string) {
-		if v != "" && !seen[v] {
-			seen[v] = true
-			ids = append(ids, v)
+// buildDestSearchUUIDs resolves a user identifier (UUID string, username, or us_id)
+// to a list of uuid.UUID values for use in user_destinations queries.
+func (s *Storage) buildDestSearchUUIDs(ctx context.Context, userEmail string) []uuid.UUID {
+	var uuids []uuid.UUID
+	seen := make(map[uuid.UUID]bool)
+	add := func(u uuid.UUID) {
+		if !seen[u] {
+			seen[u] = true
+			uuids = append(uuids, u)
 		}
 	}
 
-	add(userEmail)
-
-	// Try to find Remnawave numeric ID via pool ($N placeholders)
-	var remnaID int64
-	_ = s.pool.QueryRow(ctx,
-		`SELECT COALESCE(id, 0) FROM remna_users WHERE username = $1 OR us_id = $1 LIMIT 1`,
-		userEmail,
-	).Scan(&remnaID)
-	if remnaID > 0 {
-		add(strconv.FormatInt(remnaID, 10))
+	// Direct UUID parse.
+	if u, err := uuid.Parse(userEmail); err == nil {
+		add(u)
 	}
 
-	return ids
+	// Look up remna_users by username or us_id to get their UUID.
+	var remnaUUID string
+	_ = s.pool.QueryRow(ctx,
+		`SELECT COALESCE(uuid::text, '') FROM remna_users WHERE username = $1 OR us_id = $1 LIMIT 1`,
+		userEmail,
+	).Scan(&remnaUUID)
+	if remnaUUID != "" {
+		if u, err := uuid.Parse(remnaUUID); err == nil {
+			add(u)
+		}
+	}
+
+	return uuids
 }
 
+
 // RecordUserDestination records or updates a user's destination visit.
+// userEmail must be a valid UUID string (Remnawave user UUID).
+// nodeID is a text node name resolved to the nodes(id) smallint FK.
 func (s *Storage) RecordUserDestination(ctx context.Context, userEmail, nodeID, destination string) error {
 	now := time.Now().UTC()
 
-	_, err := s.db.ExecContext(ctx, `
+	// Resolve text node name to smallint FK.
+	nid, err := s.LookupNodeID(ctx, nodeID, "exit")
+	if err != nil {
+		return fmt.Errorf("resolve node_id %q: %w", nodeID, err)
+	}
+
+	// user_email is uuid NOT NULL. Parse or fail.
+	userUUID, err := uuid.Parse(userEmail)
+	if err != nil {
+		// Non-UUID identifiers (legacy / test strings) are stored as SHA-1 UUID
+		// so they round-trip: the detect* queries return the same UUID string.
+		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+	}
+
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_destinations (user_email, node_id, destination, request_count, first_seen, last_seen)
 		VALUES ($1, $2, $3, 1, $4, $5)
 		ON CONFLICT (user_email, node_id, destination) DO UPDATE SET
 			request_count = user_destinations.request_count + 1,
 			last_seen = EXCLUDED.last_seen
-	`, userEmail, nodeID, destination, now, now)
+	`, userUUID, int16(nid), destination, now, now)
 
 	return err
 }
 
 // GetUserDestinations returns paginated destinations for a user.
-// Uses s.pool (native pgx) so []string is passed as a Postgres text[] array.
+// userEmail is resolved to uuid(s) via buildDestSearchUUIDs before querying.
+// node_id (smallint FK) is resolved back to text via JOIN on nodes.
 func (s *Storage) GetUserDestinations(ctx context.Context, userEmail string, since time.Time, page, pageSize int) (*models.UserDestinationsResponse, error) {
 	offset := (page - 1) * pageSize
-	searchIDs := s.buildDestSearchIDs(ctx, userEmail)
+	searchUUIDs := s.buildDestSearchUUIDs(ctx, userEmail)
+	if len(searchUUIDs) == 0 {
+		// Unknown user — return empty response without error.
+		return &models.UserDestinationsResponse{
+			Destinations: []models.UserDestination{},
+			Total:        0,
+			Page:         page,
+			PageSize:     pageSize,
+			TotalPages:   1,
+		}, nil
+	}
 
-	// Get total count
+	// Get total count.
 	var total int
 	if err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM user_destinations
 		WHERE user_email = ANY($1) AND last_seen > $2
-	`, searchIDs, since.UTC()).Scan(&total); err != nil {
+	`, searchUUIDs, since.UTC()).Scan(&total); err != nil {
 		return nil, err
 	}
 
-	// Get paginated results — pool so []string codec works
+	// Get paginated results; JOIN nodes to restore text node name.
 	rows, err := s.pool.Query(ctx, `
-		SELECT node_id, destination, request_count, first_seen, last_seen
-		FROM user_destinations
-		WHERE user_email = ANY($1) AND last_seen > $2
-		ORDER BY request_count DESC, last_seen DESC
+		SELECT n.node_id, ud.destination, ud.request_count, ud.first_seen, ud.last_seen
+		FROM user_destinations ud
+		JOIN nodes n ON n.id = ud.node_id
+		WHERE ud.user_email = ANY($1) AND ud.last_seen > $2
+		ORDER BY ud.request_count DESC, ud.last_seen DESC
 		LIMIT $3 OFFSET $4
-	`, searchIDs, since.UTC(), pageSize, offset)
+	`, searchUUIDs, since.UTC(), pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +142,6 @@ func (s *Storage) GetUserDestinations(ctx context.Context, userEmail string, sin
 // CleanupUserDestinations removes old destination records.
 func (s *Storage) CleanupUserDestinations(ctx context.Context, retentionDays int) error {
 	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
-	_, err := s.db.ExecContext(ctx, `DELETE FROM user_destinations WHERE last_seen < $1`, cutoff)
+	_, err := s.pool.Exec(ctx, `DELETE FROM user_destinations WHERE last_seen < $1`, cutoff)
 	return err
 }

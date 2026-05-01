@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // BridgedFlow is a single correlated record: an exit-node destination
 // resolved back to the real client IP seen on the corresponding bridge node.
 type BridgedFlow struct {
 	ID           int64     `json:"id"`
-	UserEmail    string    `json:"user_email"`
-	RealClientIP string    `json:"real_client_ip"`
-	BridgeNodeID string    `json:"bridge_node_id"`
-	ExitNodeID   string    `json:"exit_node_id"`
+	UserEmail    string    `json:"user_email"`    // UUID string (Remnawave user UUID)
+	RealClientIP string    `json:"real_client_ip"` // IP address string
+	BridgeNodeID string    `json:"bridge_node_id"` // text node_id (resolved to smallint FK internally)
+	ExitNodeID   string    `json:"exit_node_id"`   // text node_id (resolved to smallint FK internally)
 	Destination  string    `json:"destination"`
 	Timestamp    time.Time `json:"ts"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -30,15 +32,37 @@ type BridgedFlowsFilter struct {
 }
 
 // RecordBridgedFlow stores a single resolved flow.
+// BridgeNodeID and ExitNodeID are text node names; they are resolved to
+// the nodes(id) smallint FK via LookupNodeID before insert.
 func (s *Storage) RecordBridgedFlow(ctx context.Context, f *BridgedFlow) error {
 	if f == nil {
 		return fmt.Errorf("nil flow")
 	}
-	_, err := s.db.ExecContext(ctx, `
+
+	// Resolve text node IDs to smallint FKs.
+	bridgeID, err := s.LookupNodeID(ctx, f.BridgeNodeID, "bridge")
+	if err != nil {
+		return fmt.Errorf("resolve bridge_node_id: %w", err)
+	}
+	exitID, err := s.LookupNodeID(ctx, f.ExitNodeID, "exit")
+	if err != nil {
+		return fmt.Errorf("resolve exit_node_id: %w", err)
+	}
+
+	// user_email is uuid in the DB. Parse it; accept zero-UUID if blank.
+	var userUUID uuid.UUID
+	if f.UserEmail != "" {
+		userUUID, err = uuid.Parse(f.UserEmail)
+		if err != nil {
+			return fmt.Errorf("invalid user_email UUID %q: %w", f.UserEmail, err)
+		}
+	}
+
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO bridged_flows
 			(user_email, real_client_ip, bridge_node_id, exit_node_id, destination, ts)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, f.UserEmail, f.RealClientIP, f.BridgeNodeID, f.ExitNodeID, f.Destination, f.Timestamp.UTC())
+		VALUES ($1, $2::inet, $3, $4, $5, $6)
+	`, userUUID, f.RealClientIP, int16(bridgeID), int16(exitID), f.Destination, f.Timestamp.UTC())
 	return err
 }
 
@@ -56,6 +80,7 @@ type BridgeCandidate struct {
 // ordered by freshness (newest last_seen first).
 //
 // Uses s.pool (native pgx) so []string is passed as a Postgres text[] array.
+// user_ip_history.node_id is smallint FK so we resolve text → id first.
 func (s *Storage) LookupBridgeCandidates(ctx context.Context, at time.Time, window time.Duration, bridgeNodeIDs []string) ([]BridgeCandidate, error) {
 	if len(bridgeNodeIDs) == 0 {
 		return nil, nil
@@ -64,17 +89,32 @@ func (s *Storage) LookupBridgeCandidates(ctx context.Context, at time.Time, wind
 		window = 15 * time.Second
 	}
 
+	// Resolve text node names to smallint IDs.
+	nodeIntIDs := make([]int16, 0, len(bridgeNodeIDs))
+	nodeIDToText := make(map[int16]string, len(bridgeNodeIDs))
+	for _, n := range bridgeNodeIDs {
+		nid, err := s.LookupNodeID(ctx, n, "bridge")
+		if err != nil {
+			continue
+		}
+		nodeIntIDs = append(nodeIntIDs, int16(nid))
+		nodeIDToText[int16(nid)] = n
+	}
+	if len(nodeIntIDs) == 0 {
+		return nil, nil
+	}
+
 	lo := at.Add(-window).UTC()
 	hi := at.Add(window).UTC()
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT user_email, ip_address, node_id, last_seen
+		SELECT user_email, host(ip_address), node_id, last_seen
 		FROM user_ip_history
 		WHERE node_id = ANY($1)
 		  AND last_seen BETWEEN $2 AND $3
 		ORDER BY last_seen DESC
 		LIMIT 200
-	`, bridgeNodeIDs, lo, hi)
+	`, nodeIntIDs, lo, hi)
 	if err != nil {
 		return nil, err
 	}
@@ -83,8 +123,18 @@ func (s *Storage) LookupBridgeCandidates(ctx context.Context, at time.Time, wind
 	var out []BridgeCandidate
 	for rows.Next() {
 		var c BridgeCandidate
-		if err := rows.Scan(&c.UserEmail, &c.IPAddress, &c.BridgeNodeID, &c.LastSeen); err != nil {
+		var userUUID uuid.UUID
+		var ipStr string
+		var nodeIntID int16
+		if err := rows.Scan(&userUUID, &ipStr, &nodeIntID, &c.LastSeen); err != nil {
 			return nil, err
+		}
+		c.UserEmail = userUUID.String()
+		c.IPAddress = ipStr
+		if txt, ok := nodeIDToText[nodeIntID]; ok {
+			c.BridgeNodeID = txt
+		} else {
+			c.BridgeNodeID = fmt.Sprintf("%d", nodeIntID)
 		}
 		out = append(out, c)
 	}
@@ -104,22 +154,47 @@ func (s *Storage) LookupRealClientIP(ctx context.Context, userEmail string, at t
 		maxAge = 24 * time.Hour
 	}
 
+	// Resolve text node names to smallint IDs.
+	nodeIntIDs := make([]int16, 0, len(bridgeNodeIDs))
+	nodeIDToText := make(map[int16]string, len(bridgeNodeIDs))
+	for _, n := range bridgeNodeIDs {
+		nid, err := s.LookupNodeID(ctx, n, "bridge")
+		if err != nil {
+			continue
+		}
+		nodeIntIDs = append(nodeIntIDs, int16(nid))
+		nodeIDToText[int16(nid)] = n
+	}
+	if len(nodeIntIDs) == 0 {
+		return "", "", false
+	}
+
+	userUUID, err := uuid.Parse(userEmail)
+	if err != nil {
+		return "", "", false
+	}
+
 	since := at.Add(-maxAge).UTC()
 
-	var ip, node string
-	err := s.pool.QueryRow(ctx, `
-		SELECT ip_address, node_id
+	var ipStr string
+	var nodeIntID int16
+	err = s.pool.QueryRow(ctx, `
+		SELECT host(ip_address), node_id
 		FROM user_ip_history
 		WHERE user_email = $1
 		  AND node_id = ANY($2)
 		  AND last_seen >= $3
 		ORDER BY last_seen DESC
 		LIMIT 1
-	`, userEmail, bridgeNodeIDs, since).Scan(&ip, &node)
+	`, userUUID, nodeIntIDs, since).Scan(&ipStr, &nodeIntID)
 	if err != nil {
 		return "", "", false
 	}
-	return ip, node, true
+	nodeName := nodeIDToText[nodeIntID]
+	if nodeName == "" {
+		nodeName = fmt.Sprintf("%d", nodeIntID)
+	}
+	return ipStr, nodeName, true
 }
 
 // GetBridgedFlows returns flows matching the filter, newest first.
@@ -142,10 +217,13 @@ func (s *Storage) GetBridgedFlows(ctx context.Context, f BridgedFlowsFilter) ([]
 	}
 
 	if f.UserEmail != "" {
-		conds = append(conds, fmt.Sprintf("user_email = $%d", addArg(f.UserEmail)))
+		// user_email is uuid in DB; attempt to parse.
+		if uid, err := uuid.Parse(f.UserEmail); err == nil {
+			conds = append(conds, fmt.Sprintf("user_email = $%d", addArg(uid)))
+		}
 	}
 	if f.RealClientIP != "" {
-		conds = append(conds, fmt.Sprintf("real_client_ip = $%d", addArg(f.RealClientIP)))
+		conds = append(conds, fmt.Sprintf("real_client_ip = $%d::inet", addArg(f.RealClientIP)))
 	}
 	if f.Destination != "" {
 		conds = append(conds, fmt.Sprintf("destination LIKE $%d", addArg("%"+f.Destination+"%")))
@@ -160,15 +238,21 @@ func (s *Storage) GetBridgedFlows(ctx context.Context, f BridgedFlowsFilter) ([]
 	}
 	limitPlaceholder := fmt.Sprintf("$%d", addArg(f.Limit))
 
+	// Join with nodes to get text node names for bridge_node_id and exit_node_id.
 	query := fmt.Sprintf(`
-		SELECT id, user_email, real_client_ip, bridge_node_id, exit_node_id, destination, ts, created_at
-		FROM bridged_flows
+		SELECT bf.id, bf.user_email, host(bf.real_client_ip),
+		       bn.node_id AS bridge_node_id,
+		       en.node_id AS exit_node_id,
+		       bf.destination, bf.ts, bf.created_at
+		FROM bridged_flows bf
+		JOIN nodes bn ON bn.id = bf.bridge_node_id
+		JOIN nodes en ON en.id = bf.exit_node_id
 		%s
-		ORDER BY ts DESC
+		ORDER BY bf.ts DESC
 		LIMIT %s
 	`, where, limitPlaceholder)
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -177,9 +261,13 @@ func (s *Storage) GetBridgedFlows(ctx context.Context, f BridgedFlowsFilter) ([]
 	var out []BridgedFlow
 	for rows.Next() {
 		var bf BridgedFlow
-		if err := rows.Scan(&bf.ID, &bf.UserEmail, &bf.RealClientIP, &bf.BridgeNodeID, &bf.ExitNodeID, &bf.Destination, &bf.Timestamp, &bf.CreatedAt); err != nil {
+		var userUUID uuid.UUID
+		var ipStr string
+		if err := rows.Scan(&bf.ID, &userUUID, &ipStr, &bf.BridgeNodeID, &bf.ExitNodeID, &bf.Destination, &bf.Timestamp, &bf.CreatedAt); err != nil {
 			return nil, err
 		}
+		bf.UserEmail = userUUID.String()
+		bf.RealClientIP = ipStr
 		out = append(out, bf)
 	}
 	return out, rows.Err()
@@ -188,6 +276,6 @@ func (s *Storage) GetBridgedFlows(ctx context.Context, f BridgedFlowsFilter) ([]
 // CleanupBridgedFlows removes flows older than retentionDays.
 func (s *Storage) CleanupBridgedFlows(ctx context.Context, retentionDays int) error {
 	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
-	_, err := s.db.ExecContext(ctx, `DELETE FROM bridged_flows WHERE ts < $1`, cutoff)
+	_, err := s.pool.Exec(ctx, `DELETE FROM bridged_flows WHERE ts < $1`, cutoff)
 	return err
 }

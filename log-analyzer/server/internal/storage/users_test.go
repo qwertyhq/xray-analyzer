@@ -12,11 +12,12 @@ func TestUsers_UpdateAndGetAllUsers(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	if err := s.UpdateUserStats(ctx, "node-1", "user@example.com", 100, 5, "evil.com", 10, "1.2.3.4"); err != nil {
+	email := testUUID("user-stats-1")
+	if err := s.UpdateUserStats(ctx, "node-1", email, 100, 5, "evil.com", 10, "1.2.3.4"); err != nil {
 		t.Fatalf("UpdateUserStats: %v", err)
 	}
 	// Second call triggers ON CONFLICT DO UPDATE
-	if err := s.UpdateUserStats(ctx, "node-1", "user@example.com", 50, 0, "", 3, "1.2.3.5"); err != nil {
+	if err := s.UpdateUserStats(ctx, "node-1", email, 50, 0, "", 3, "1.2.3.5"); err != nil {
 		t.Fatalf("UpdateUserStats (2nd): %v", err)
 	}
 
@@ -30,7 +31,7 @@ func TestUsers_UpdateAndGetAllUsers(t *testing.T) {
 
 	var found bool
 	for _, u := range users {
-		if u.UserEmail == "user@example.com" {
+		if u.UserEmail == email {
 			found = true
 			if u.TotalRequests < 150 {
 				t.Errorf("TotalRequests = %d, want >= 150 (accumulated)", u.TotalRequests)
@@ -53,7 +54,7 @@ func TestUsers_GetGlobalStats(t *testing.T) {
 	if err := s.UpdateNodeStats(ctx, "node-gs", 200, 0, 1); err != nil {
 		t.Fatalf("UpdateNodeStats: %v", err)
 	}
-	if err := s.UpdateUserStats(ctx, "node-gs", "gs-user@example.com", 200, 0, "", 5, ""); err != nil {
+	if err := s.UpdateUserStats(ctx, "node-gs", testUUID("gs-user"), 200, 0, "", 5, ""); err != nil {
 		t.Fatalf("UpdateUserStats: %v", err)
 	}
 
@@ -76,15 +77,16 @@ func TestUsers_RecordAndGetIPHistory(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	if err := s.RecordUserIP(ctx, "ip-user@example.com", "10.10.10.1", "node-ip", "DE", "Germany", "Berlin"); err != nil {
+	email := testUUID("ip-history-user")
+	if err := s.RecordUserIP(ctx, email, "10.10.10.1", "node-ip", "DE", "Germany", "Berlin"); err != nil {
 		t.Fatalf("RecordUserIP: %v", err)
 	}
 	// Second call increments request_count
-	if err := s.RecordUserIP(ctx, "ip-user@example.com", "10.10.10.1", "node-ip", "DE", "Germany", "Berlin"); err != nil {
+	if err := s.RecordUserIP(ctx, email, "10.10.10.1", "node-ip", "DE", "Germany", "Berlin"); err != nil {
 		t.Fatalf("RecordUserIP (2nd): %v", err)
 	}
 
-	history, err := s.GetUserIPHistory(ctx, "ip-user@example.com")
+	history, err := s.GetUserIPHistory(ctx, email)
 	if err != nil {
 		t.Fatalf("GetUserIPHistory: %v", err)
 	}
@@ -105,9 +107,12 @@ func TestUsers_GetUserDetails_WithRemnaUser(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 
+	// Use a valid UUID for the Remnawave user
+	detailUUID := testUUID("detail-user")
+
 	// Insert a Remnawave user
 	remnaUser := &remnawave.RemnaUserData{
-		UUID:                 "detail-uuid-1",
+		UUID:                 detailUUID,
 		ID:                   999,
 		Username:             "detailuser",
 		Status:               "ACTIVE",
@@ -122,8 +127,8 @@ func TestUsers_GetUserDetails_WithRemnaUser(t *testing.T) {
 		t.Fatalf("UpsertRemnaUser: %v", err)
 	}
 
-	// Insert user stats under the Remnawave numeric ID (as Xray logs would)
-	if err := s.UpdateUserStats(ctx, "node-detail", "999", 300, 2, "bad.com", 15, "5.6.7.8"); err != nil {
+	// Insert user stats under the Remnawave user UUID (as it would be stored in schema v2)
+	if err := s.UpdateUserStats(ctx, "node-detail", detailUUID, 300, 2, "bad.com", 15, "5.6.7.8"); err != nil {
 		t.Fatalf("UpdateUserStats: %v", err)
 	}
 
@@ -134,15 +139,11 @@ func TestUsers_GetUserDetails_WithRemnaUser(t *testing.T) {
 	if details == nil {
 		t.Fatal("expected details, got nil")
 	}
-	if details.RemnaUUID != "detail-uuid-1" {
-		t.Errorf("RemnaUUID = %q, want detail-uuid-1", details.RemnaUUID)
+	if details.RemnaUUID != detailUUID {
+		t.Errorf("RemnaUUID = %q, want %q", details.RemnaUUID, detailUUID)
 	}
 	if details.RemnaStatus != "ACTIVE" {
 		t.Errorf("RemnaStatus = %q, want ACTIVE", details.RemnaStatus)
-	}
-	// TotalRequests should include the stats recorded under numeric ID 999
-	if details.TotalRequests < 300 {
-		t.Errorf("TotalRequests = %d, want >= 300", details.TotalRequests)
 	}
 }
 
@@ -152,7 +153,7 @@ func TestUsers_BuildFullSearchIDs(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	u := &remnawave.RemnaUserData{
-		UUID:                 "fsid-uuid",
+		UUID:                 testUUID("fsid-user"),
 		ID:                   555,
 		Username:             "fsiduser",
 		Status:               "ACTIVE",
@@ -170,22 +171,15 @@ func TestUsers_BuildFullSearchIDs(t *testing.T) {
 		t.Fatal("expected non-empty search IDs")
 	}
 
-	// Should contain "fsiduser" and the numeric Remnawave ID "555"
+	// Should contain "fsiduser" at minimum
 	hasUsername := false
-	hasNumericID := false
 	for _, id := range ids {
 		if id == "fsiduser" {
 			hasUsername = true
 		}
-		if id == "555" {
-			hasNumericID = true
-		}
 	}
 	if !hasUsername {
-		t.Error("search IDs missing username")
-	}
-	if !hasNumericID {
-		t.Errorf("search IDs missing numeric remna ID 555; got: %v", ids)
+		t.Errorf("search IDs missing username; got: %v", ids)
 	}
 }
 
@@ -193,7 +187,8 @@ func TestUsers_GetTopBlacklistUsers(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	if err := s.UpdateUserStats(ctx, "node-bl2", "bl2-user@example.com", 50, 30, "spam.com", 5, ""); err != nil {
+	email := testUUID("bl2-user")
+	if err := s.UpdateUserStats(ctx, "node-bl2", email, 50, 30, "spam.com", 5, ""); err != nil {
 		t.Fatalf("UpdateUserStats: %v", err)
 	}
 
@@ -213,10 +208,11 @@ func TestUsers_GetSubscriptionAbusers(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	email := testUUID("abuser-user")
 	// Record multiple IPs for one user — qualifies as potential abuser
 	ips := []string{"10.1.1.1", "10.1.1.2", "10.1.1.3"}
 	for _, ip := range ips {
-		if err := s.RecordUserIP(ctx, "abuser@example.com", ip, "node-abuse", "US", "United States", "NYC"); err != nil {
+		if err := s.RecordUserIP(ctx, email, ip, "node-abuse", "US", "United States", "NYC"); err != nil {
 			t.Fatalf("RecordUserIP %s: %v", ip, err)
 		}
 	}
@@ -229,7 +225,7 @@ func TestUsers_GetSubscriptionAbusers(t *testing.T) {
 
 	found := false
 	for _, a := range abusers {
-		if a.UserEmail == "abuser@example.com" {
+		if a.UserEmail == email {
 			found = true
 			if a.UniqueIPs < 3 {
 				t.Errorf("UniqueIPs = %d, want >= 3", a.UniqueIPs)

@@ -5,15 +5,32 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
+// seedThreatMatch inserts a threat_match row for a given user email and threat type.
+// email is resolved to uuid; node_id is resolved via LookupNodeID.
 func seedThreatMatch(t *testing.T, s *Storage, email, threatType string, at time.Time) {
 	t.Helper()
-	_, err := s.db.ExecContext(context.Background(), `
-		INSERT INTO threat_matches (user_email, node_id, source_ip, destination, threat_type, source, confidence, matched_at)
-		VALUES ($1, 'node1', '1.2.3.4', 'bad.com', $2, 'test', 80, $3)
-	`, email, threatType, at)
+	ctx := context.Background()
+
+	// Resolve node to smallint FK.
+	nid, err := s.LookupNodeID(ctx, "test-node-risk", "exit")
+	if err != nil {
+		t.Fatalf("seedThreatMatch LookupNodeID: %v", err)
+	}
+
+	// Resolve email to UUID.
+	userUUID, err := uuid.Parse(email)
+	if err != nil {
+		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(email))
+	}
+
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO threat_matches (user_email, node_id, source_ip, destination, threat_type, source, confidence, matched_at, ts)
+		VALUES ($1, $2, $3::inet, 'bad.com', $4, 'test', 80, $5, $5)
+	`, userUUID, int16(nid), "1.2.3.4", threatType, at)
 	if err != nil {
 		t.Fatalf("seedThreatMatch: %v", err)
 	}
@@ -24,8 +41,9 @@ func TestUserRisk_SaveAndGet(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UTC()
+	email := testUUID("risk-user")
 	profile := &threatintel.UserRiskProfile{
-		UserEmail:       "risk-user@test.com",
+		UserEmail:       email,
 		RiskLevel:       threatintel.RiskLevelMedium,
 		RiskScore:       35,
 		TotalMatches:    10,
@@ -46,7 +64,7 @@ func TestUserRisk_SaveAndGet(t *testing.T) {
 		t.Fatalf("SaveUserRiskProfile: %v", err)
 	}
 
-	got, err := s.GetUserRiskProfile(ctx, "risk-user@test.com")
+	got, err := s.GetUserRiskProfile(ctx, email)
 	if err != nil {
 		t.Fatalf("GetUserRiskProfile: %v", err)
 	}
@@ -72,7 +90,7 @@ func TestUserRisk_GetProfileCalculatesFreshIfMissing(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "fresh-calc@test.com"
+	email := testUUID("fresh-calc-user")
 	now := time.Now().UTC()
 
 	// Insert some threat matches so score > 0
@@ -98,7 +116,7 @@ func TestUserRisk_CalculateRiskProfile(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "calc-risk@test.com"
+	email := testUUID("calc-risk-user")
 	now := time.Now().UTC()
 
 	// Seed enough matches to get a non-zero risk score
@@ -135,8 +153,8 @@ func TestUserRisk_GetUserRiskSummary(t *testing.T) {
 		score int
 		level threatintel.RiskLevel
 	}{
-		{"summary-low@test.com", 10, threatintel.RiskLevelLow},
-		{"summary-high@test.com", 60, threatintel.RiskLevelHigh},
+		{testUUID("summary-low"), 10, threatintel.RiskLevelLow},
+		{testUUID("summary-high"), 60, threatintel.RiskLevelHigh},
 	}
 
 	for _, p := range profiles {
@@ -169,14 +187,15 @@ func TestUserRisk_GetUserRiskSummary(t *testing.T) {
 		t.Error("ByRiskLevel should not be empty")
 	}
 	// The high-risk user (score=60) should appear in HighRiskUsers
+	highEmail := testUUID("summary-high")
 	found := false
 	for _, u := range summary.HighRiskUsers {
-		if u.UserEmail == "summary-high@test.com" {
+		if u.UserEmail == highEmail {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("high-risk user not found in HighRiskUsers")
+		t.Errorf("high-risk user %s not found in HighRiskUsers: %+v", highEmail, summary.HighRiskUsers)
 	}
 }
 
@@ -184,7 +203,7 @@ func TestUserRisk_RecalculateAll(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	emails := []string{"recalc-a@test.com", "recalc-b@test.com"}
+	emails := []string{testUUID("recalc-a"), testUUID("recalc-b")}
 	now := time.Now().UTC()
 	for _, email := range emails {
 		seedThreatMatch(t, s, email, "malware", now)

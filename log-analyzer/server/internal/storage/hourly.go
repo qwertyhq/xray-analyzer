@@ -9,18 +9,24 @@ import (
 	"github.com/xray-log-analyzer/server/internal/models"
 )
 
-// UpdateHourlyStats updates hourly statistics for charts
+// UpdateHourlyStats updates hourly statistics for charts.
+// nodeID is a text node name resolved to the nodes(id) smallint FK.
 func (s *Storage) UpdateHourlyStats(ctx context.Context, nodeID string, requests int, blacklistHits int, uniqueUsers int) error {
 	now := time.Now().UTC().Truncate(time.Hour)
 
-	_, err := s.db.ExecContext(ctx, `
+	nid, err := s.LookupNodeID(ctx, nodeID, "exit")
+	if err != nil {
+		return fmt.Errorf("resolve node_id %q: %w", nodeID, err)
+	}
+
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO hourly_stats (node_id, hour, total_requests, blacklist_hits, unique_users)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (node_id, hour) DO UPDATE SET
 			total_requests = hourly_stats.total_requests + EXCLUDED.total_requests,
 			blacklist_hits = hourly_stats.blacklist_hits + EXCLUDED.blacklist_hits,
 			unique_users = GREATEST(hourly_stats.unique_users, EXCLUDED.unique_users)
-	`, nodeID, now, requests, blacklistHits, uniqueUsers)
+	`, int16(nid), now, requests, blacklistHits, uniqueUsers)
 	return err
 }
 

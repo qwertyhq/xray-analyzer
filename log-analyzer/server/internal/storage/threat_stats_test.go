@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // seedThreatTypeStats inserts a row into threat_type_stats
@@ -21,16 +23,22 @@ func seedThreatTypeStats(t *testing.T, s *Storage, threatType string, count int6
 	}
 }
 
-// seedUserThreatStats inserts a row into user_threat_stats
+// seedUserThreatStats inserts a row into user_threat_stats.
+// email is resolved to a deterministic UUID via testUUID() to satisfy the uuid column.
 func seedUserThreatStats(t *testing.T, s *Storage, email, threatType string, count int64) {
 	t.Helper()
-	_, err := s.db.ExecContext(context.Background(), `
+	userUUID, err := uuid.Parse(email)
+	if err != nil {
+		// convert non-UUID test strings to deterministic UUID
+		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(email))
+	}
+	_, err = s.pool.Exec(context.Background(), `
 		INSERT INTO user_threat_stats (user_email, threat_type, match_count, last_match)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (user_email, threat_type) DO UPDATE SET
 			match_count = user_threat_stats.match_count + $5,
 			last_match = $6
-	`, email, threatType, count, time.Now(), count, time.Now())
+	`, userUUID, threatType, count, time.Now(), count, time.Now())
 	if err != nil {
 		t.Fatalf("seedUserThreatStats: %v", err)
 	}
@@ -101,16 +109,21 @@ func TestGetTopUsersByCategory(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	seedUserThreatStats(t, s, "alice@example.com", "porn", 50)
-	seedUserThreatStats(t, s, "bob@example.com", "porn", 30)
-	seedUserThreatStats(t, s, "carol@example.com", "gambling", 10)
+	aliceEmail := testUUID("alice")
+	bobEmail := testUUID("bob")
+	carolEmail := testUUID("carol")
 
-	// Add some domain entries
-	_, err := s.db.ExecContext(ctx, `
+	seedUserThreatStats(t, s, aliceEmail, "porn", 50)
+	seedUserThreatStats(t, s, bobEmail, "porn", 30)
+	seedUserThreatStats(t, s, carolEmail, "gambling", 10)
+
+	// Add some domain entries for alice
+	aliceUUID, _ := uuid.Parse(aliceEmail)
+	_, err := s.pool.Exec(ctx, `
 		INSERT INTO user_threat_domains (user_email, threat_type, domain, hit_count)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT DO NOTHING
-	`, "alice@example.com", "porn", "adult.example.com", 5)
+	`, aliceUUID, "porn", "adult.example.com", 5)
 	if err != nil {
 		t.Fatalf("seed user_threat_domains: %v", err)
 	}
@@ -122,7 +135,7 @@ func TestGetTopUsersByCategory(t *testing.T) {
 	if len(results) != 2 {
 		t.Fatalf("expected 2 users for porn, got %d", len(results))
 	}
-	if results[0].UserEmail != "alice@example.com" {
+	if results[0].UserEmail != aliceEmail {
 		t.Errorf("expected alice first, got %s", results[0].UserEmail)
 	}
 	if results[0].MatchCount != 50 {
@@ -138,7 +151,7 @@ func TestGetTopUsersByAllCategories(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	seedUserThreatStats(t, s, "user@example.com", "gambling", 5)
+	seedUserThreatStats(t, s, testUUID("all-cat-user"), "gambling", 5)
 
 	result, err := s.GetTopUsersByAllCategories(ctx, 5)
 	if err != nil {
@@ -162,7 +175,8 @@ func TestGetRecentUsersByCategory_FromAgg(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	seedUserThreatStats(t, s, "recent@example.com", "tor", 7)
+	recentEmail := testUUID("recent-tor-user")
+	seedUserThreatStats(t, s, recentEmail, "tor", 7)
 
 	results, err := s.GetRecentUsersByCategory(ctx, "tor", 5)
 	if err != nil {
@@ -171,8 +185,8 @@ func TestGetRecentUsersByCategory_FromAgg(t *testing.T) {
 	if len(results) == 0 {
 		t.Fatal("expected at least one result")
 	}
-	if results[0].UserEmail != "recent@example.com" {
-		t.Errorf("expected recent@example.com, got %s", results[0].UserEmail)
+	if results[0].UserEmail != recentEmail {
+		t.Errorf("expected %s, got %s", recentEmail, results[0].UserEmail)
 	}
 }
 
@@ -182,7 +196,7 @@ func TestGetUsersByCategory_Pagination(t *testing.T) {
 
 	// Insert 5 users for "social"
 	for i := 0; i < 5; i++ {
-		email := "user" + string(rune('a'+i)) + "@example.com"
+		email := testUUID("social-user-" + string(rune('a'+i)))
 		seedUserThreatStats(t, s, email, "social", int64(10-i))
 	}
 
@@ -297,7 +311,8 @@ func TestGetRecentUsersByAllCategories(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	seedUserThreatStats(t, s, "u@example.com", "torrent", 3)
+	torEmail := testUUID("torrent-user-recent")
+	seedUserThreatStats(t, s, torEmail, "torrent", 3)
 
 	result, err := s.GetRecentUsersByAllCategories(ctx, 5)
 	if err != nil {

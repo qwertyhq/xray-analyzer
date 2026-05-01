@@ -9,7 +9,7 @@ func TestGeoStats_SaveAndGet(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	if err := s.SaveGeoStats(ctx, "DE", "Germany", "malware", "user@example.com"); err != nil {
+	if err := s.SaveGeoStats(ctx, "DE", "Germany", "malware", testUUID("geo-user-1")); err != nil {
 		t.Fatalf("SaveGeoStats: %v", err)
 	}
 
@@ -40,7 +40,7 @@ func TestGeoStats_SaveGeoStats_EmptyCountryCode(t *testing.T) {
 	ctx := context.Background()
 
 	// Empty country code must be a no-op, not an error
-	if err := s.SaveGeoStats(ctx, "", "Unknown", "malware", "user@example.com"); err != nil {
+	if err := s.SaveGeoStats(ctx, "", "Unknown", "malware", testUUID("geo-user-empty")); err != nil {
 		t.Errorf("SaveGeoStats with empty country: %v", err)
 	}
 
@@ -59,11 +59,13 @@ func TestGeoStats_SaveUserLocation(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	if err := s.SaveUserLocation(ctx, "geo-user@test.com", "FR", "France", "Paris", 48.85, 2.35); err != nil {
+	email := testUUID("geo-user-loc")
+
+	if err := s.SaveUserLocation(ctx, email, "FR", "France", "Paris", 48.85, 2.35); err != nil {
 		t.Fatalf("SaveUserLocation: %v", err)
 	}
 
-	locs, err := s.GetUserLocations(ctx, "geo-user@test.com", 5)
+	locs, err := s.GetUserLocations(ctx, email, 5)
 	if err != nil {
 		t.Fatalf("GetUserLocations: %v", err)
 	}
@@ -75,10 +77,10 @@ func TestGeoStats_SaveUserLocation(t *testing.T) {
 	}
 
 	// Upsert: save again should increment request_count, not duplicate
-	if err := s.SaveUserLocation(ctx, "geo-user@test.com", "FR", "France", "Paris", 48.85, 2.35); err != nil {
+	if err := s.SaveUserLocation(ctx, email, "FR", "France", "Paris", 48.85, 2.35); err != nil {
 		t.Fatalf("SaveUserLocation (2nd): %v", err)
 	}
-	locs2, err := s.GetUserLocations(ctx, "geo-user@test.com", 5)
+	locs2, err := s.GetUserLocations(ctx, email, 5)
 	if err != nil {
 		t.Fatalf("GetUserLocations (2nd): %v", err)
 	}
@@ -94,10 +96,10 @@ func TestGeoStats_GetGeoSummary(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	if err := s.SaveGeoStats(ctx, "US", "United States", "tor", "u@test.com"); err != nil {
+	if err := s.SaveGeoStats(ctx, "US", "United States", "tor", testUUID("geo-summary-u1")); err != nil {
 		t.Fatalf("SaveGeoStats: %v", err)
 	}
-	if err := s.SaveGeoStats(ctx, "CN", "China", "malware", "u@test.com"); err != nil {
+	if err := s.SaveGeoStats(ctx, "CN", "China", "malware", testUUID("geo-summary-u2")); err != nil {
 		t.Fatalf("SaveGeoStats CN: %v", err)
 	}
 
@@ -120,7 +122,7 @@ func TestGeoStats_GetConnectionGeoStats(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	if err := s.SaveUserLocation(ctx, "conn-user@test.com", "JP", "Japan", "Tokyo", 35.68, 139.69); err != nil {
+	if err := s.SaveUserLocation(ctx, testUUID("geo-conn-user"), "JP", "Japan", "Tokyo", 35.68, 139.69); err != nil {
 		t.Fatalf("SaveUserLocation: %v", err)
 	}
 
@@ -143,7 +145,7 @@ func TestGeoStats_UpdateLocationCoords(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "coord-user@test.com"
+	email := testUUID("geo-coord-user")
 	if err := s.SaveUserLocation(ctx, email, "IT", "Italy", "", 0, 0); err != nil {
 		t.Fatalf("SaveUserLocation: %v", err)
 	}

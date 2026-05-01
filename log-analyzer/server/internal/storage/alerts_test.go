@@ -11,10 +11,12 @@ func TestAlerts_CreateAndGetUnsent(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	userUUID := testUUID("alert-user")
+
 	a := &models.Alert{
 		Type:        "blacklist",
 		NodeID:      "node-alert-1",
-		UserEmail:   "alert-user@example.com",
+		UserEmail:   userUUID,
 		SourceIP:    "1.2.3.4",
 		Destination: "bad.com",
 		Count:       5,
@@ -60,10 +62,11 @@ func TestAlerts_MarkSent(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	userUUID := testUUID("sent-user")
 	a := &models.Alert{
 		Type:      "geo_anomaly",
 		NodeID:    "n1",
-		UserEmail: "sent-user@example.com",
+		UserEmail: userUUID,
 		Count:     1,
 		Message:   "new country",
 	}
@@ -91,14 +94,14 @@ func TestAlerts_GetUserAlerts_Pagination(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
-	email := "page-user@example.com"
+	userUUID := testUUID("page-user")
 
 	// Insert 3 alerts for the same user
 	for i := 0; i < 3; i++ {
 		a := &models.Alert{
 			Type:      "test",
 			NodeID:    "n1",
-			UserEmail: email,
+			UserEmail: userUUID,
 			Count:     i + 1,
 			Message:   "msg",
 		}
@@ -108,7 +111,7 @@ func TestAlerts_GetUserAlerts_Pagination(t *testing.T) {
 	}
 
 	// Page 1, pageSize 2
-	resp, err := s.GetUserAlerts(ctx, email, 1, 2)
+	resp, err := s.GetUserAlerts(ctx, userUUID, 1, 2)
 	if err != nil {
 		t.Fatalf("GetUserAlerts: %v", err)
 	}
@@ -123,7 +126,7 @@ func TestAlerts_GetUserAlerts_Pagination(t *testing.T) {
 	}
 
 	// Page 2 — 1 remaining
-	resp2, err := s.GetUserAlerts(ctx, email, 2, 2)
+	resp2, err := s.GetUserAlerts(ctx, userUUID, 2, 2)
 	if err != nil {
 		t.Fatalf("GetUserAlerts page 2: %v", err)
 	}
@@ -136,10 +139,13 @@ func TestAlerts_GetUserAlerts_OtherUserNotVisible(t *testing.T) {
 	s := newTestStorage(t)
 	ctx := context.Background()
 
+	ownerUUID := testUUID("owner-user")
+	strangerUUID := testUUID("stranger-user")
+
 	a := &models.Alert{
 		Type:      "test",
 		NodeID:    "n1",
-		UserEmail: "owner@example.com",
+		UserEmail: ownerUUID,
 		Count:     1,
 		Message:   "private",
 	}
@@ -147,7 +153,7 @@ func TestAlerts_GetUserAlerts_OtherUserNotVisible(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := s.GetUserAlerts(ctx, "stranger@example.com", 1, 20)
+	resp, err := s.GetUserAlerts(ctx, strangerUUID, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}

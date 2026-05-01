@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	tcpg "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -88,6 +89,15 @@ func randomHex() string {
 	return hex.EncodeToString(b[:])
 }
 
+// testEmailUUID converts a test string to a deterministic UUID — same logic as
+// storage.emailToUUID so DB writes and query assertions use the same value.
+func testEmailUUID(name string) string {
+	if u, err := uuid.Parse(name); err == nil {
+		return u.String()
+	}
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(name)).String()
+}
+
 func newTestAnalyzer(t *testing.T, bridgePattern string) (*Analyzer, *storage.Storage) {
 	t.Helper()
 
@@ -112,13 +122,21 @@ func newTestAnalyzer(t *testing.T, bridgePattern string) (*Analyzer, *storage.St
 
 // seedBridgeIPRow inserts a user_ip_history row with a controlled last_seen,
 // bypassing RecordUserIP's unconditional now() timestamp.
+// userEmail may be any string — it is converted to UUID via the same SHA-1 path.
 func seedBridgeIPRow(t *testing.T, store *storage.Storage, userEmail, ip, nodeID string, lastSeen time.Time) {
 	t.Helper()
-	_, err := store.DB().Exec(`
+	ctx := context.Background()
+	// Resolve nodeID to smallint FK.
+	nid, err := store.LookupNodeID(ctx, nodeID, "bridge")
+	if err != nil {
+		t.Fatalf("seed LookupNodeID: %v", err)
+	}
+	userUUID := testEmailUUID(userEmail)
+	_, err = store.Pool().Exec(ctx, `
 		INSERT INTO user_ip_history (user_email, ip_address, node_id, first_seen, last_seen, request_count)
-		VALUES ($1, $2, $3, $4, $5, 1)
+		VALUES ($1, $2::inet, $3, $4, $5, 1)
 		ON CONFLICT(user_email, ip_address) DO UPDATE SET last_seen = excluded.last_seen
-	`, userEmail, ip, nodeID, lastSeen.UTC(), lastSeen.UTC())
+	`, userUUID, ip, int16(nid), lastSeen.UTC(), lastSeen.UTC())
 	if err != nil {
 		t.Fatalf("seed user_ip_history: %v", err)
 	}
@@ -130,6 +148,9 @@ func seedBridgeIPRow(t *testing.T, store *storage.Storage, userEmail, ip, nodeID
 func TestProcessBatch_BridgedSourceIPSuppressed(t *testing.T) {
 	a, store := newTestAnalyzer(t, `^BRIDGE_.*_IN(_\d+)?$`)
 	ctx := context.Background()
+
+	user5117 := testEmailUUID("5117")
+	user9999 := testEmailUUID("9999")
 
 	batch := &models.LogBatch{
 		NodeID: "germany-1",
@@ -143,23 +164,23 @@ func TestProcessBatch_BridgedSourceIPSuppressed(t *testing.T) {
 		t.Fatalf("ProcessBatch: %v", err)
 	}
 
-	db := store.DB()
+	pool := store.Pool()
 	count := func(q string, args ...interface{}) int {
 		var n int
-		if err := db.QueryRow(q, args...).Scan(&n); err != nil {
+		if err := pool.QueryRow(ctx, q, args...).Scan(&n); err != nil {
 			t.Fatalf("query %q: %v", q, err)
 		}
 		return n
 	}
 
-	if got := count(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1 AND ip_address=$2`, "5117", "5.188.141.197"); got != 0 {
+	if got := count(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1 AND ip_address=$2::inet`, user5117, "5.188.141.197"); got != 0 {
 		t.Errorf("user_ip_history leaked bridge IP: got %d rows, want 0", got)
 	}
-	if got := count(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1 AND ip_address=$2`, "9999", "203.0.113.5"); got != 1 {
+	if got := count(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1 AND ip_address=$2::inet`, user9999, "203.0.113.5"); got != 1 {
 		t.Errorf("direct client IP missing: got %d rows, want 1", got)
 	}
 	// Destinations recorded for both.
-	if got := count(`SELECT COUNT(*) FROM user_destinations WHERE user_email=$1`, "5117"); got != 1 {
+	if got := count(`SELECT COUNT(*) FROM user_destinations WHERE user_email=$1`, user5117); got != 1 {
 		t.Errorf("bridged destination not recorded: got %d, want 1", got)
 	}
 }
@@ -184,9 +205,11 @@ func TestProcessBatch_BridgePatternVariants(t *testing.T) {
 		t.Fatalf("ProcessBatch: %v", err)
 	}
 
+	pool := store.Pool()
 	hasIP := func(user string) bool {
+		userUUID := testEmailUUID(user)
 		var n int
-		_ = store.DB().QueryRow(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1`, user).Scan(&n)
+		_ = pool.QueryRow(ctx, `SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1`, userUUID).Scan(&n)
 		return n > 0
 	}
 	cases := []struct {
@@ -216,6 +239,8 @@ func TestProcessBatch_FansOutCandidatesByTime(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now()
+	user4875UUID := testEmailUUID("4875")
+	user7368UUID := testEmailUUID("7368")
 	seedBridgeIPRow(t, store, "4875", "128.71.84.176", "ru-white", now)
 	seedBridgeIPRow(t, store, "7368", "91.78.219.232", "ru-white", now)
 
@@ -241,7 +266,7 @@ func TestProcessBatch_FansOutCandidatesByTime(t *testing.T) {
 	for _, f := range flows {
 		got[f.UserEmail] = f.RealClientIP
 	}
-	if got["4875"] != "128.71.84.176" || got["7368"] != "91.78.219.232" {
+	if got[user4875UUID] != "128.71.84.176" || got[user7368UUID] != "91.78.219.232" {
 		t.Errorf("candidate rows wrong: %v", got)
 	}
 }
@@ -255,6 +280,7 @@ func TestProcessBatch_IdleUserNotIncluded(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now()
+	activeUUID := testEmailUUID("active-user")
 	// Active: last seen now.
 	seedBridgeIPRow(t, store, "active-user", "10.0.0.1", "ru-white", now)
 	// Idle: last seen 5 minutes ago — outside ±10s window.
@@ -275,8 +301,8 @@ func TestProcessBatch_IdleUserNotIncluded(t *testing.T) {
 	if len(flows) != 1 {
 		t.Fatalf("expected 1 candidate (only active), got %d", len(flows))
 	}
-	if flows[0].UserEmail != "active-user" {
-		t.Errorf("wrong candidate: got %q, want active-user", flows[0].UserEmail)
+	if flows[0].UserEmail != activeUUID {
+		t.Errorf("wrong candidate: got %q, want %q", flows[0].UserEmail, activeUUID)
 	}
 }
 
@@ -333,6 +359,8 @@ func TestProcessBatch_NoFilterWhenPatternEmpty(t *testing.T) {
 	a, store := newTestAnalyzer(t, "")
 	ctx := context.Background()
 
+	user5117UUID := testEmailUUID("5117")
+
 	batch := &models.LogBatch{
 		NodeID:  "germany-1",
 		Entries: []models.LogEntry{{Timestamp: time.Now(), SourceIP: "5.188.141.197", UserEmail: "5117", Destination: "x.com:443", Inbound: "BRIDGE_DE_IN"}},
@@ -343,7 +371,7 @@ func TestProcessBatch_NoFilterWhenPatternEmpty(t *testing.T) {
 	}
 
 	var n int
-	_ = store.DB().QueryRow(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1`, "5117").Scan(&n)
+	_ = store.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1`, user5117UUID).Scan(&n)
 	if n != 1 {
 		t.Errorf("filter disabled, expected bridge IP recorded, got %d", n)
 	}
