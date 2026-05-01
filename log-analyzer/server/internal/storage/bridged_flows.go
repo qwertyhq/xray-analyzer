@@ -13,7 +13,8 @@ import (
 // resolved back to the real client IP seen on the corresponding bridge node.
 type BridgedFlow struct {
 	ID           int64     `json:"id"`
-	UserEmail    string    `json:"user_email"`    // UUID string (Remnawave user UUID)
+	UserEmail    string    `json:"user_email"`     // UUID string (Remnawave user UUID)
+	UserDisplay  string    `json:"user_display"`   // Human-readable name: remna username, original email, or UUID fallback
 	RealClientIP string    `json:"real_client_ip"` // IP address string
 	BridgeNodeID string    `json:"bridge_node_id"` // text node_id (resolved to smallint FK internally)
 	ExitNodeID   string    `json:"exit_node_id"`   // text node_id (resolved to smallint FK internally)
@@ -49,11 +50,14 @@ func (s *Storage) RecordBridgedFlow(ctx context.Context, f *BridgedFlow) error {
 		return fmt.Errorf("resolve exit_node_id: %w", err)
 	}
 
-	// user_email is uuid in the DB. Use emailToUUID which falls back to SHA-1
-	// for synthetic identifiers (e.g. "5117", "u-out") from exit-node logs.
+	// user_email is uuid in the DB. Resolve via remna_users first; fall back
+	// to SHA-1 for synthetic identifiers (e.g. "5117", "u-out") from exit-node logs.
 	var userUUID uuid.UUID
 	if f.UserEmail != "" {
-		userUUID = emailToUUID(f.UserEmail)
+		userUUID, err = s.ResolveUserEmailToUUID(ctx, f.UserEmail)
+		if err != nil {
+			return fmt.Errorf("resolve user_email: %w", err)
+		}
 	}
 
 	_, err = s.pool.Exec(ctx, `
@@ -236,15 +240,18 @@ func (s *Storage) GetBridgedFlows(ctx context.Context, f BridgedFlowsFilter) ([]
 	}
 	limitPlaceholder := fmt.Sprintf("$%d", addArg(f.Limit))
 
-	// Join with nodes to get text node names for bridge_node_id and exit_node_id.
+	// Join with nodes for text names; join remna_users + email_index for user_display.
 	query := fmt.Sprintf(`
 		SELECT bf.id, bf.user_email, host(bf.real_client_ip),
 		       bn.node_id AS bridge_node_id,
 		       en.node_id AS exit_node_id,
-		       bf.destination, bf.ts, bf.created_at
+		       bf.destination, bf.ts, bf.created_at,
+		       COALESCE(ru.username, ei.original_email, bf.user_email::text) AS user_display
 		FROM bridged_flows bf
 		JOIN nodes bn ON bn.id = bf.bridge_node_id
 		JOIN nodes en ON en.id = bf.exit_node_id
+		LEFT JOIN remna_users ru ON ru.uuid = bf.user_email
+		LEFT JOIN email_index ei ON ei.uuid = bf.user_email
 		%s
 		ORDER BY bf.ts DESC
 		LIMIT %s
@@ -261,7 +268,7 @@ func (s *Storage) GetBridgedFlows(ctx context.Context, f BridgedFlowsFilter) ([]
 		var bf BridgedFlow
 		var userUUID uuid.UUID
 		var ipStr string
-		if err := rows.Scan(&bf.ID, &userUUID, &ipStr, &bf.BridgeNodeID, &bf.ExitNodeID, &bf.Destination, &bf.Timestamp, &bf.CreatedAt); err != nil {
+		if err := rows.Scan(&bf.ID, &userUUID, &ipStr, &bf.BridgeNodeID, &bf.ExitNodeID, &bf.Destination, &bf.Timestamp, &bf.CreatedAt, &bf.UserDisplay); err != nil {
 			return nil, err
 		}
 		bf.UserEmail = userUUID.String()

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
@@ -37,9 +36,9 @@ func (s *Storage) SaveUserLocation(ctx context.Context, userEmail, countryCode, 
 		return nil
 	}
 
-	userUUID, err := uuid.Parse(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
 	if err != nil {
-		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+		return fmt.Errorf("resolve user_email: %w", err)
 	}
 
 	_, err = s.pool.Exec(ctx, `
@@ -193,9 +192,9 @@ func (s *Storage) GetUserLocations(ctx context.Context, userEmail string, limit 
 	}
 
 	if userEmail != "" {
-		userUUID, err := uuid.Parse(userEmail)
+		userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
 		if err != nil {
-			userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+			return nil, fmt.Errorf("resolve user_email: %w", err)
 		}
 		return scanLocs(`
 			SELECT user_email::text, country_code, country_name, COALESCE(city,''), last_seen, request_count
@@ -334,9 +333,9 @@ func (s *Storage) GetLocationsWithoutCoords(ctx context.Context, limit int) ([]*
 
 // UpdateLocationCoords updates coordinates for a specific user location
 func (s *Storage) UpdateLocationCoords(ctx context.Context, userEmail, countryCode, city string, lat, lon float64) error {
-	userUUID, err := uuid.Parse(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
 	if err != nil {
-		userUUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(userEmail))
+		return fmt.Errorf("resolve user_email: %w", err)
 	}
 	_, err = s.pool.Exec(ctx, `
 		UPDATE user_locations

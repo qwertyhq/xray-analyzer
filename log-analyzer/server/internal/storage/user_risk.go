@@ -21,7 +21,10 @@ func (s *Storage) CalculateUserRiskProfile(ctx context.Context, email string) (*
 		RiskFactors:   []threatintel.RiskFactor{},
 	}
 
-	userUUID := emailToUUID(email)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("resolve user_email: %w", err)
+	}
 
 	// Get basic match stats
 	row := s.pool.QueryRow(ctx, `
@@ -234,7 +237,10 @@ func getRiskLevel(score int) threatintel.RiskLevel {
 
 // calculateRiskTrend compares current activity with previous period
 func (s *Storage) calculateRiskTrend(ctx context.Context, email string) string {
-	userUUID := emailToUUID(email)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, email)
+	if err != nil {
+		return "stable"
+	}
 	var recent, previous int
 
 	if err := s.pool.QueryRow(ctx, `
@@ -267,9 +273,12 @@ func (s *Storage) SaveUserRiskProfile(ctx context.Context, profile *threatintel.
 	topDomains, _ := json.Marshal(profile.TopDomains)
 	riskFactors, _ := json.Marshal(profile.RiskFactors)
 
-	userUUID := emailToUUID(profile.UserEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, profile.UserEmail)
+	if err != nil {
+		return fmt.Errorf("resolve user_email: %w", err)
+	}
 
-	_, err := s.pool.Exec(ctx, `
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_risk_profiles (
 			user_email, risk_level, risk_score, total_matches, threats_by_type,
 			unique_countries, anomaly_count, first_seen, last_activity,
@@ -304,7 +313,10 @@ func (s *Storage) GetUserRiskProfile(ctx context.Context, email string) (*threat
 		TopDomains:    []string{},
 	}
 
-	userUUID := emailToUUID(email)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("resolve user_email: %w", err)
+	}
 
 	var threatsByType, topDomains, riskFactors sql.NullString
 	var firstSeen, lastActivity *time.Time
@@ -319,7 +331,7 @@ func (s *Storage) GetUserRiskProfile(ctx context.Context, email string) (*threat
 		WHERE user_email = $1
 	`, userUUID)
 
-	err := row.Scan(&storedUUID, &riskLevel, &profile.RiskScore,
+	err = row.Scan(&storedUUID, &riskLevel, &profile.RiskScore,
 		&profile.TotalMatches, &threatsByType, &profile.UniqueCountries,
 		&profile.AnomalyCount, &firstSeen, &lastActivity,
 		&profile.DaysActive, &topDomains, &riskFactors, &profile.TrendDirection)

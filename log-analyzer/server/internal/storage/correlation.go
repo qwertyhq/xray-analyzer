@@ -10,7 +10,10 @@ import (
 
 // RecordIPUserMapping records that a user connected from an IP
 func (s *Storage) RecordIPUserMapping(ctx context.Context, ip, userEmail, nodeID string) error {
-	userUUID := emailToUUID(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
+	if err != nil {
+		return fmt.Errorf("resolve user_email: %w", err)
+	}
 
 	// node_id is nullable smallint FK — resolve if non-empty.
 	var nodeIntID interface{}
@@ -20,7 +23,7 @@ func (s *Storage) RecordIPUserMapping(ctx context.Context, ip, userEmail, nodeID
 		}
 	}
 
-	_, err := s.pool.Exec(ctx, `
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO ip_user_map (ip_address, user_email, node_id, first_seen, last_seen, request_count)
 		VALUES ($1::inet, $2, $3, NOW(), NOW(), 1)
 		ON CONFLICT (ip_address, user_email) DO UPDATE SET
@@ -33,8 +36,11 @@ func (s *Storage) RecordIPUserMapping(ctx context.Context, ip, userEmail, nodeID
 
 // RecordHWIDUserMapping records that a user connected with an HWID
 func (s *Storage) RecordHWIDUserMapping(ctx context.Context, hwid, userEmail, platform string) error {
-	userUUID := emailToUUID(userEmail)
-	_, err := s.pool.Exec(ctx, `
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
+	if err != nil {
+		return fmt.Errorf("resolve user_email: %w", err)
+	}
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO hwid_user_map (hwid, user_email, platform, first_seen, last_seen, request_count)
 		VALUES ($1, $2, $3, NOW(), NOW(), 1)
 		ON CONFLICT (hwid, user_email) DO UPDATE SET
@@ -47,7 +53,10 @@ func (s *Storage) RecordHWIDUserMapping(ctx context.Context, hwid, userEmail, pl
 
 // RecordUserFingerprint records a unique combination of user+IP+HWID
 func (s *Storage) RecordUserFingerprint(ctx context.Context, userEmail, ip, hwid, userAgent, nodeID string) error {
-	userUUID := emailToUUID(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
+	if err != nil {
+		return fmt.Errorf("resolve user_email: %w", err)
+	}
 
 	var nodeIntID interface{}
 	if nodeID != "" {
@@ -56,7 +65,7 @@ func (s *Storage) RecordUserFingerprint(ctx context.Context, userEmail, ip, hwid
 		}
 	}
 
-	_, err := s.pool.Exec(ctx, `
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_fingerprints (user_email, ip_address, hwid, user_agent, node_id, first_seen, last_seen, session_count)
 		VALUES ($1, $2::inet, $3, $4, $5, NOW(), NOW(), 1)
 		ON CONFLICT (user_email, ip_address, hwid) DO UPDATE SET
@@ -132,7 +141,10 @@ func (s *Storage) GetUsersForHWID(ctx context.Context, hwid string) ([]HWIDUserM
 
 // GetSharedIPUsers returns users that share IPs with the given user
 func (s *Storage) GetSharedIPUsers(ctx context.Context, userEmail string) ([]SharedUserInfo, error) {
-	userUUID := emailToUUID(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
+	if err != nil {
+		return nil, fmt.Errorf("resolve user_email: %w", err)
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT DISTINCT m2.user_email::text, host(m1.ip_address), m2.last_seen, m2.request_count
 		FROM ip_user_map m1
@@ -159,7 +171,10 @@ func (s *Storage) GetSharedIPUsers(ctx context.Context, userEmail string) ([]Sha
 
 // GetSharedHWIDUsers returns users that share HWIDs with the given user
 func (s *Storage) GetSharedHWIDUsers(ctx context.Context, userEmail string) ([]SharedUserInfo, error) {
-	userUUID := emailToUUID(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
+	if err != nil {
+		return nil, fmt.Errorf("resolve user_email: %w", err)
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT DISTINCT m2.user_email::text, m1.hwid, m2.last_seen, m2.request_count
 		FROM hwid_user_map m1
@@ -186,7 +201,10 @@ func (s *Storage) GetSharedHWIDUsers(ctx context.Context, userEmail string) ([]S
 
 // GetUserFingerprints returns all fingerprints for a user
 func (s *Storage) GetUserFingerprints(ctx context.Context, userEmail string) ([]UserFingerprint, error) {
-	userUUID := emailToUUID(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
+	if err != nil {
+		return nil, fmt.Errorf("resolve user_email: %w", err)
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT f.id, f.user_email::text, host(f.ip_address),
 		       COALESCE(f.hwid, ''), COALESCE(f.user_agent, ''),
@@ -219,13 +237,16 @@ func (s *Storage) UpsertUserAIProfile(ctx context.Context, profile *UserAIProfil
 	typicalHours, _ := json.Marshal(profile.TypicalHours)
 	riskFactors, _ := json.Marshal(profile.RiskFactors)
 
-	userUUID := emailToUUID(profile.UserEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, profile.UserEmail)
+	if err != nil {
+		return fmt.Errorf("resolve user_email: %w", err)
+	}
 	// remna_uuid is type uuid — pass NULL for empty string to avoid parse error.
 	var remnaUUIDVal interface{}
 	if profile.RemnaUUID != "" {
 		remnaUUIDVal = profile.RemnaUUID
 	}
-	_, err := s.pool.Exec(ctx, `
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO user_ai_profile (
 			user_email, unique_ips, unique_hwids, unique_fingerprints, unique_countries, unique_nodes,
 			total_requests, total_sessions, avg_session_duration_sec,
@@ -276,7 +297,10 @@ func (s *Storage) UpsertUserAIProfile(ctx context.Context, profile *UserAIProfil
 
 // GetUserAIProfile retrieves the AI profile for a user
 func (s *Storage) GetUserAIProfile(ctx context.Context, userEmail string) (*UserAIProfile, error) {
-	userUUID := emailToUUID(userEmail)
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, userEmail)
+	if err != nil {
+		return nil, fmt.Errorf("resolve user_email: %w", err)
+	}
 	row := s.pool.QueryRow(ctx, `
 		SELECT user_email::text, unique_ips, unique_hwids, unique_fingerprints, unique_countries, unique_nodes,
 			total_requests, total_sessions, avg_session_duration_sec,
@@ -295,7 +319,7 @@ func (s *Storage) GetUserAIProfile(ctx context.Context, userEmail string) (*User
 	var firstSeen, lastSeen, updatedAt *time.Time
 	var remnaExpireAt *time.Time
 
-	err := row.Scan(&p.UserEmail, &p.UniqueIPs, &p.UniqueHWIDs, &p.UniqueFingerprints, &p.UniqueCountries, &p.UniqueNodes,
+	err = row.Scan(&p.UserEmail, &p.UniqueIPs, &p.UniqueHWIDs, &p.UniqueFingerprints, &p.UniqueCountries, &p.UniqueNodes,
 		&p.TotalRequests, &p.TotalSessions, &p.AvgSessionDurationSec,
 		&p.TotalThreatMatches, &threatCatStr,
 		&p.SharedIPUsers, &p.SharedHWIDUsers, &clusterIDsStr,
