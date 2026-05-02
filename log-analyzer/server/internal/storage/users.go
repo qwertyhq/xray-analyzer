@@ -597,36 +597,50 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 		return nil, err
 	}
 
-	// Prefer Remnawave's authoritative user count (synced from panel API).
-	// Falls back to traffic-based unique-user count if remna sync hasn't run.
-	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM remna_users`).Scan(&stats.TotalUniqueUsers)
-	if err != nil || stats.TotalUniqueUsers == 0 {
+	// Prefer Remnawave's authoritative user counts (synced from panel API).
+	// Single round-trip via FILTER pushes all status + online-recency
+	// counts together. Falls back to access-log heuristic if remna_users
+	// is empty (sync hasn't run / Remnawave integration disabled).
+	var (
+		remnaTotal, remnaActive, remnaDisabled, remnaExpired, remnaLimited int
+		onlineNow, online1h, online24h, neverOnline                        int
+	)
+	err = s.db.QueryRowContext(ctx, `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'ACTIVE'),
+			COUNT(*) FILTER (WHERE status = 'DISABLED'),
+			COUNT(*) FILTER (WHERE status = 'EXPIRED'),
+			COUNT(*) FILTER (WHERE status = 'LIMITED'),
+			COUNT(*) FILTER (WHERE online_at > now() - interval '1 minute'),
+			COUNT(*) FILTER (WHERE online_at > now() - interval '1 hour'),
+			COUNT(*) FILTER (WHERE online_at > now() - interval '24 hours'),
+			COUNT(*) FILTER (WHERE online_at IS NULL)
+		FROM remna_users
+	`).Scan(&remnaTotal, &remnaActive, &remnaDisabled, &remnaExpired, &remnaLimited,
+		&onlineNow, &online1h, &online24h, &neverOnline)
+	if err != nil {
+		return nil, err
+	}
+
+	if remnaTotal > 0 {
+		stats.TotalUniqueUsers = remnaTotal
+		stats.ActiveUsers = remnaActive
+		stats.DisabledUsers = remnaDisabled
+		stats.ExpiredUsers = remnaExpired
+		stats.LimitedUsers = remnaLimited
+		stats.OnlineUsers = onlineNow
+		stats.OnlineLastHour = online1h
+		stats.OnlineLast24h = online24h
+		stats.NeverOnline = neverOnline
+	} else {
+		// Fallback: traffic-based heuristic when remna_users is empty.
 		err = s.db.QueryRowContext(ctx, `
 			SELECT COUNT(DISTINCT user_email) FROM user_stats
 		`).Scan(&stats.TotalUniqueUsers)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	// Prefer Remnawave's XTLS-tracked online count (sum across mapped nodes)
-	if len(s.nodeRemnaMap) > 0 {
-		names := make([]string, 0, len(s.nodeRemnaMap))
-		for _, v := range s.nodeRemnaMap {
-			names = append(names, v)
-		}
-		var remnaTotal sql.NullInt64
-		err = s.pool.QueryRow(ctx, `
-			SELECT COALESCE(SUM(users_online), 0)
-			FROM remna_nodes
-			WHERE name = ANY($1)
-		`, names).Scan(&remnaTotal)
-		if err == nil && remnaTotal.Valid {
-			stats.OnlineUsers = int(remnaTotal.Int64)
-		}
-	}
-	if stats.OnlineUsers == 0 {
-		// Fallback: access-log heuristic.
 		err = s.db.QueryRowContext(ctx, `
 			SELECT COUNT(DISTINCT user_email) FROM user_stats
 			WHERE last_seen > $1
