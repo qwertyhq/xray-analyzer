@@ -187,14 +187,28 @@ type HourlyBlacklistStats struct {
 	HitCount int64     `json:"hit_count"`
 }
 
-// GlobalStats represents aggregated global statistics
+// GlobalStats represents aggregated global statistics. User counts are
+// sourced from `remna_users` which the analyzer syncs from the Remnawave
+// panel API every 5 minutes.
 type GlobalStats struct {
 	TotalRequests      int64 `json:"total_requests"`
 	TotalBlacklistHits int64 `json:"total_blacklist"`
 	TotalNodes         int   `json:"nodes_total"`
 	NodesConnected     int   `json:"nodes_connected"`
-	TotalUniqueUsers   int   `json:"total_unique_users"`
-	OnlineUsers        int   `json:"online_users"`
+
+	// Total + status breakdown (matches Remnawave panel "Пользователи" card)
+	TotalUniqueUsers int `json:"total_unique_users"`
+	ActiveUsers      int `json:"active_users"`
+	DisabledUsers    int `json:"disabled_users"`
+	ExpiredUsers     int `json:"expired_users"`
+	LimitedUsers     int `json:"limited_users"`
+
+	// Online breakdown by recency window (matches Remnawave "Онлайн" card).
+	// OnlineUsers = users seen in last 1 minute → matches "В сети".
+	OnlineUsers    int `json:"online_users"`
+	OnlineLastHour int `json:"online_last_hour"`
+	OnlineLast24h  int `json:"online_last_24h"`
+	NeverOnline    int `json:"never_online"`
 }
 
 // Anomaly represents a detected anomaly
