@@ -603,7 +603,7 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 	// is empty (sync hasn't run / Remnawave integration disabled).
 	var (
 		remnaTotal, remnaActive, remnaDisabled, remnaExpired, remnaLimited int
-		onlineNow, online1h, online24h, neverOnline                        int
+		online1h, online24h, neverOnline                                   int
 	)
 	err = s.db.QueryRowContext(ctx, `
 		SELECT
@@ -612,13 +612,24 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 			COUNT(*) FILTER (WHERE status = 'DISABLED'),
 			COUNT(*) FILTER (WHERE status = 'EXPIRED'),
 			COUNT(*) FILTER (WHERE status = 'LIMITED'),
-			COUNT(*) FILTER (WHERE online_at > now() - interval '5 minutes'),
 			COUNT(*) FILTER (WHERE online_at > now() - interval '1 hour'),
 			COUNT(*) FILTER (WHERE online_at > now() - interval '24 hours'),
 			COUNT(*) FILTER (WHERE online_at IS NULL)
 		FROM remna_users
 	`).Scan(&remnaTotal, &remnaActive, &remnaDisabled, &remnaExpired, &remnaLimited,
-		&onlineNow, &online1h, &online24h, &neverOnline)
+		&online1h, &online24h, &neverOnline)
+	if err != nil {
+		return nil, err
+	}
+
+	// OnlineUsers = real-time XTLS-tracked sum across all Remnawave nodes.
+	// Updated every sync cycle from Remnawave panel; sums per-node
+	// users_online (so multi-device users on different nodes count once
+	// per node — same as Remnawave panel's per-node display).
+	var nodesOnline sql.NullInt64
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(users_online), 0) FROM remna_nodes
+	`).Scan(&nodesOnline)
 	if err != nil {
 		return nil, err
 	}
@@ -629,7 +640,7 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 		stats.DisabledUsers = remnaDisabled
 		stats.ExpiredUsers = remnaExpired
 		stats.LimitedUsers = remnaLimited
-		stats.OnlineUsers = onlineNow
+		stats.OnlineUsers = int(nodesOnline.Int64)
 		stats.OnlineLastHour = online1h
 		stats.OnlineLast24h = online24h
 		stats.NeverOnline = neverOnline
