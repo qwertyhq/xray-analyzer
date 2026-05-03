@@ -89,8 +89,8 @@ Real-time analytics для Xray-core access logs c интеграцией с Rem
 Один скрипт устанавливает Postgres + Redis + analyzer-server из исходников. Поддерживает Ubuntu 22.04+/Debian 12+. Подходит для bare-metal, VM, или контейнера с Docker access.
 
 ```bash
-git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
-cd /opt/xray-analyzer/log-analyzer
+git clone https://github.com/qwertyhq/xray.git /opt/xray-analyzer
+cd /opt/xray-analyzer
 sudo bash scripts/install-server.sh
 ```
 
@@ -115,7 +115,7 @@ sudo bash scripts/install-server.sh
 
 После правок:
 ```bash
-cd /opt/xray-analyzer/log-analyzer
+cd /opt/xray-analyzer
 docker compose up -d
 ```
 
@@ -140,7 +140,7 @@ analyzer.example.com {
 Запусти на каждой ноде где работает Xray (Remnawave node, отдельный VPN endpoint, и т.д.):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh | \
+curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray/main/scripts/install-agent.sh | \
   sudo SERVER_URL="wss://analyzer.example.com/ws" \
        AUTH_TOKEN="<AGENT_TOKEN из server .env>" \
        NODE_ID="germany-1" \
@@ -246,13 +246,13 @@ ENABLE_COMPRESSION=true                            # gzip-сжимать batches
 
 ```bash
 # Server
-cd /opt/xray-analyzer/log-analyzer
+cd /opt/xray-analyzer
 docker compose logs -f analyzer-server      # API + UI
 docker compose logs -f analyzer-postgres    # DB
 docker compose logs -f analyzer-redis       # Cache
 
 # Agent (на ноде)
-cd /opt/xray-analyzer/log-analyzer
+cd /opt/xray-analyzer
 docker compose -f docker-compose.agent.yml logs -f xray-log-agent
 ```
 
@@ -287,7 +287,6 @@ docker compose start analyzer-postgres
 ```bash
 cd /opt/xray-analyzer
 git pull origin main
-cd log-analyzer
 docker compose build analyzer-server
 docker compose up -d analyzer-server
 ```
@@ -296,7 +295,6 @@ docker compose up -d analyzer-server
 ```bash
 cd /opt/xray-analyzer
 git pull origin main
-cd log-analyzer
 docker compose -f docker-compose.agent.yml build
 docker compose -f docker-compose.agent.yml up -d --force-recreate
 ```
@@ -396,4 +394,4 @@ DOCKER_HOST=unix:///var/run/docker.sock go test ./...
 - UI components (vanilla shadcn/Radix)
 - Performance improvements
 
-Issue tracker: https://github.com/qwertyhq/xray-analyzer/issues
+Issue tracker: https://github.com/qwertyhq/xray/issues

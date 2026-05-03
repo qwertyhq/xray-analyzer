@@ -127,7 +127,7 @@ export function RealTimeFeed({ events, maxEvents = 50, title = "Real-time Feed" 
   };
 
   return (
-    <Card className="flex flex-col h-full">
+    <Card className="flex flex-col h-full max-h-[500px]">
       <CardHeader className="pb-3 flex-none">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium flex items-center gap-2">

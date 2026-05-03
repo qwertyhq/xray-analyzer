@@ -60,7 +60,7 @@ sudo apt install -y curl git ca-certificates openssl
 ### Шаг 2. Установка через скрипт (рекомендуется)
 
 ```bash
-git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
+git clone https://github.com/qwertyhq/xray.git /opt/xray-analyzer
 sudo bash /opt/xray-analyzer/scripts/install-server.sh
 ```
 
@@ -102,7 +102,7 @@ NODE_REMNA_MAP=germany-1=Germany 2,est-1=Estonia,poland-1=Poland
 После правок применяем:
 
 ```bash
-cd /opt/xray-analyzer/log-analyzer
+cd /opt/xray-analyzer
 docker compose up -d
 ```
 
@@ -227,7 +227,7 @@ tail -3 /var/log/remnanode/access.log
 На ноде:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh \
+curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray/main/scripts/install-agent.sh \
   | sudo SERVER_URL="wss://analyzer.example.com/ws" \
          AUTH_TOKEN="<AGENT_TOKEN из server .env>" \
          NODE_ID="germany-1" \
@@ -300,7 +300,7 @@ OPENAI_MODEL=qwen2.5-72b
 Перезапуск:
 
 ```bash
-cd /opt/xray-analyzer/log-analyzer
+cd /opt/xray-analyzer
 docker compose up -d analyzer-server
 ```
 
@@ -341,7 +341,6 @@ BRIDGE_CORRELATION_WINDOW=15s
 cd /opt/xray-analyzer
 sudo git pull origin main
 
-cd log-analyzer
 sudo docker compose build analyzer-server
 sudo docker compose up -d analyzer-server
 ```
@@ -356,7 +355,6 @@ Postgres / Redis обычно не нужно перезапускать. Есл
 cd /opt/xray-analyzer
 sudo git pull origin main
 
-cd log-analyzer
 sudo docker compose -f docker-compose.agent.yml build
 sudo docker compose -f docker-compose.agent.yml up -d --force-recreate
 ```
@@ -421,7 +419,7 @@ curl https://analyzer.example.com/health
 ### Полное удаление сервера
 
 ```bash
-cd /opt/xray-analyzer/log-analyzer
+cd /opt/xray-analyzer
 sudo docker compose down -v       # -v убивает Postgres volume — все данные
 sudo rm -rf /opt/xray-analyzer
 ```
@@ -429,7 +427,7 @@ sudo rm -rf /opt/xray-analyzer
 ### Удаление агента с ноды
 
 ```bash
-cd /opt/xray-analyzer/log-analyzer
+cd /opt/xray-analyzer
 sudo docker compose -f docker-compose.agent.yml down
 sudo rm -rf /opt/xray-analyzer
 sudo rm /etc/logrotate.d/remnanode
@@ -441,4 +439,4 @@ sudo rm /etc/logrotate.d/remnanode
 
 - [README.md](./README.md) — общий обзор и архитектура
 - [docs/](../docs/) — design specs, plans, ADR
-- Issues: https://github.com/qwertyhq/xray-analyzer/issues
+- Issues: https://github.com/qwertyhq/xray/issues
