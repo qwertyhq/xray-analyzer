@@ -11,25 +11,72 @@ import (
 // LookupNodeID resolves a text node_id (e.g. "ru-bridge") to its smallint
 // primary key in the nodes table, inserting a new row if it does not yet exist.
 // The returned NodeID is always non-zero on success.
+//
+// Memoized via Storage.nodeIDCache: a hit avoids hitting the database
+// entirely. Cache misses do a plain SELECT first; only genuinely new nodes
+// take the INSERT path. Avoiding ON CONFLICT keeps the smallint identity
+// sequence from burning under high call rates (one batch from agents
+// triggers many LookupNodeID calls).
 func (s *Storage) LookupNodeID(ctx context.Context, nodeID, role string) (NodeID, error) {
 	if nodeID == "" {
 		return 0, fmt.Errorf("empty node_id")
 	}
 	if role == "" {
-		role = "exit" // default role
+		role = "exit"
 	}
+
+	// Cache lookup.
+	s.nodeIDCacheMu.RLock()
+	if id, ok := s.nodeIDCache[nodeID]; ok {
+		s.nodeIDCacheMu.RUnlock()
+		return id, nil
+	}
+	s.nodeIDCacheMu.RUnlock()
+
+	// Cache miss — SELECT to check whether the row already exists.
 	var id int16
-	err := s.pool.QueryRow(ctx, `
+	err := s.pool.QueryRow(ctx, `SELECT id FROM nodes WHERE node_id = $1`, nodeID).Scan(&id)
+	if err == nil {
+		s.cacheNodeID(nodeID, NodeID(id))
+		return NodeID(id), nil
+	}
+	// Unexpected SELECT errors (other than no rows) bubble up as lookup
+	// failures. pgx returns ErrNoRows for missing rows.
+	if err.Error() != "no rows in result set" {
+		// Continue to INSERT — likely just a fresh node. If INSERT
+		// itself fails we'll surface that error.
+	}
+
+	// Genuinely new node — INSERT once. Don't UPDATE on conflict (avoids
+	// burning the identity sequence under repeated calls with the same
+	// node_id during a race).
+	err = s.pool.QueryRow(ctx, `
 		INSERT INTO nodes (node_id, role)
 		VALUES ($1, $2)
-		ON CONFLICT (node_id) DO UPDATE
-			SET last_seen = now()
+		ON CONFLICT (node_id) DO NOTHING
 		RETURNING id
 	`, nodeID, role).Scan(&id)
 	if err != nil {
+		// Conflict path: the row was inserted by a concurrent caller
+		// between our SELECT and INSERT. Re-SELECT to fetch it.
+		if err.Error() == "no rows in result set" {
+			if serr := s.pool.QueryRow(ctx, `SELECT id FROM nodes WHERE node_id = $1`, nodeID).Scan(&id); serr == nil {
+				s.cacheNodeID(nodeID, NodeID(id))
+				return NodeID(id), nil
+			} else {
+				return 0, fmt.Errorf("lookup node %s after conflict: %w", nodeID, serr)
+			}
+		}
 		return 0, fmt.Errorf("lookup node %s: %w", nodeID, err)
 	}
+	s.cacheNodeID(nodeID, NodeID(id))
 	return NodeID(id), nil
+}
+
+func (s *Storage) cacheNodeID(nodeID string, id NodeID) {
+	s.nodeIDCacheMu.Lock()
+	s.nodeIDCache[nodeID] = id
+	s.nodeIDCacheMu.Unlock()
 }
 
 // UpdateNodeStats updates statistics for a node
