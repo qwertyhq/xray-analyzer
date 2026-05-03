@@ -60,7 +60,7 @@ sudo apt install -y curl git ca-certificates openssl
 ### Шаг 2. Установка через скрипт (рекомендуется)
 
 ```bash
-git clone https://github.com/qwertyhq/xray.git /opt/xray-analyzer
+git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
 sudo bash /opt/xray-analyzer/scripts/install-server.sh
 ```
 
@@ -227,7 +227,7 @@ tail -3 /var/log/remnanode/access.log
 На ноде:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray/main/scripts/install-agent.sh \
+curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh \
   | sudo SERVER_URL="wss://analyzer.example.com/ws" \
          AUTH_TOKEN="<AGENT_TOKEN из server .env>" \
          NODE_ID="germany-1" \
@@ -439,4 +439,4 @@ sudo rm /etc/logrotate.d/remnanode
 
 - [README.md](./README.md) — общий обзор и архитектура
 - [docs/](../docs/) — design specs, plans, ADR
-- Issues: https://github.com/qwertyhq/xray/issues
+- Issues: https://github.com/qwertyhq/xray-analyzer/issues
