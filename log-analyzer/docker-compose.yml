@@ -38,9 +38,12 @@ services:
       - REDIS_ADDR=analyzer-redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-analyzer:}
+      - POSTGRES_URL=postgres://xray_analyzer:${POSTGRES_PASSWORD:-changeme_in_env}@analyzer-postgres:5432/xray_analyzer?sslmode=disable
     depends_on:
       analyzer-redis:
         condition: service_started
+      analyzer-postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8237/health"]
       interval: 10s
@@ -84,9 +87,48 @@ services:
     networks:
       - analyzer-net
 
+  analyzer-postgres:
+    image: postgres:17-alpine
+    container_name: analyzer-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: xray_analyzer
+      POSTGRES_USER: xray_analyzer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_env}
+    volumes:
+      - analyzer-postgres-data:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c shared_buffers=2GB
+      -c work_mem=16MB
+      -c maintenance_work_mem=512MB
+      -c effective_cache_size=6GB
+      -c random_page_cost=1.1
+      -c max_wal_size=4GB
+      -c checkpoint_timeout=15min
+      -c checkpoint_completion_target=0.9
+      -c autovacuum_vacuum_scale_factor=0.05
+      -c autovacuum_naptime=30s
+      -c max_connections=100
+      -c shared_preload_libraries=pg_stat_statements
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "xray_analyzer"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - analyzer-net
+
 volumes:
   analyzer-data:
   analyzer-redis-data:
+  analyzer-postgres-data:
 
 networks:
   analyzer-net:

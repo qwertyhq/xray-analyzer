@@ -88,9 +88,14 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Handle messages
 	s.handleClient(client)
 
-	// Cleanup
+	// Cleanup — only delete the map entry if it's still *this* client.
+	// A concurrent reconnect may have already replaced us; removing the
+	// entry blindly would orphan the active reconnect and make its node
+	// look Offline in the UI even though batches still arrive.
 	s.clientsMu.Lock()
-	delete(s.clients, handshake.NodeID)
+	if s.clients[handshake.NodeID] == client {
+		delete(s.clients, handshake.NodeID)
+	}
 	s.clientsMu.Unlock()
 }
 

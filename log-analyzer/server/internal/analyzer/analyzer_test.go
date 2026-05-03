@@ -2,29 +2,108 @@ package analyzer
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/testcontainers/testcontainers-go"
+	tcpg "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 	"github.com/xray-log-analyzer/server/internal/blacklist"
 	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/storage"
-
-	_ "modernc.org/sqlite"
 )
+
+var (
+	sharedPGOnce sync.Once
+	sharedPGDSN  string
+	sharedPGErr  error
+)
+
+func sharedPostgres(t *testing.T) string {
+	t.Helper()
+	sharedPGOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+		pg, err := tcpg.Run(ctx, "postgres:17-alpine",
+			tcpg.WithDatabase("shared"),
+			tcpg.WithUsername("shared"),
+			tcpg.WithPassword("shared"),
+			testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2)),
+		)
+		if err != nil {
+			sharedPGErr = err
+			return
+		}
+		sharedPGDSN, sharedPGErr = pg.ConnectionString(ctx, "sslmode=disable")
+	})
+	if sharedPGErr != nil {
+		t.Fatalf("shared postgres: %v", sharedPGErr)
+	}
+	return sharedPGDSN
+}
+
+func newAnalyzerStorage(t *testing.T) *storage.Storage {
+	t.Helper()
+	dsn := sharedPostgres(t)
+	ctx := context.Background()
+
+	schema := "test_" + randomHex()
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("admin pool: %v", err)
+	}
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	admin.Close()
+
+	scopedDSN := dsn + "&search_path=" + schema
+	s, err := storage.New(ctx, scopedDSN)
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	t.Cleanup(func() {
+		s.Close()
+		cleanupPool, _ := pgxpool.New(ctx, dsn)
+		if cleanupPool != nil {
+			cleanupPool.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+			cleanupPool.Close()
+		}
+	})
+	return s
+}
+
+func randomHex() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// testEmailUUID converts a test string to a deterministic UUID — same logic as
+// storage.emailToUUID so DB writes and query assertions use the same value.
+func testEmailUUID(name string) string {
+	if u, err := uuid.Parse(name); err == nil {
+		return u.String()
+	}
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(name)).String()
+}
 
 func newTestAnalyzer(t *testing.T, bridgePattern string) (*Analyzer, *storage.Storage) {
 	t.Helper()
 
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "test.db")
-	store, err := storage.New(dbPath)
-	if err != nil {
-		t.Fatalf("storage.New: %v", err)
-	}
-	t.Cleanup(func() { store.Close() })
+	store := newAnalyzerStorage(t)
 
+	dir := t.TempDir()
 	blPath := filepath.Join(dir, "blacklist.txt")
 	if err := os.WriteFile(blPath, []byte{}, 0644); err != nil {
 		t.Fatalf("write blacklist: %v", err)
@@ -43,14 +122,21 @@ func newTestAnalyzer(t *testing.T, bridgePattern string) (*Analyzer, *storage.St
 
 // seedBridgeIPRow inserts a user_ip_history row with a controlled last_seen,
 // bypassing RecordUserIP's unconditional now() timestamp.
+// userEmail may be any string — it is converted to UUID via the same SHA-1 path.
 func seedBridgeIPRow(t *testing.T, store *storage.Storage, userEmail, ip, nodeID string, lastSeen time.Time) {
 	t.Helper()
-	ts := lastSeen.UTC().Format(time.RFC3339)
-	_, err := store.DB().Exec(`
+	ctx := context.Background()
+	// Resolve nodeID to smallint FK.
+	nid, err := store.LookupNodeID(ctx, nodeID, "bridge")
+	if err != nil {
+		t.Fatalf("seed LookupNodeID: %v", err)
+	}
+	userUUID := testEmailUUID(userEmail)
+	_, err = store.Pool().Exec(ctx, `
 		INSERT INTO user_ip_history (user_email, ip_address, node_id, first_seen, last_seen, request_count)
-		VALUES (?, ?, ?, ?, ?, 1)
+		VALUES ($1, $2::inet, $3, $4, $5, 1)
 		ON CONFLICT(user_email, ip_address) DO UPDATE SET last_seen = excluded.last_seen
-	`, userEmail, ip, nodeID, ts, ts)
+	`, userUUID, ip, int16(nid), lastSeen.UTC(), lastSeen.UTC())
 	if err != nil {
 		t.Fatalf("seed user_ip_history: %v", err)
 	}
@@ -62,6 +148,9 @@ func seedBridgeIPRow(t *testing.T, store *storage.Storage, userEmail, ip, nodeID
 func TestProcessBatch_BridgedSourceIPSuppressed(t *testing.T) {
 	a, store := newTestAnalyzer(t, `^BRIDGE_.*_IN(_\d+)?$`)
 	ctx := context.Background()
+
+	user5117 := testEmailUUID("5117")
+	user9999 := testEmailUUID("9999")
 
 	batch := &models.LogBatch{
 		NodeID: "germany-1",
@@ -75,23 +164,23 @@ func TestProcessBatch_BridgedSourceIPSuppressed(t *testing.T) {
 		t.Fatalf("ProcessBatch: %v", err)
 	}
 
-	db := store.DB()
+	pool := store.Pool()
 	count := func(q string, args ...interface{}) int {
 		var n int
-		if err := db.QueryRow(q, args...).Scan(&n); err != nil {
+		if err := pool.QueryRow(ctx, q, args...).Scan(&n); err != nil {
 			t.Fatalf("query %q: %v", q, err)
 		}
 		return n
 	}
 
-	if got := count(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=? AND ip_address=?`, "5117", "5.188.141.197"); got != 0 {
+	if got := count(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1 AND ip_address=$2::inet`, user5117, "5.188.141.197"); got != 0 {
 		t.Errorf("user_ip_history leaked bridge IP: got %d rows, want 0", got)
 	}
-	if got := count(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=? AND ip_address=?`, "9999", "203.0.113.5"); got != 1 {
+	if got := count(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1 AND ip_address=$2::inet`, user9999, "203.0.113.5"); got != 1 {
 		t.Errorf("direct client IP missing: got %d rows, want 1", got)
 	}
 	// Destinations recorded for both.
-	if got := count(`SELECT COUNT(*) FROM user_destinations WHERE user_email=?`, "5117"); got != 1 {
+	if got := count(`SELECT COUNT(*) FROM user_destinations WHERE user_email=$1`, user5117); got != 1 {
 		t.Errorf("bridged destination not recorded: got %d, want 1", got)
 	}
 }
@@ -116,9 +205,11 @@ func TestProcessBatch_BridgePatternVariants(t *testing.T) {
 		t.Fatalf("ProcessBatch: %v", err)
 	}
 
+	pool := store.Pool()
 	hasIP := func(user string) bool {
+		userUUID := testEmailUUID(user)
 		var n int
-		_ = store.DB().QueryRow(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=?`, user).Scan(&n)
+		_ = pool.QueryRow(ctx, `SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1`, userUUID).Scan(&n)
 		return n > 0
 	}
 	cases := []struct {
@@ -148,6 +239,8 @@ func TestProcessBatch_FansOutCandidatesByTime(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now()
+	user4875UUID := testEmailUUID("4875")
+	user7368UUID := testEmailUUID("7368")
 	seedBridgeIPRow(t, store, "4875", "128.71.84.176", "ru-white", now)
 	seedBridgeIPRow(t, store, "7368", "91.78.219.232", "ru-white", now)
 
@@ -173,7 +266,7 @@ func TestProcessBatch_FansOutCandidatesByTime(t *testing.T) {
 	for _, f := range flows {
 		got[f.UserEmail] = f.RealClientIP
 	}
-	if got["4875"] != "128.71.84.176" || got["7368"] != "91.78.219.232" {
+	if got[user4875UUID] != "128.71.84.176" || got[user7368UUID] != "91.78.219.232" {
 		t.Errorf("candidate rows wrong: %v", got)
 	}
 }
@@ -187,6 +280,7 @@ func TestProcessBatch_IdleUserNotIncluded(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now()
+	activeUUID := testEmailUUID("active-user")
 	// Active: last seen now.
 	seedBridgeIPRow(t, store, "active-user", "10.0.0.1", "ru-white", now)
 	// Idle: last seen 5 minutes ago — outside ±10s window.
@@ -207,8 +301,8 @@ func TestProcessBatch_IdleUserNotIncluded(t *testing.T) {
 	if len(flows) != 1 {
 		t.Fatalf("expected 1 candidate (only active), got %d", len(flows))
 	}
-	if flows[0].UserEmail != "active-user" {
-		t.Errorf("wrong candidate: got %q, want active-user", flows[0].UserEmail)
+	if flows[0].UserEmail != activeUUID {
+		t.Errorf("wrong candidate: got %q, want %q", flows[0].UserEmail, activeUUID)
 	}
 }
 
@@ -265,17 +359,19 @@ func TestProcessBatch_NoFilterWhenPatternEmpty(t *testing.T) {
 	a, store := newTestAnalyzer(t, "")
 	ctx := context.Background()
 
+	user5117UUID := testEmailUUID("5117")
+
 	batch := &models.LogBatch{
 		NodeID:  "germany-1",
 		Entries: []models.LogEntry{{Timestamp: time.Now(), SourceIP: "5.188.141.197", UserEmail: "5117", Destination: "x.com:443", Inbound: "BRIDGE_DE_IN"}},
 		Count:   1,
 	}
 	if _, _, err := a.ProcessBatch(ctx, batch); err != nil {
-		t.Fatal(err)
+		t.Fatalf("ProcessBatch: %v", err)
 	}
 
 	var n int
-	_ = store.DB().QueryRow(`SELECT COUNT(*) FROM user_ip_history WHERE user_email=?`, "5117").Scan(&n)
+	_ = store.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM user_ip_history WHERE user_email=$1`, user5117UUID).Scan(&n)
 	if n != 1 {
 		t.Errorf("filter disabled, expected bridge IP recorded, got %d", n)
 	}

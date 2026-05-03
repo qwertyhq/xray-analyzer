@@ -7,15 +7,31 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/models"
 )
 
-// RecordBlacklistMatch records a blacklist match
+// RecordBlacklistMatch records a blacklist match.
+// match.NodeID is resolved to nodes(id) smallint FK via LookupNodeID.
+// match.UserEmail may be any string; non-UUID values are resolved via
+// ResolveUserEmailToUUID (remna_users lookup, then SHA-1 fallback).
+// match.SourceIP is passed as text; Postgres casts to inet.
 func (s *Storage) RecordBlacklistMatch(ctx context.Context, match *models.BlacklistMatch) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO blacklist_matches (node_id, user_email, source_ip, destination, matched_rule, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, match.NodeID, match.UserEmail, match.SourceIP, match.Destination, match.MatchedRule, match.Timestamp.UTC().Format(time.RFC3339))
+	nodeID, err := s.LookupNodeID(ctx, match.NodeID, "exit")
+	if err != nil {
+		return fmt.Errorf("resolve node_id: %w", err)
+	}
+
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, match.UserEmail)
+	if err != nil {
+		return fmt.Errorf("resolve user_email: %w", err)
+	}
+
+	now := time.Now().UTC()
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO blacklist_matches (node_id, user_email, source_ip, destination, matched_rule, timestamp, ts)
+		VALUES ($1, $2, $3::inet, $4, $5, $6, $7)
+	`, int16(nodeID), userUUID, match.SourceIP, match.Destination, match.MatchedRule, match.Timestamp.UTC(), now)
 	return err
 }
 
@@ -36,49 +52,47 @@ func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*
 		HourlyStats:   []models.HourlyBlacklistStats{},
 	}
 
-	sinceStr := since.UTC().Format(time.RFC3339)
-
 	// Total hits in period
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM blacklist_matches WHERE timestamp > ?
-	`, sinceStr).Scan(&analytics.TotalHits)
+	err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM blacklist_matches WHERE timestamp > $1
+	`, since.UTC()).Scan(&analytics.TotalHits)
 	if err != nil {
 		return nil, fmt.Errorf("count total hits: %w", err)
 	}
 
 	// Unique users
-	err = s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT user_email) FROM blacklist_matches WHERE timestamp > ?
-	`, sinceStr).Scan(&analytics.UniqueUsers)
+	err = s.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT user_email) FROM blacklist_matches WHERE timestamp > $1
+	`, since.UTC()).Scan(&analytics.UniqueUsers)
 	if err != nil {
 		return nil, fmt.Errorf("count unique users: %w", err)
 	}
 
 	// Unique domains
-	err = s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT destination) FROM blacklist_matches WHERE timestamp > ?
-	`, sinceStr).Scan(&analytics.UniqueDomains)
+	err = s.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT destination) FROM blacklist_matches WHERE timestamp > $1
+	`, since.UTC()).Scan(&analytics.UniqueDomains)
 	if err != nil {
 		return nil, fmt.Errorf("count unique domains: %w", err)
 	}
 
 	// Top domains
-	if err := s.loadTopDomains(ctx, sinceStr, analytics); err != nil {
+	if err := s.loadTopDomains(ctx, since.UTC(), analytics); err != nil {
 		return nil, err
 	}
 
 	// Top users
-	if err := s.loadTopUsers(ctx, sinceStr, analytics); err != nil {
+	if err := s.loadTopUsers(ctx, since.UTC(), analytics); err != nil {
 		return nil, err
 	}
 
 	// Recent matches
-	if err := s.loadRecentMatches(ctx, sinceStr, analytics); err != nil {
+	if err := s.loadRecentMatches(ctx, since.UTC(), analytics); err != nil {
 		return nil, err
 	}
 
 	// Hourly stats
-	if err := s.loadHourlyBlacklistStats(ctx, sinceStr, analytics); err != nil {
+	if err := s.loadHourlyBlacklistStats(ctx, since.UTC(), analytics); err != nil {
 		return nil, err
 	}
 
@@ -86,15 +100,15 @@ func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*
 	return analytics, nil
 }
 
-func (s *Storage) loadTopDomains(ctx context.Context, sinceStr string, analytics *models.BlacklistAnalytics) error {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT destination, matched_rule, COUNT(*) as hits, COUNT(DISTINCT user_email) as users
+func (s *Storage) loadTopDomains(ctx context.Context, since time.Time, analytics *models.BlacklistAnalytics) error {
+	rows, err := s.pool.Query(ctx, `
+		SELECT destination, MAX(matched_rule) as matched_rule, COUNT(*) as hits, COUNT(DISTINCT user_email) as users
 		FROM blacklist_matches
-		WHERE timestamp > ?
+		WHERE timestamp > $1
 		GROUP BY destination
 		ORDER BY hits DESC
 		LIMIT 50
-	`, sinceStr)
+	`, since)
 	if err != nil {
 		return fmt.Errorf("query top domains: %w", err)
 	}
@@ -107,25 +121,25 @@ func (s *Storage) loadTopDomains(ctx context.Context, sinceStr string, analytics
 		}
 		analytics.TopDomains = append(analytics.TopDomains, d)
 	}
-	return nil
+	return rows.Err()
 }
 
-func (s *Storage) loadTopUsers(ctx context.Context, sinceStr string, analytics *models.BlacklistAnalytics) error {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT 
-			bm.user_email, 
-			COALESCE(r.username, bm.user_email) as display_name,
-			COUNT(*) as hits, 
+func (s *Storage) loadTopUsers(ctx context.Context, since time.Time, analytics *models.BlacklistAnalytics) error {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			bm.user_email::text,
+			COALESCE(r.username, bm.user_email::text) as display_name,
+			COUNT(*) as hits,
 			COUNT(DISTINCT bm.destination) as domains,
-			GROUP_CONCAT(DISTINCT bm.destination) as top_domains,
-			COALESCE(MAX(bm.source_ip), '') as last_ip
+			STRING_AGG(DISTINCT bm.destination, ', ') as top_domains,
+			COALESCE(MAX(bm.source_ip::text), '') as last_ip
 		FROM blacklist_matches bm
-		LEFT JOIN remna_users r ON CAST(r.id AS TEXT) = bm.user_email
-		WHERE bm.timestamp > ?
-		GROUP BY bm.user_email
+		LEFT JOIN remna_users r ON r.uuid = bm.user_email
+		WHERE bm.timestamp > $1
+		GROUP BY bm.user_email, r.username
 		ORDER BY hits DESC
 		LIMIT 50
-	`, sinceStr)
+	`, since)
 	if err != nil {
 		return fmt.Errorf("query top users: %w", err)
 	}
@@ -140,7 +154,7 @@ func (s *Storage) loadTopUsers(ctx context.Context, sinceStr string, analytics *
 		}
 		u.Username = displayName
 		if topDomainsStr != "" {
-			domains := strings.Split(topDomainsStr, ",")
+			domains := strings.Split(topDomainsStr, ", ")
 			if len(domains) > 5 {
 				domains = domains[:5]
 			}
@@ -148,17 +162,18 @@ func (s *Storage) loadTopUsers(ctx context.Context, sinceStr string, analytics *
 		}
 		analytics.TopUsers = append(analytics.TopUsers, u)
 	}
-	return nil
+	return rows.Err()
 }
 
-func (s *Storage) loadRecentMatches(ctx context.Context, sinceStr string, analytics *models.BlacklistAnalytics) error {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT node_id, user_email, source_ip, destination, matched_rule, COALESCE(timestamp, '') as timestamp
-		FROM blacklist_matches
-		WHERE timestamp > ?
-		ORDER BY timestamp DESC
+func (s *Storage) loadRecentMatches(ctx context.Context, since time.Time, analytics *models.BlacklistAnalytics) error {
+	rows, err := s.pool.Query(ctx, `
+		SELECT n.node_id, bm.user_email::text, bm.source_ip::text, bm.destination, bm.matched_rule, bm.timestamp
+		FROM blacklist_matches bm
+		JOIN nodes n ON n.id = bm.node_id
+		WHERE bm.timestamp > $1
+		ORDER BY bm.timestamp DESC
 		LIMIT 100
-	`, sinceStr)
+	`, since)
 	if err != nil {
 		return fmt.Errorf("query recent matches: %w", err)
 	}
@@ -166,25 +181,26 @@ func (s *Storage) loadRecentMatches(ctx context.Context, sinceStr string, analyt
 
 	for rows.Next() {
 		var m models.BlacklistMatchInfo
-		var tsStr string
-		if err := rows.Scan(&m.NodeID, &m.UserEmail, &m.SourceIP, &m.Destination, &m.MatchedRule, &tsStr); err != nil {
+		var ts *time.Time
+		if err := rows.Scan(&m.NodeID, &m.UserEmail, &m.SourceIP, &m.Destination, &m.MatchedRule, &ts); err != nil {
 			return fmt.Errorf("scan match: %w", err)
 		}
-		m.Timestamp = parseDateTime(tsStr)
+		if ts != nil {
+			m.Timestamp = *ts
+		}
 		analytics.RecentMatches = append(analytics.RecentMatches, m)
 	}
-	return nil
+	return rows.Err()
 }
 
-func (s *Storage) loadHourlyBlacklistStats(ctx context.Context, sinceStr string, analytics *models.BlacklistAnalytics) error {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as hour, COUNT(*) as hits
+func (s *Storage) loadHourlyBlacklistStats(ctx context.Context, since time.Time, analytics *models.BlacklistAnalytics) error {
+	rows, err := s.pool.Query(ctx, `
+		SELECT date_trunc('hour', timestamp) AS hour, COUNT(*) as hits
 		FROM blacklist_matches
-		WHERE timestamp > ? AND timestamp IS NOT NULL
+		WHERE timestamp > $1 AND timestamp IS NOT NULL
 		GROUP BY hour
-		HAVING hour IS NOT NULL
 		ORDER BY hour
-	`, sinceStr)
+	`, since)
 	if err != nil {
 		return fmt.Errorf("query hourly stats: %w", err)
 	}
@@ -192,26 +208,29 @@ func (s *Storage) loadHourlyBlacklistStats(ctx context.Context, sinceStr string,
 
 	for rows.Next() {
 		var h models.HourlyBlacklistStats
-		var hourStr string
-		if err := rows.Scan(&hourStr, &h.HitCount); err != nil {
+		if err := rows.Scan(&h.Hour, &h.HitCount); err != nil {
 			return fmt.Errorf("scan hourly: %w", err)
 		}
-		h.Hour = parseDateTime(hourStr)
 		analytics.HourlyStats = append(analytics.HourlyStats, h)
 	}
-	return nil
+	return rows.Err()
 }
 
 // GetUserBlacklistDetails returns detailed blacklist info for a user
 func (s *Storage) GetUserBlacklistDetails(ctx context.Context, userEmail string, since time.Time) ([]models.BlacklistMatchInfo, error) {
-	sinceStr := since.UTC().Format(time.RFC3339)
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT node_id, source_ip, destination, matched_rule, COALESCE(timestamp, '') as timestamp
-		FROM blacklist_matches
-		WHERE user_email = ? AND timestamp > ?
-		ORDER BY timestamp DESC
+	userUUID, err := uuid.Parse(userEmail)
+	if err != nil {
+		return nil, nil // non-UUID user, no results
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT n.node_id, bm.source_ip::text, bm.destination, bm.matched_rule, bm.timestamp
+		FROM blacklist_matches bm
+		JOIN nodes n ON n.id = bm.node_id
+		WHERE bm.user_email = $1 AND bm.timestamp > $2
+		ORDER BY bm.timestamp DESC
 		LIMIT 500
-	`, userEmail, sinceStr)
+	`, userUUID, since.UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -220,14 +239,16 @@ func (s *Storage) GetUserBlacklistDetails(ctx context.Context, userEmail string,
 	var matches []models.BlacklistMatchInfo
 	for rows.Next() {
 		var m models.BlacklistMatchInfo
-		var tsStr string
-		if err := rows.Scan(&m.NodeID, &m.SourceIP, &m.Destination, &m.MatchedRule, &tsStr); err != nil {
+		var ts *time.Time
+		if err := rows.Scan(&m.NodeID, &m.SourceIP, &m.Destination, &m.MatchedRule, &ts); err != nil {
 			return nil, err
 		}
-		m.Timestamp = parseDateTime(tsStr)
+		if ts != nil {
+			m.Timestamp = *ts
+		}
 		matches = append(matches, m)
 	}
-	return matches, nil
+	return matches, rows.Err()
 }
 
 // extractNumericPartBl extracts numeric suffix from a string like "prefix_123"
@@ -244,45 +265,68 @@ func extractNumericPartBl(s string) string {
 	return ""
 }
 
+// buildBlacklistSearchUUIDs builds user UUID list to search for in blacklist_matches.
+// user_email is now uuid in the DB.
+func (s *Storage) buildBlacklistSearchUUIDs(ctx context.Context, userEmail string) []uuid.UUID {
+	var uuids []uuid.UUID
+	// Try direct UUID parse first
+	if u, err := uuid.Parse(userEmail); err == nil {
+		uuids = append(uuids, u)
+	}
+	// Try to find UUID via remna_users username
+	var remnaUUID uuid.UUID
+	if err := s.pool.QueryRow(ctx,
+		`SELECT uuid FROM remna_users WHERE username = $1 OR us_id = $1 LIMIT 1`,
+		userEmail,
+	).Scan(&remnaUUID); err == nil {
+		found := false
+		for _, u := range uuids {
+			if u == remnaUUID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			uuids = append(uuids, remnaUUID)
+		}
+	}
+	return uuids
+}
+
 // GetUserBlacklistMatches returns paginated blacklist matches for a user
 func (s *Storage) GetUserBlacklistMatches(ctx context.Context, userEmail string, since time.Time, page, pageSize int) (*models.PaginatedBlacklistMatchesResponse, error) {
-	sinceStr := since.UTC().Format(time.RFC3339)
 	offset := (page - 1) * pageSize
 
-	// Use BuildFullSearchIDs to include Remnawave numeric ID
-	searchIDs := s.BuildFullSearchIDs(ctx, userEmail)
-
-	placeholders := make([]string, len(searchIDs))
-	searchArgs := make([]interface{}, len(searchIDs))
-	for i, id := range searchIDs {
-		placeholders[i] = "?"
-		searchArgs[i] = id
+	searchUUIDs := s.buildBlacklistSearchUUIDs(ctx, userEmail)
+	if len(searchUUIDs) == 0 {
+		return &models.PaginatedBlacklistMatchesResponse{
+			Matches:    []models.BlacklistMatchInfo{},
+			Total:      0,
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: 1,
+		}, nil
 	}
-	placeholderStr := strings.Join(placeholders, ",")
 
 	// Get total count
 	var total int
-	countQuery := fmt.Sprintf(`
+	err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM blacklist_matches
-		WHERE user_email IN (%s) AND timestamp > ?
-	`, placeholderStr)
-	countArgs := append(searchArgs, sinceStr)
-	err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
+		WHERE user_email = ANY($1) AND timestamp > $2
+	`, searchUUIDs, since.UTC()).Scan(&total)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get paginated results
-	query := fmt.Sprintf(`
-		SELECT node_id, source_ip, destination, matched_rule, COALESCE(timestamp, '') as timestamp
-		FROM blacklist_matches
-		WHERE user_email IN (%s) AND timestamp > ?
-		ORDER BY timestamp DESC
-		LIMIT ? OFFSET ?
-	`, placeholderStr)
-	queryArgs := append(searchArgs, sinceStr, pageSize, offset)
-
-	rows, err := s.db.QueryContext(ctx, query, queryArgs...)
+	rows, err := s.pool.Query(ctx, `
+		SELECT n.node_id, bm.source_ip::text, bm.destination, bm.matched_rule, bm.timestamp
+		FROM blacklist_matches bm
+		JOIN nodes n ON n.id = bm.node_id
+		WHERE bm.user_email = ANY($1) AND bm.timestamp > $2
+		ORDER BY bm.timestamp DESC
+		LIMIT $3 OFFSET $4
+	`, searchUUIDs, since.UTC(), pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -291,12 +335,17 @@ func (s *Storage) GetUserBlacklistMatches(ctx context.Context, userEmail string,
 	var matches []models.BlacklistMatchInfo
 	for rows.Next() {
 		var m models.BlacklistMatchInfo
-		var tsStr string
-		if err := rows.Scan(&m.NodeID, &m.SourceIP, &m.Destination, &m.MatchedRule, &tsStr); err != nil {
+		var ts *time.Time
+		if err := rows.Scan(&m.NodeID, &m.SourceIP, &m.Destination, &m.MatchedRule, &ts); err != nil {
 			return nil, err
 		}
-		m.Timestamp = parseDateTime(tsStr)
+		if ts != nil {
+			m.Timestamp = *ts
+		}
 		matches = append(matches, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	totalPages := (total + pageSize - 1) / pageSize

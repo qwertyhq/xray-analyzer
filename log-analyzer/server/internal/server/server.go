@@ -17,6 +17,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/rediscache"
 	"github.com/xray-log-analyzer/server/internal/remnawave"
 	"github.com/xray-log-analyzer/server/internal/storage"
+	"github.com/xray-log-analyzer/server/internal/storage/partitions"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
@@ -36,6 +37,7 @@ type Server struct {
 	aleria         *aleria.Service
 	redis          *rediscache.Client
 	cacheTTL       time.Duration
+	pm             *partitions.Manager
 	clients        map[string]*Client
 	clientsMu      sync.RWMutex
 
@@ -109,6 +111,12 @@ func (s *Server) SetCorrelation(c *correlation.Service) {
 // SetAleria sets the Aleria AI service
 func (s *Server) SetAleria(a *aleria.Service) {
 	s.aleria = a
+}
+
+// SetPartitionManager wires the partition manager so /health can report
+// unhealthy if today's partitions are missing.
+func (s *Server) SetPartitionManager(pm *partitions.Manager) {
+	s.pm = pm
 }
 
 // SetRedis attaches a Redis client used for HTTP response caching. Nil

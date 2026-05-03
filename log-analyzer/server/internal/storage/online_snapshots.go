@@ -7,34 +7,39 @@ import (
 
 // OnlineHistoryPoint is one bucket of the history series returned to the UI.
 type OnlineHistoryPoint struct {
-	Hour         time.Time `json:"hour"`
-	OnlineUsers  int       `json:"online_users"`
+	Hour        time.Time `json:"hour"`
+	OnlineUsers int       `json:"online_users"`
 }
 
 // RecordOnlineSnapshot writes (or overwrites) a single minute-bucket sample.
-// ts is stored as a strftime-compatible ISO-8601 string so GetOnlineHistoryHourly
-// can bucket via strftime. modernc.org/sqlite binds time.Time to a Go
-// representation ("2026-04-17 19:11:00 +0000 UTC") that strftime can't parse.
+// Postgres TIMESTAMPTZ accepts time.Time natively via pgx — no string
+// formatting required.
 func (s *Storage) RecordOnlineSnapshot(ctx context.Context, ts time.Time, total int) error {
-	bucketed := ts.UTC().Truncate(time.Minute).Format("2006-01-02T15:04:05Z")
+	bucketed := ts.UTC().Truncate(time.Minute)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO online_snapshots (ts, total_online)
-		VALUES (?, ?)
-		ON CONFLICT(ts) DO UPDATE SET total_online = excluded.total_online
+		VALUES ($1, $2)
+		ON CONFLICT (ts) DO UPDATE SET total_online = EXCLUDED.total_online
 	`, bucketed, total)
 	return err
 }
 
 // TotalRemnaOnline sums users_online across the Remnawave nodes mapped
 // from agent NODE_IDs. Zero when no mapping is configured.
+// Uses the native pgx pool so []string is encoded as a Postgres text[] array.
 func (s *Storage) TotalRemnaOnline(ctx context.Context) (int, error) {
 	if len(s.nodeRemnaMap) == 0 {
 		return 0, nil
 	}
-	q := `SELECT COALESCE(SUM(users_online), 0) FROM remna_nodes WHERE name IN (` +
-		placeholderList(len(s.nodeRemnaMap)) + `)`
+	names := make([]string, 0, len(s.nodeRemnaMap))
+	for _, v := range s.nodeRemnaMap {
+		names = append(names, v)
+	}
 	var n int
-	if err := s.db.QueryRowContext(ctx, q, remnaNamesAsArgs(s.nodeRemnaMap)...).Scan(&n); err != nil {
+	if err := s.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(users_online), 0) FROM remna_nodes WHERE name = ANY($1)`,
+		names,
+	).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -47,15 +52,13 @@ func (s *Storage) GetOnlineHistoryHourly(ctx context.Context, since time.Duratio
 	if since <= 0 {
 		since = 24 * time.Hour
 	}
-	cutoff := time.Now().UTC().Add(-since).Format("2006-01-02T15:04:05Z")
+	cutoff := time.Now().UTC().Add(-since)
 
-	// Hour bucket via strftime; literal format (bind-as-param breaks under
-	// modernc.org/sqlite). MAX picks the peak minute within the hour.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT strftime('%Y-%m-%dT%H:00:00Z', ts) AS hour,
+		SELECT to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:00:00"Z"') AS hour,
 		       MAX(total_online) AS peak
 		FROM online_snapshots
-		WHERE ts >= ?
+		WHERE ts >= $1
 		GROUP BY hour
 		ORDER BY hour ASC
 	`, cutoff)
@@ -87,6 +90,6 @@ func (s *Storage) CleanupOnlineSnapshots(ctx context.Context, retentionDays int)
 		retentionDays = 30
 	}
 	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
-	_, err := s.db.ExecContext(ctx, `DELETE FROM online_snapshots WHERE ts < ?`, cutoff)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM online_snapshots WHERE ts < $1`, cutoff)
 	return err
 }

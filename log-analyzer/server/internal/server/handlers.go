@@ -294,6 +294,12 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 
 // handleHealth returns server health
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if s.pm != nil {
+		if err := s.pm.Healthy(r.Context()); err != nil {
+			http.Error(w, `{"status":"unhealthy","reason":"partition unhealthy: `+err.Error()+`"}`, http.StatusServiceUnavailable)
+			return
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

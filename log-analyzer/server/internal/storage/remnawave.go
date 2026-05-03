@@ -22,33 +22,33 @@ func (s *Storage) UpsertRemnaUser(ctx context.Context, user *remnawave.RemnaUser
 			hwid_device_limit, hwid_device_count, telegram_id, description, tag,
 			created_at, updated_at, synced_at,
 			real_name, phone, telegram_user, payment_info, plan, us_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(uuid) DO UPDATE SET
-			id = excluded.id,
-			short_uuid = excluded.short_uuid,
-			username = excluded.username,
-			email = excluded.email,
-			status = excluded.status,
-			traffic_limit_bytes = excluded.traffic_limit_bytes,
-			used_traffic_bytes = excluded.used_traffic_bytes,
-			lifetime_traffic_bytes = excluded.lifetime_traffic_bytes,
-			traffic_limit_strategy = excluded.traffic_limit_strategy,
-			expire_at = excluded.expire_at,
-			online_at = excluded.online_at,
-			first_connected_at = excluded.first_connected_at,
-			hwid_device_limit = excluded.hwid_device_limit,
-			hwid_device_count = excluded.hwid_device_count,
-			telegram_id = excluded.telegram_id,
-			description = excluded.description,
-			tag = excluded.tag,
-			updated_at = excluded.updated_at,
-			synced_at = excluded.synced_at,
-			real_name = excluded.real_name,
-			phone = excluded.phone,
-			telegram_user = excluded.telegram_user,
-			payment_info = excluded.payment_info,
-			plan = excluded.plan,
-			us_id = excluded.us_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+		ON CONFLICT (uuid) DO UPDATE SET
+			id = EXCLUDED.id,
+			short_uuid = EXCLUDED.short_uuid,
+			username = EXCLUDED.username,
+			email = EXCLUDED.email,
+			status = EXCLUDED.status,
+			traffic_limit_bytes = EXCLUDED.traffic_limit_bytes,
+			used_traffic_bytes = EXCLUDED.used_traffic_bytes,
+			lifetime_traffic_bytes = EXCLUDED.lifetime_traffic_bytes,
+			traffic_limit_strategy = EXCLUDED.traffic_limit_strategy,
+			expire_at = EXCLUDED.expire_at,
+			online_at = EXCLUDED.online_at,
+			first_connected_at = EXCLUDED.first_connected_at,
+			hwid_device_limit = EXCLUDED.hwid_device_limit,
+			hwid_device_count = EXCLUDED.hwid_device_count,
+			telegram_id = EXCLUDED.telegram_id,
+			description = EXCLUDED.description,
+			tag = EXCLUDED.tag,
+			updated_at = EXCLUDED.updated_at,
+			synced_at = EXCLUDED.synced_at,
+			real_name = EXCLUDED.real_name,
+			phone = EXCLUDED.phone,
+			telegram_user = EXCLUDED.telegram_user,
+			payment_info = EXCLUDED.payment_info,
+			plan = EXCLUDED.plan,
+			us_id = EXCLUDED.us_id
 	`
 	_, err := s.db.ExecContext(ctx, query,
 		user.UUID, user.ID, user.ShortUUID, user.Username, user.Email, user.Status,
@@ -67,15 +67,15 @@ func (s *Storage) UpsertRemnaHwidDevice(ctx context.Context, device *remnawave.R
 		INSERT INTO remna_hwid_devices (
 			hwid, user_uuid, username, platform, os_version, device_model, app_version,
 			first_seen_at, last_active_at, synced_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(hwid, user_uuid) DO UPDATE SET
-			username = excluded.username,
-			platform = excluded.platform,
-			os_version = excluded.os_version,
-			device_model = excluded.device_model,
-			app_version = excluded.app_version,
-			last_active_at = excluded.last_active_at,
-			synced_at = excluded.synced_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (hwid, user_uuid) DO UPDATE SET
+			username = EXCLUDED.username,
+			platform = EXCLUDED.platform,
+			os_version = EXCLUDED.os_version,
+			device_model = EXCLUDED.device_model,
+			app_version = EXCLUDED.app_version,
+			last_active_at = EXCLUDED.last_active_at,
+			synced_at = EXCLUDED.synced_at
 	`
 	_, err := s.db.ExecContext(ctx, query,
 		device.Hwid, device.UserUUID, device.Username, device.Platform, device.OSVersion,
@@ -95,29 +95,58 @@ func (s *Storage) UpdateRemnaUserHwidCounts(ctx context.Context) error {
 	return err
 }
 
+// PruneRemnaUsers deletes rows from remna_users whose uuid is not in
+// liveUUIDs. Called at the end of a successful Remnawave user sync so the
+// table reflects the current panel state (no stale rows for deleted users).
+// Returns the count of pruned rows.
+//
+// Refuses to delete anything when liveUUIDs is empty — defense against
+// pruning everything if the API returned an empty payload due to a glitch.
+func (s *Storage) PruneRemnaUsers(ctx context.Context, liveUUIDs []string) (int, error) {
+	if len(liveUUIDs) == 0 {
+		return 0, nil
+	}
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM remna_users WHERE uuid <> ALL($1::uuid[])
+	`, liveUUIDs)
+	if err != nil {
+		return 0, fmt.Errorf("prune remna_users: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// boolToInt converts a Go bool to 0/1 for INTEGER columns in remna_nodes.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // UpsertRemnaNode adapts remnawave.RemnaNodeData to storage
 func (s *Storage) UpsertRemnaNode(ctx context.Context, node *remnawave.RemnaNodeData) error {
 	query := `
 		INSERT INTO remna_nodes (
 			uuid, name, address, port, is_connected, is_disabled, is_traffic_track,
 			traffic_total, traffic_used, users_online, country_code, synced_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(uuid) DO UPDATE SET
-			name = excluded.name,
-			address = excluded.address,
-			port = excluded.port,
-			is_connected = excluded.is_connected,
-			is_disabled = excluded.is_disabled,
-			is_traffic_track = excluded.is_traffic_track,
-			traffic_total = excluded.traffic_total,
-			traffic_used = excluded.traffic_used,
-			users_online = excluded.users_online,
-			country_code = excluded.country_code,
-			synced_at = excluded.synced_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		ON CONFLICT (uuid) DO UPDATE SET
+			name = EXCLUDED.name,
+			address = EXCLUDED.address,
+			port = EXCLUDED.port,
+			is_connected = EXCLUDED.is_connected,
+			is_disabled = EXCLUDED.is_disabled,
+			is_traffic_track = EXCLUDED.is_traffic_track,
+			traffic_total = EXCLUDED.traffic_total,
+			traffic_used = EXCLUDED.traffic_used,
+			users_online = EXCLUDED.users_online,
+			country_code = EXCLUDED.country_code,
+			synced_at = EXCLUDED.synced_at
 	`
 	_, err := s.db.ExecContext(ctx, query,
-		node.UUID, node.Name, node.Address, node.Port, node.IsConnected, node.IsDisabled,
-		node.IsTrafficTrack, node.TrafficTotal, node.TrafficUsed, node.UsersOnline,
+		node.UUID, node.Name, node.Address, node.Port,
+		boolToInt(node.IsConnected), boolToInt(node.IsDisabled), boolToInt(node.IsTrafficTrack),
+		node.TrafficTotal, node.TrafficUsed, node.UsersOnline,
 		node.CountryCode, node.SyncedAt,
 	)
 	return err
@@ -213,15 +242,15 @@ func (s *Storage) GetRemnaStats(ctx context.Context) (*RemnaStats, error) {
 
 	// User stats
 	err := s.db.QueryRowContext(ctx, `
-		SELECT 
+		SELECT
 			COUNT(*) as total,
 			SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as active,
 			SUM(CASE WHEN status = 'DISABLED' THEN 1 ELSE 0 END) as disabled,
 			SUM(CASE WHEN status = 'EXPIRED' THEN 1 ELSE 0 END) as expired,
 			SUM(CASE WHEN status = 'LIMITED' THEN 1 ELSE 0 END) as limited,
-			SUM(CASE WHEN online_at > datetime('now', '-5 minutes') THEN 1 ELSE 0 END) as online_now,
+			SUM(CASE WHEN online_at > NOW() - INTERVAL '5 minutes' THEN 1 ELSE 0 END) as online_now,
 			COALESCE(SUM(used_traffic_bytes), 0) as total_traffic,
-			COALESCE(MAX(synced_at), datetime('now')) as last_sync
+			COALESCE(MAX(synced_at), NOW()) as last_sync
 		FROM remna_users
 	`).Scan(&stats.TotalUsers, &stats.ActiveUsers, &stats.DisabledUsers,
 		&stats.ExpiredUsers, &stats.LimitedUsers, &stats.OnlineNow,
@@ -268,18 +297,21 @@ func (s *Storage) GetRemnaUsers(ctx context.Context, limit int, status string, s
 		WHERE 1=1
 	`
 	args := []interface{}{}
+	argN := 1
 
 	if status != "" {
-		query += " AND status = ?"
+		query += fmt.Sprintf(" AND status = $%d", argN)
 		args = append(args, status)
+		argN++
 	}
 	if search != "" {
-		query += " AND (username LIKE ? OR email LIKE ? OR real_name LIKE ?)"
+		query += fmt.Sprintf(" AND (username ILIKE $%d OR email ILIKE $%d OR real_name ILIKE $%d)", argN, argN+1, argN+2)
 		searchTerm := "%" + search + "%"
 		args = append(args, searchTerm, searchTerm, searchTerm)
+		argN += 3
 	}
 
-	query += " ORDER BY online_at DESC NULLS LAST, updated_at DESC LIMIT ?"
+	query += fmt.Sprintf(" ORDER BY online_at DESC NULLS LAST, updated_at DESC LIMIT $%d", argN)
 	args = append(args, limit)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -322,8 +354,8 @@ func (s *Storage) GetRemnaUserByEmail(ctx context.Context, email string) (*Remna
 			hwid_device_limit, hwid_device_count, telegram_id, description, tag,
 			created_at, updated_at, synced_at,
 			real_name, phone, telegram_user, payment_info, plan
-		FROM remna_users WHERE email = ? OR username = ?
-	`, email, email).Scan(
+		FROM remna_users WHERE email = $1 OR username = $1
+	`, email).Scan(
 		&u.UUID, &u.ShortUUID, &u.Username, &u.Email, &u.Status,
 		&u.TrafficLimitBytes, &u.UsedTrafficBytes, &u.LifetimeTrafficBytes,
 		&u.TrafficLimitStrategy, &u.ExpireAt, &u.OnlineAt, &u.FirstConnectedAt,
@@ -342,7 +374,7 @@ func (s *Storage) GetRemnaUserHwids(ctx context.Context, userUUID string) ([]*Re
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, hwid, user_uuid, username, platform, os_version, device_model, app_version,
 			first_seen_at, last_active_at, synced_at
-		FROM remna_hwid_devices WHERE user_uuid = ?
+		FROM remna_hwid_devices WHERE user_uuid = $1
 		ORDER BY last_active_at DESC NULLS LAST
 	`, userUUID)
 	if err != nil {
@@ -371,7 +403,7 @@ func (s *Storage) GetRemnaTopHwidAbusers(ctx context.Context, limit int) ([]map[
 		FROM remna_users u
 		WHERE u.hwid_device_count > 1
 		ORDER BY u.hwid_device_count DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -411,13 +443,13 @@ func (s *Storage) GetRemnaTopHwidAbusers(ctx context.Context, limit int) ([]map[
 func (s *Storage) GetRemnaSharedHwids(ctx context.Context, limit int) ([]map[string]interface{}, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT hwid, platform, COUNT(DISTINCT user_uuid) as user_count,
-			GROUP_CONCAT(DISTINCT username) as usernames,
+			STRING_AGG(DISTINCT username, ',') as usernames,
 			MAX(last_active_at) as last_active
 		FROM remna_hwid_devices
-		GROUP BY hwid
-		HAVING user_count > 1
+		GROUP BY hwid, platform
+		HAVING COUNT(DISTINCT user_uuid) > 1
 		ORDER BY user_count DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -547,6 +579,7 @@ func (s *Storage) GetRemnaOnlineUsers(ctx context.Context, minutes int) ([]*Remn
 
 // GetRemnaExpiringSoon returns users expiring within days
 func (s *Storage) GetRemnaExpiringSoon(ctx context.Context, days int) ([]*RemnaUser, error) {
+	expireUntil := time.Now().UTC().Add(time.Duration(days) * 24 * time.Hour)
 	query := `
 		SELECT uuid, short_uuid, username, email, status,
 			traffic_limit_bytes, used_traffic_bytes, lifetime_traffic_bytes,
@@ -555,11 +588,11 @@ func (s *Storage) GetRemnaExpiringSoon(ctx context.Context, days int) ([]*RemnaU
 			created_at, updated_at, synced_at,
 			real_name, phone, telegram_user, payment_info, plan
 		FROM remna_users
-		WHERE expire_at BETWEEN datetime('now') AND datetime('now', '+' || ? || ' days')
+		WHERE expire_at BETWEEN NOW() AND $1
 			AND status = 'ACTIVE'
 		ORDER BY expire_at ASC
 	`
-	rows, err := s.db.QueryContext(ctx, query, days)
+	rows, err := s.db.QueryContext(ctx, query, expireUntil)
 	if err != nil {
 		return nil, err
 	}
@@ -588,13 +621,13 @@ func (s *Storage) GetRemnaExpiringSoon(ctx context.Context, days int) ([]*RemnaU
 func (s *Storage) GetRemnaTrafficAbusers(ctx context.Context, thresholdPercent int) ([]map[string]interface{}, error) {
 	query := `
 		SELECT uuid, username, email, status, used_traffic_bytes, traffic_limit_bytes,
-			CASE WHEN traffic_limit_bytes > 0 
-				THEN CAST(used_traffic_bytes AS REAL) / traffic_limit_bytes * 100 
-				ELSE 0 
+			CASE WHEN traffic_limit_bytes > 0
+				THEN used_traffic_bytes::DOUBLE PRECISION / traffic_limit_bytes * 100
+				ELSE 0
 			END as usage_percent
 		FROM remna_users
-		WHERE traffic_limit_bytes > 0 
-			AND CAST(used_traffic_bytes AS REAL) / traffic_limit_bytes * 100 >= ?
+		WHERE traffic_limit_bytes > 0
+			AND used_traffic_bytes::DOUBLE PRECISION / traffic_limit_bytes * 100 >= $1
 		ORDER BY usage_percent DESC
 		LIMIT 50
 	`
@@ -637,7 +670,7 @@ func (s *Storage) GetRemnaUsersByTag(ctx context.Context, tag string) ([]*RemnaU
 			hwid_device_limit, hwid_device_count, telegram_id, description, tag,
 			created_at, updated_at, synced_at,
 			real_name, phone, telegram_user, payment_info, plan
-		FROM remna_users WHERE tag = ?
+		FROM remna_users WHERE tag = $1
 		ORDER BY username
 	`
 	rows, err := s.db.QueryContext(ctx, query, tag)
@@ -674,20 +707,20 @@ func (s *Storage) SearchRemnaUsers(ctx context.Context, query string, limit int)
 			hwid_device_limit, hwid_device_count, telegram_id, description, tag,
 			created_at, updated_at, synced_at,
 			real_name, phone, telegram_user, payment_info, plan
-		FROM remna_users 
-		WHERE username LIKE ? 
-			OR email LIKE ? 
-			OR real_name LIKE ?
-			OR phone LIKE ?
-			OR telegram_user LIKE ?
-			OR description LIKE ?
-		ORDER BY 
-			CASE WHEN username = ? THEN 0
-				WHEN username LIKE ? THEN 1
+		FROM remna_users
+		WHERE username ILIKE $1
+			OR email ILIKE $2
+			OR real_name ILIKE $3
+			OR phone ILIKE $4
+			OR telegram_user ILIKE $5
+			OR description ILIKE $6
+		ORDER BY
+			CASE WHEN username = $7 THEN 0
+				WHEN username ILIKE $8 THEN 1
 				ELSE 2
 			END,
 			online_at DESC NULLS LAST
-		LIMIT ?
+		LIMIT $9
 	`
 	searchTerm := "%" + query + "%"
 	rows, err := s.db.QueryContext(ctx, searchQuery,
@@ -799,8 +832,8 @@ func (s *Storage) ResolveUserEmail(ctx context.Context, userEmail string) string
 	// First try direct lookup by username or email
 	var username string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT username FROM remna_users WHERE username = ? OR email = ?
-	`, userEmail, userEmail).Scan(&username)
+		SELECT username FROM remna_users WHERE username = $1 OR email = $1
+	`, userEmail).Scan(&username)
 	if err == nil && username != "" {
 		return username
 	}
@@ -810,7 +843,7 @@ func (s *Storage) ResolveUserEmail(ctx context.Context, userEmail string) string
 	if isNumericString(userEmail) {
 		searchPattern := "%US_ID: " + userEmail + "%"
 		err = s.db.QueryRowContext(ctx, `
-			SELECT username FROM remna_users WHERE description LIKE ?
+			SELECT username FROM remna_users WHERE description LIKE $1
 		`, searchPattern).Scan(&username)
 		if err == nil && username != "" {
 			return username

@@ -21,9 +21,9 @@ func (s *Storage) CreateReport(ctx context.Context, report *threatintel.Report) 
 	summaryJSON, _ := json.Marshal(report.Summary)
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO reports (id, type, format, title, description, start_date, end_date, 
+		INSERT INTO reports (id, type, format, title, description, start_date, end_date,
 			generated_at, status, sections, top_threats, top_users, top_countries, summary)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`, report.ID, report.Type, report.Format, report.Title, report.Description,
 		report.StartDate, report.EndDate, report.GeneratedAt, report.Status,
 		string(sectionsJSON), string(topThreatsJSON), string(topUsersJSON),
@@ -38,9 +38,9 @@ func (s *Storage) GetReport(ctx context.Context, id string) (*threatintel.Report
 	var sectionsJSON, topThreatsJSON, topUsersJSON, topCountriesJSON, summaryJSON sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, type, format, title, description, start_date, end_date, 
+		SELECT id, type, format, title, description, start_date, end_date,
 			generated_at, status, sections, top_threats, top_users, top_countries, summary
-		FROM reports WHERE id = ?
+		FROM reports WHERE id = $1
 	`, id).Scan(&report.ID, &report.Type, &report.Format, &report.Title, &report.Description,
 		&report.StartDate, &report.EndDate, &report.GeneratedAt, &report.Status,
 		&sectionsJSON, &topThreatsJSON, &topUsersJSON, &topCountriesJSON, &summaryJSON)
@@ -108,7 +108,7 @@ func (s *Storage) GetReportSummary(ctx context.Context) (*threatintel.ReportSumm
 
 // DeleteReport deletes a report by ID
 func (s *Storage) DeleteReport(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM reports WHERE id = ?`, id)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM reports WHERE id = $1`, id)
 	return err
 }
 
@@ -190,10 +190,10 @@ func (s *Storage) generateThreatSummaryReport(ctx context.Context, report *threa
 	// Get top threats
 	var topThreats []*threatintel.ReportThreat
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT threat_type, source_feed, COUNT(*) as cnt, 
+		SELECT threat_type, source_feed, COUNT(*) as cnt,
 			SUM(CASE WHEN blocked = 1 THEN 1 ELSE 0 END) as blocked_cnt
 		FROM threat_matches
-		WHERE matched_at >= ? AND matched_at <= ?
+		WHERE matched_at >= $1 AND matched_at <= $2
 		GROUP BY threat_type, source_feed
 		ORDER BY cnt DESC
 		LIMIT 10

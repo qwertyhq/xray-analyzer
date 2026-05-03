@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,6 +21,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/remnawave"
 	"github.com/xray-log-analyzer/server/internal/server"
 	"github.com/xray-log-analyzer/server/internal/storage"
+	"github.com/xray-log-analyzer/server/internal/storage/partitions"
 	"github.com/xray-log-analyzer/server/internal/telegram"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
@@ -30,19 +33,38 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 	log.Printf("config: listen=%s, db=%s, blacklist=%s",
-		cfg.ListenAddr, cfg.DBPath, cfg.BlacklistPath)
+		cfg.ListenAddr, sanitizeDSN(cfg.PostgresURL), cfg.BlacklistPath)
 
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Initialize storage
-	store, err := storage.New(cfg.DBPath)
+	store, err := storage.New(ctx, cfg.PostgresURL)
 	if err != nil {
 		log.Fatalf("failed to initialize storage: %v", err)
 	}
 	defer store.Close()
 	log.Println("storage: initialized")
+
+	// Start partition manager — creates today+2 future partitions and drops
+	// expired ones on startup, then re-runs every 6 hours.
+	pm := partitions.NewManager(store.Pool(), []partitions.Table{
+		{Name: "bridged_flows", RetentionDays: 14},
+		{Name: "alerts", RetentionDays: 30},
+		{Name: "blacklist_matches", RetentionDays: 30},
+		{Name: "threat_matches", RetentionDays: 30},
+		{Name: "anomalies", RetentionDays: 30},
+	})
+	if err := pm.Tick(ctx); err != nil {
+		log.Fatalf("partition manager initial tick: %v", err)
+	}
+	go func() {
+		if err := pm.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("partition manager: %v", err)
+		}
+	}()
+	log.Println("partition manager: started")
 
 	// Wire agent→Remnawave node-name mapping so /api/nodes can surface live
 	// XTLS-tracked online counts instead of the access-log heuristic.
@@ -166,6 +188,7 @@ func main() {
 	// Initialize and start server
 	srv := server.New(cfg.ListenAddr, cfg.AllowedOrigins, cfg.APIToken, cfg.AgentToken, anal, store, bl)
 	srv.SetThreatIntel(threatIntelSvc)
+	srv.SetPartitionManager(pm)
 	if redisClient != nil {
 		srv.SetRedis(redisClient, 10*time.Second)
 		log.Println("server: HTTP response cache enabled (Redis L2, TTL=10s)")
@@ -308,4 +331,17 @@ func main() {
 	// Give goroutines time to cleanup
 	time.Sleep(2 * time.Second)
 	log.Println("server stopped")
+}
+
+// sanitizeDSN strips the password from a postgres DSN for safe logging.
+// postgres://user:pass@host/db → postgres://user@host/db
+func sanitizeDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil || u.User == nil {
+		return dsn
+	}
+	if _, hasPW := u.User.Password(); hasPW {
+		u.User = url.User(u.User.Username())
+	}
+	return u.String()
 }

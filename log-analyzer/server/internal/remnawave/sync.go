@@ -17,6 +17,11 @@ type StorageWriter interface {
 	UpsertRemnaHwidDevice(ctx context.Context, device *RemnaHwidData) error
 	UpsertRemnaNode(ctx context.Context, node *RemnaNodeData) error
 	UpdateRemnaUserHwidCounts(ctx context.Context) error
+	// PruneRemnaUsers removes rows whose uuid is not in liveUUIDs. Called
+	// at the end of a successful syncUsers() so that users deleted on the
+	// Remnawave panel disappear from analyzer counts. Returns the number
+	// of rows deleted.
+	PruneRemnaUsers(ctx context.Context, liveUUIDs []string) (int, error)
 }
 
 // RemnaUserData represents user data for storage
@@ -304,6 +309,22 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 	s.usersByID = usersByID
 	s.mu.Unlock()
 
+	// Prune storage rows for users that no longer exist in Remnawave.
+	// Skipped if no users were fetched — guards against pruning
+	// everything when GetUsers returns empty due to a transient error
+	// that didn't surface as an err.
+	if s.storage != nil && len(users) > 0 {
+		liveUUIDs := make([]string, 0, len(users))
+		for u := range users {
+			liveUUIDs = append(liveUUIDs, u)
+		}
+		if deleted, perr := s.storage.PruneRemnaUsers(ctx, liveUUIDs); perr != nil {
+			log.Printf("[remnawave] prune remna_users failed: %v", perr)
+		} else if deleted > 0 {
+			log.Printf("[remnawave] pruned %d stale remna_users rows", deleted)
+		}
+	}
+
 	return nil
 }
 
@@ -461,12 +482,20 @@ func (s *SyncService) GetUserByID(id int64) *User {
 	return s.usersByID[id]
 }
 
-// GetUserByIDOrUsername returns a user by numeric ID (if input is numeric) or username
+// GetUserByIDOrUsername returns a user by UUID, numeric ID, or username.
+// After the schema v2 refactor, storage tables hold user_email as a real
+// Remnawave UUID (resolved via remna_users.id/us_id at write time), so the
+// UUID lookup path is the common case.
 func (s *SyncService) GetUserByIDOrUsername(idOrUsername string) *User {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Try as numeric ID first
+	// Try as UUID first (post-v2 storage path)
+	if user := s.users[idOrUsername]; user != nil {
+		return user
+	}
+
+	// Try as numeric ID
 	if id, err := strconv.ParseInt(idOrUsername, 10, 64); err == nil {
 		if user := s.usersByID[id]; user != nil {
 			return user

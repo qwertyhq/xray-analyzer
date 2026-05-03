@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
@@ -22,111 +23,123 @@ const MaxThreatMatchesPerUserCategory = 100
 // MaxThreatMatches is the total maximum for display queries (legacy, used in GetThreatMatches)
 const MaxThreatMatches = 500
 
-// SaveThreatMatch saves a threat match to the database, updates statistics, and cleans up old records
+// SaveThreatMatch saves a threat match to the database, updates statistics, and cleans up old records.
+// match.UserEmail may be any string; non-UUID values are resolved via
+// ResolveUserEmailToUUID (remna_users lookup, then SHA-1 fallback).
+// match.NodeID is a text node name; resolved to nodes(id) smallint FK via LookupNodeID.
+// match.SourceIP is passed as text; Postgres casts to inet.
 func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.ThreatMatch) error {
-	now := time.Now().Format(time.RFC3339)
+	now := time.Now()
+
+	userUUID, err := s.ResolveUserEmailToUUID(ctx, match.UserEmail)
+	if err != nil {
+		return fmt.Errorf("resolve user_email: %w", err)
+	}
+
+	nodeID, err := s.LookupNodeID(ctx, match.NodeID, "exit")
+	if err != nil {
+		return fmt.Errorf("resolve node_id: %w", err)
+	}
 
 	// Insert into recent matches table
-	_, err := s.db.ExecContext(ctx, `
+	_, err = s.pool.Exec(ctx, `
 		INSERT INTO threat_matches (
 			user_email, node_id, source_ip, destination,
-			threat_type, source, confidence, description, matched_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, match.UserEmail, match.NodeID, match.SourceIP, match.Destination,
+			threat_type, source, confidence, description, matched_at, ts
+		) VALUES ($1, $2, $3::inet, $4, $5, $6, $7, $8, $9, $10)
+	`, userUUID, int16(nodeID), match.SourceIP, match.Destination,
 		string(match.ThreatType), string(match.Source), match.Confidence,
-		match.Description, now)
+		match.Description, now, now)
 
 	if err != nil {
 		return err
 	}
 
 	// Update aggregated total counter
-	s.db.ExecContext(ctx, `
-		UPDATE threat_stats_agg SET total_matches = total_matches + 1, last_updated = ? WHERE id = 1
+	s.pool.Exec(ctx, `
+		UPDATE threat_stats_agg SET total_matches = total_matches + 1, last_updated = $1 WHERE id = 1
 	`, now)
 
 	// Update threat type counter
-	s.db.ExecContext(ctx, `
-		INSERT INTO threat_type_stats (threat_type, match_count, last_match) 
-		VALUES (?, 1, ?)
-		ON CONFLICT(threat_type) DO UPDATE SET 
-			match_count = match_count + 1,
-			last_match = excluded.last_match
+	s.pool.Exec(ctx, `
+		INSERT INTO threat_type_stats (threat_type, match_count, last_match)
+		VALUES ($1, 1, $2)
+		ON CONFLICT (threat_type) DO UPDATE SET
+			match_count = threat_type_stats.match_count + 1,
+			last_match = EXCLUDED.last_match
 	`, string(match.ThreatType), now)
 
 	// Update user threat stats
-	s.db.ExecContext(ctx, `
+	s.pool.Exec(ctx, `
 		INSERT INTO user_threat_stats (user_email, threat_type, match_count, last_match)
-		VALUES (?, ?, 1, ?)
-		ON CONFLICT(user_email, threat_type) DO UPDATE SET
-			match_count = match_count + 1,
-			last_match = excluded.last_match
-	`, match.UserEmail, string(match.ThreatType), now)
+		VALUES ($1, $2, 1, $3)
+		ON CONFLICT (user_email, threat_type) DO UPDATE SET
+			match_count = user_threat_stats.match_count + 1,
+			last_match = EXCLUDED.last_match
+	`, userUUID, string(match.ThreatType), now)
 
 	// Update user domain stats (extract domain from destination)
 	domain := extractDomain(match.Destination)
 	if domain != "" {
-		s.db.ExecContext(ctx, `
+		s.pool.Exec(ctx, `
 			INSERT INTO user_threat_domains (user_email, threat_type, domain, hit_count, last_seen)
-			VALUES (?, ?, ?, 1, ?)
-			ON CONFLICT(user_email, threat_type, domain) DO UPDATE SET
-				hit_count = hit_count + 1,
-				last_seen = excluded.last_seen
-		`, match.UserEmail, string(match.ThreatType), domain, now)
+			VALUES ($1, $2, $3, 1, $4)
+			ON CONFLICT (user_email, threat_type, domain) DO UPDATE SET
+				hit_count = user_threat_domains.hit_count + 1,
+				last_seen = EXCLUDED.last_seen
+		`, userUUID, string(match.ThreatType), domain, now)
 	}
 
 	// Update hourly stats with proper unique user tracking
-	t := time.Now()
-	hourKey := t.Format("2006-01-02T15")
-	dayKey := t.Format("2006-01-02")
+	hourKey := now.Format("2006-01-02T15")
+	dayKey := now.Format("2006-01-02")
 
 	// Track unique users per hour/threat_type using a separate table
-	s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO threat_hourly_users (hour, threat_type, user_email)
-		VALUES (?, ?, ?)
-	`, hourKey, string(match.ThreatType), match.UserEmail)
+	s.pool.Exec(ctx, `
+		INSERT INTO threat_hourly_users (hour, threat_type, user_email)
+		VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING
+	`, hourKey, string(match.ThreatType), userUUID)
 
 	// Update hourly stats - recalculate unique_users from actual data
-	s.db.ExecContext(ctx, `
+	s.pool.Exec(ctx, `
 		INSERT INTO threat_hourly_stats (hour, threat_type, match_count, unique_users)
-		VALUES (?, ?, 1, 1)
-		ON CONFLICT(hour, threat_type) DO UPDATE SET
-			match_count = match_count + 1,
-			unique_users = (SELECT COUNT(*) FROM threat_hourly_users WHERE hour = ? AND threat_type = ?)
+		VALUES ($1, $2, 1, 1)
+		ON CONFLICT (hour, threat_type) DO UPDATE SET
+			match_count = threat_hourly_stats.match_count + 1,
+			unique_users = (SELECT COUNT(*) FROM threat_hourly_users WHERE hour = $3 AND threat_type = $4)
 	`, hourKey, string(match.ThreatType), hourKey, string(match.ThreatType))
 
 	// Track unique users per day/threat_type
-	s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO threat_daily_users (day, threat_type, user_email)
-		VALUES (?, ?, ?)
-	`, dayKey, string(match.ThreatType), match.UserEmail)
+	s.pool.Exec(ctx, `
+		INSERT INTO threat_daily_users (day, threat_type, user_email)
+		VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING
+	`, dayKey, string(match.ThreatType), userUUID)
 
 	// Update daily stats - recalculate unique_users from actual data
-	s.db.ExecContext(ctx, `
+	s.pool.Exec(ctx, `
 		INSERT INTO threat_daily_stats (day, threat_type, match_count, unique_users)
-		VALUES (?, ?, 1, 1)
-		ON CONFLICT(day, threat_type) DO UPDATE SET
-			match_count = match_count + 1,
-			unique_users = (SELECT COUNT(*) FROM threat_daily_users WHERE day = ? AND threat_type = ?)
+		VALUES ($1, $2, 1, 1)
+		ON CONFLICT (day, threat_type) DO UPDATE SET
+			match_count = threat_daily_stats.match_count + 1,
+			unique_users = (SELECT COUNT(*) FROM threat_daily_users WHERE day = $3 AND threat_type = $4)
 	`, dayKey, string(match.ThreatType), dayKey, string(match.ThreatType))
 
 	// Trim recent records: keep only the most recent MaxThreatMatchesPerUserCategory
-	// per (user_email, threat_type). This preserves each user's per-category history
-	// independently, so a quiet-category user doesn't lose matches when a loud
-	// category (social/ads) pushes them out globally.
-	_, err = s.db.ExecContext(ctx, `
+	// in the partition we just inserted into. Scoped to one (user_email, threat_type)
+	// pair so the DELETE is bounded — it walks idx_threat_user_type_time and deletes
+	// at most one row per save instead of scanning the whole table.
+	_, err = s.pool.Exec(ctx, `
 		DELETE FROM threat_matches
-		WHERE id NOT IN (
-			SELECT id FROM (
-				SELECT id, ROW_NUMBER() OVER (
-					PARTITION BY user_email, threat_type
-					ORDER BY matched_at DESC
-				) as rn
-				FROM threat_matches
-			) ranked
-			WHERE rn <= ?
+		WHERE user_email = $1 AND threat_type = $2
+		  AND id NOT IN (
+			SELECT id FROM threat_matches
+			WHERE user_email = $1 AND threat_type = $2
+			ORDER BY matched_at DESC
+			LIMIT $3
 		)
-	`, MaxThreatMatchesPerUserCategory)
+	`, userUUID, string(match.ThreatType), MaxThreatMatchesPerUserCategory)
 
 	return err
 }
@@ -148,15 +161,15 @@ func (s *Storage) GetThreatMatches(ctx context.Context, limit int) ([]*threatint
 		limit = MaxThreatMatches
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT tm.id, tm.user_email, tm.node_id, tm.source_ip, tm.destination,
+	rows, err := s.pool.Query(ctx, `
+		SELECT tm.id, tm.user_email::text, n.node_id, tm.source_ip::text, tm.destination,
 			   tm.threat_type, tm.source, tm.confidence, tm.description, tm.matched_at,
 			   COALESCE(r.username, '') as display_name
 		FROM threat_matches tm
-		LEFT JOIN remna_users r ON r.username = tm.user_email 
-			OR r.description LIKE '%US_ID: ' || tm.user_email
+		JOIN nodes n ON n.id = tm.node_id
+		LEFT JOIN remna_users r ON r.uuid = tm.user_email
 		ORDER BY tm.matched_at DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -168,17 +181,22 @@ func (s *Storage) GetThreatMatches(ctx context.Context, limit int) ([]*threatint
 
 // GetThreatMatchesByUser returns threat matches for a specific user
 func (s *Storage) GetThreatMatchesByUser(ctx context.Context, userEmail string, limit int) ([]*threatintel.ThreatMatch, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT tm.id, tm.user_email, tm.node_id, tm.source_ip, tm.destination,
+	userUUID, err := uuid.Parse(userEmail)
+	if err != nil {
+		return nil, nil // non-UUID user, no results
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT tm.id, tm.user_email::text, n.node_id, tm.source_ip::text, tm.destination,
 			   tm.threat_type, tm.source, tm.confidence, tm.description, tm.matched_at,
 			   COALESCE(r.username, '') as display_name
 		FROM threat_matches tm
-		LEFT JOIN remna_users r ON r.username = tm.user_email 
-			OR r.description LIKE '%US_ID: ' || tm.user_email
-		WHERE tm.user_email = ?
+		JOIN nodes n ON n.id = tm.node_id
+		LEFT JOIN remna_users r ON r.uuid = tm.user_email
+		WHERE tm.user_email = $1
 		ORDER BY tm.matched_at DESC
-		LIMIT ?
-	`, userEmail, limit)
+		LIMIT $2
+	`, userUUID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -194,16 +212,16 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 	}
 
 	// First try to get from recent matches table
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT tm.id, tm.user_email, tm.node_id, tm.source_ip, tm.destination,
+	rows, err := s.pool.Query(ctx, `
+		SELECT tm.id, tm.user_email::text, n.node_id, tm.source_ip::text, tm.destination,
 			   tm.threat_type, tm.source, tm.confidence, tm.description, tm.matched_at,
 			   COALESCE(r.username, '') as display_name
 		FROM threat_matches tm
-		LEFT JOIN remna_users r ON r.username = tm.user_email 
-			OR r.description LIKE '%US_ID: ' || tm.user_email
-		WHERE tm.threat_type = ?
+		JOIN nodes n ON n.id = tm.node_id
+		LEFT JOIN remna_users r ON r.uuid = tm.user_email
+		WHERE tm.threat_type = $1
 		ORDER BY tm.matched_at DESC
-		LIMIT ?
+		LIMIT $2
 	`, threatType, limit)
 	if err != nil {
 		return nil, err
@@ -222,12 +240,12 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 
 	// Fallback: construct matches from aggregated user_threat_domains table
 	// This preserves historical data even after cleanup
-	domainRows, err := s.db.QueryContext(ctx, `
-		SELECT d.user_email, d.domain, d.hit_count, d.last_seen
+	domainRows, err := s.pool.Query(ctx, `
+		SELECT d.user_email::text, d.domain, d.hit_count, d.last_seen
 		FROM user_threat_domains d
-		WHERE d.threat_type = ?
+		WHERE d.threat_type = $1
 		ORDER BY d.last_seen DESC
-		LIMIT ?
+		LIMIT $2
 	`, threatType, limit)
 	if err != nil {
 		return nil, err
@@ -236,7 +254,7 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 
 	for domainRows.Next() {
 		var m threatintel.ThreatMatch
-		var lastSeen string
+		var lastSeen time.Time
 		var hitCount int
 
 		if err := domainRows.Scan(&m.UserEmail, &m.Destination, &hitCount, &lastSeen); err != nil {
@@ -247,11 +265,7 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 		m.Source = threatintel.ThreatSource("historical")
 		m.Confidence = 85
 		m.Description = fmt.Sprintf("Historical: %d hits", hitCount)
-		if t, err := time.Parse(time.RFC3339, lastSeen); err == nil {
-			m.MatchedAt = t
-		} else if t, err := time.Parse("2006-01-02 15:04:05", lastSeen); err == nil {
-			m.MatchedAt = t
-		}
+		m.MatchedAt = lastSeen
 
 		matches = append(matches, &m)
 	}
@@ -261,51 +275,26 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 
 // CleanupOldThreatMatches removes threat matches older than the retention period
 func (s *Storage) CleanupOldThreatMatches(ctx context.Context, retention time.Duration) (int64, error) {
-	cutoff := time.Now().Add(-retention).Format(time.RFC3339)
+	cutoff := time.Now().Add(-retention)
 
-	result, err := s.db.ExecContext(ctx, `
-		DELETE FROM threat_matches WHERE matched_at < ?
+	result, err := s.pool.Exec(ctx, `
+		DELETE FROM threat_matches WHERE matched_at < $1
 	`, cutoff)
 	if err != nil {
 		return 0, err
 	}
 
-	return result.RowsAffected()
-}
-
-// scanThreatMatches is a helper to scan threat match rows
-func scanThreatMatches(rows sqlRows) ([]*threatintel.ThreatMatch, error) {
-	var matches []*threatintel.ThreatMatch
-	for rows.Next() {
-		var m threatintel.ThreatMatch
-		var threatType, source string
-		var matchedAt string
-
-		err := rows.Scan(&m.ID, &m.UserEmail, &m.NodeID, &m.SourceIP, &m.Destination,
-			&threatType, &source, &m.Confidence, &m.Description, &matchedAt)
-		if err != nil {
-			return nil, err
-		}
-
-		m.ThreatType = threatintel.ThreatType(threatType)
-		m.Source = threatintel.ThreatSource(source)
-		if t, err := time.Parse(time.RFC3339, matchedAt); err == nil {
-			m.MatchedAt = t
-		}
-
-		matches = append(matches, &m)
-	}
-
-	return matches, rows.Err()
+	return result.RowsAffected(), nil
 }
 
 // scanThreatMatchesWithDisplayName is a helper to scan threat match rows with display_name
+// Accepts pgx rows (implements sqlRows interface via duck typing).
 func scanThreatMatchesWithDisplayName(rows sqlRows) ([]*threatintel.ThreatMatch, error) {
 	var matches []*threatintel.ThreatMatch
 	for rows.Next() {
 		var m threatintel.ThreatMatch
 		var threatType, source string
-		var matchedAt string
+		var matchedAt time.Time
 		var displayName string
 
 		err := rows.Scan(&m.ID, &m.UserEmail, &m.NodeID, &m.SourceIP, &m.Destination,
@@ -317,9 +306,7 @@ func scanThreatMatchesWithDisplayName(rows sqlRows) ([]*threatintel.ThreatMatch,
 		m.ThreatType = threatintel.ThreatType(threatType)
 		m.Source = threatintel.ThreatSource(source)
 		m.DisplayName = displayName
-		if t, err := time.Parse(time.RFC3339, matchedAt); err == nil {
-			m.MatchedAt = t
-		}
+		m.MatchedAt = matchedAt
 
 		matches = append(matches, &m)
 	}
@@ -350,16 +337,19 @@ func (s *Storage) ClearThreatIntelData(ctx context.Context) error {
 	}
 
 	for _, table := range tables {
-		_, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s", table))
+		_, err := s.pool.Exec(ctx, fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
 			return fmt.Errorf("clear %s: %w", table, err)
 		}
 	}
 
 	// Reset aggregated counter
-	_, err := s.db.ExecContext(ctx, `
-		INSERT OR REPLACE INTO threat_stats_agg (id, total_matches, last_updated) 
-		VALUES (1, 0, datetime('now'))
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO threat_stats_agg (id, total_matches, last_updated)
+		VALUES (1, 0, NOW())
+		ON CONFLICT (id) DO UPDATE SET
+			total_matches = 0,
+			last_updated = NOW()
 	`)
 	if err != nil {
 		return fmt.Errorf("reset threat_stats_agg: %w", err)
@@ -375,13 +365,15 @@ func (s *Storage) ClearAllUserData(ctx context.Context) error {
 		"user_ip_history",
 		"user_locations",
 		"user_destinations",
-		"user_ai_profiles",
-		"ip_hwid_correlation",
+		"user_ai_profile",
+		"ip_user_map",
+		"hwid_user_map",
+		"user_fingerprints",
 		"blacklist_matches",
 	}
 
 	for _, table := range tables {
-		_, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s", table))
+		_, err := s.pool.Exec(ctx, fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
 			// Table might not exist, skip
 			continue

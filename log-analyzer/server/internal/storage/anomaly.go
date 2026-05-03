@@ -2,16 +2,52 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
-// SaveAnomaly saves a detected anomaly to the database
+// severityToInt converts a text severity to the smallint used in schema v2.
+func severityToInt(s threatintel.AnomalySeverity) int16 {
+	switch s {
+	case threatintel.SeverityLow:
+		return 1
+	case threatintel.SeverityMedium:
+		return 2
+	case threatintel.SeverityHigh:
+		return 3
+	case threatintel.SeverityCritical:
+		return 4
+	default:
+		return 2 // medium default
+	}
+}
+
+// intToSeverity converts the smallint severity back to the text form.
+func intToSeverity(n int16) threatintel.AnomalySeverity {
+	switch n {
+	case 1:
+		return threatintel.SeverityLow
+	case 2:
+		return threatintel.SeverityMedium
+	case 3:
+		return threatintel.SeverityHigh
+	case 4:
+		return threatintel.SeverityCritical
+	default:
+		return threatintel.SeverityMedium
+	}
+}
+
+// SaveAnomaly saves a detected anomaly to the database.
+// anomaly.UserEmail may be empty (nullable) or a valid UUID string.
+// anomaly.Severity (string) is converted to smallint for storage.
+// The ON CONFLICT key includes (id, ts) because anomalies is partitioned by ts.
 func (s *Storage) SaveAnomaly(ctx context.Context, anomaly *threatintel.Anomaly) error {
 	detailsJSON := "{}"
 	if anomaly.Details != nil {
@@ -20,10 +56,42 @@ func (s *Storage) SaveAnomaly(ctx context.Context, anomaly *threatintel.Anomaly)
 		}
 	}
 
-	_, err := s.db.ExecContext(ctx, `
-		INSERT OR REPLACE INTO anomalies (id, type, severity, user_email, description, details, detected_at, resolved)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, anomaly.ID, anomaly.Type, anomaly.Severity, anomaly.UserEmail, anomaly.Description, detailsJSON, anomaly.DetectedAt, anomaly.Resolved)
+	resolved := 0
+	if anomaly.Resolved {
+		resolved = 1
+	}
+
+	now := time.Now().UTC()
+	if !anomaly.DetectedAt.IsZero() {
+		now = anomaly.DetectedAt.UTC()
+	}
+
+	// user_email is nullable uuid
+	var userEmailVal interface{}
+	if anomaly.UserEmail != "" {
+		if u, err := uuid.Parse(anomaly.UserEmail); err == nil {
+			userEmailVal = u
+		}
+		// If not a valid UUID, leave as nil (don't fail — some anomalies use
+		// plain strings as user identifiers; they are stored with NULL user_email).
+	}
+
+	severityInt := severityToInt(anomaly.Severity)
+
+	// anomalies is PARTITIONED BY RANGE (ts), so ON CONFLICT must include ts.
+	// Use INSERT ... ON CONFLICT (id, ts) DO UPDATE.
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO anomalies (id, type, severity, user_email, description, details, detected_at, resolved, ts)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (id, ts) DO UPDATE SET
+			type        = EXCLUDED.type,
+			severity    = EXCLUDED.severity,
+			user_email  = EXCLUDED.user_email,
+			description = EXCLUDED.description,
+			details     = EXCLUDED.details,
+			detected_at = EXCLUDED.detected_at,
+			resolved    = EXCLUDED.resolved
+	`, anomaly.ID, string(anomaly.Type), severityInt, userEmailVal, anomaly.Description, detailsJSON, now, resolved, now)
 
 	return err
 }
@@ -41,9 +109,9 @@ func (s *Storage) GetAnomalies(ctx context.Context, limit int, includeResolved b
 	if !includeResolved {
 		query += " WHERE resolved = 0"
 	}
-	query += " ORDER BY detected_at DESC LIMIT ?"
+	query += " ORDER BY detected_at DESC LIMIT $1"
 
-	rows, err := s.db.QueryContext(ctx, query, limit)
+	rows, err := s.pool.Query(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -60,24 +128,25 @@ func (s *Storage) GetAnomalySummary(ctx context.Context) (*threatintel.AnomalySu
 		RecentAnomalies: []*threatintel.Anomaly{},
 	}
 
-	// Count by severity
-	rows, err := s.db.QueryContext(ctx, `
+	// Count by severity (now smallint in DB)
+	rows, err := s.pool.Query(ctx, `
 		SELECT severity, COUNT(*) FROM anomalies WHERE resolved = 0 GROUP BY severity
 	`)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
-			var severity string
+			var severityInt int16
 			var count int
-			if rows.Scan(&severity, &count) == nil {
-				summary.BySeverity[severity] = count
+			if rows.Scan(&severityInt, &count) == nil {
+				sev := string(intToSeverity(severityInt))
+				summary.BySeverity[sev] = count
 				summary.TotalAnomalies += count
 			}
 		}
 	}
 
 	// Count by type
-	rows2, err := s.db.QueryContext(ctx, `
+	rows2, err := s.pool.Query(ctx, `
 		SELECT type, COUNT(*) FROM anomalies WHERE resolved = 0 GROUP BY type
 	`)
 	if err == nil {
@@ -91,8 +160,8 @@ func (s *Storage) GetAnomalySummary(ctx context.Context) (*threatintel.AnomalySu
 		}
 	}
 
-	// Affected users
-	s.db.QueryRowContext(ctx, `
+	// Affected users (count distinct non-null user_email)
+	s.pool.QueryRow(ctx, `
 		SELECT COUNT(DISTINCT user_email) FROM anomalies WHERE resolved = 0 AND user_email IS NOT NULL
 	`).Scan(&summary.AffectedUsers)
 
@@ -134,7 +203,7 @@ func (s *Storage) DetectAnomalies(ctx context.Context) ([]*threatintel.Anomaly, 
 
 // ResolveAnomaly marks an anomaly as resolved
 func (s *Storage) ResolveAnomaly(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE anomalies SET resolved = 1 WHERE id = ?`, id)
+	_, err := s.pool.Exec(ctx, `UPDATE anomalies SET resolved = 1 WHERE id = $1`, id)
 	return err
 }
 
@@ -142,21 +211,21 @@ func (s *Storage) ResolveAnomaly(ctx context.Context, id string) error {
 func (s *Storage) detectActivitySpikes(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
 	var anomalies []*threatintel.Anomaly
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		WITH hourly AS (
 			SELECT user_email, COUNT(*) as count
 			FROM threat_matches
-			WHERE matched_at > datetime('now', '-1 hour')
+			WHERE matched_at > NOW() - INTERVAL '1 hour'
 			GROUP BY user_email
-			HAVING count >= 10
+			HAVING COUNT(*) >= 10
 		),
 		daily_avg AS (
 			SELECT user_email, COUNT(*) * 1.0 / 24 as avg_hourly
 			FROM threat_matches
-			WHERE matched_at > datetime('now', '-7 days')
+			WHERE matched_at > NOW() - INTERVAL '7 days'
 			GROUP BY user_email
 		)
-		SELECT h.user_email, h.count, COALESCE(d.avg_hourly, 1) as avg
+		SELECT h.user_email::text, h.count, COALESCE(d.avg_hourly, 1) as avg
 		FROM hourly h
 		LEFT JOIN daily_avg d ON h.user_email = d.user_email
 		WHERE h.count > COALESCE(d.avg_hourly, 1) * 5
@@ -194,13 +263,13 @@ func (s *Storage) detectActivitySpikes(ctx context.Context, now time.Time) ([]*t
 func (s *Storage) detectNightActivity(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
 	var anomalies []*threatintel.Anomaly
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, COUNT(*) as count
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_email::text, COUNT(*) as count
 		FROM threat_matches
-		WHERE matched_at > datetime('now', '-6 hours')
-		AND CAST(strftime('%H', matched_at) AS INTEGER) BETWEEN 1 AND 5
+		WHERE matched_at > NOW() - INTERVAL '6 hours'
+		AND EXTRACT(HOUR FROM matched_at AT TIME ZONE 'UTC') BETWEEN 1 AND 5
 		GROUP BY user_email
-		HAVING count >= 5
+		HAVING COUNT(*) >= 5
 	`)
 	if err != nil {
 		return nil, err
@@ -233,12 +302,12 @@ func (s *Storage) detectNightActivity(ctx context.Context, now time.Time) ([]*th
 func (s *Storage) detectNewUserHighVolume(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
 	var anomalies []*threatintel.Anomaly
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, COUNT(*) as count, MIN(matched_at) as first_seen
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_email::text, COUNT(*) as count, MIN(matched_at) as first_seen
 		FROM threat_matches
 		GROUP BY user_email
-		HAVING MIN(matched_at) > datetime('now', '-24 hours')
-		AND count >= 20
+		HAVING MIN(matched_at) > NOW() - INTERVAL '24 hours'
+		AND COUNT(*) >= 20
 	`)
 	if err != nil {
 		return nil, err
@@ -272,12 +341,12 @@ func (s *Storage) detectNewUserHighVolume(ctx context.Context, now time.Time) ([
 func (s *Storage) detectThreatBursts(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
 	var anomalies []*threatintel.Anomaly
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, COUNT(DISTINCT threat_type) as types, COUNT(*) as total
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_email::text, COUNT(DISTINCT threat_type) as types, COUNT(*) as total
 		FROM threat_matches
-		WHERE matched_at > datetime('now', '-1 hour')
+		WHERE matched_at > NOW() - INTERVAL '1 hour'
 		GROUP BY user_email
-		HAVING types >= 3 AND total >= 10
+		HAVING COUNT(DISTINCT threat_type) >= 3 AND COUNT(*) >= 10
 	`)
 	if err != nil {
 		return nil, err
@@ -310,13 +379,13 @@ func (s *Storage) detectThreatBursts(ctx context.Context, now time.Time) ([]*thr
 func (s *Storage) detectMultipleCountries(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
 	var anomalies []*threatintel.Anomaly
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_email, COUNT(DISTINCT country_code) as countries, 
-			   GROUP_CONCAT(DISTINCT country_code) as country_list
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_email::text, COUNT(DISTINCT country_code) as countries,
+			   STRING_AGG(DISTINCT country_code, ',') as country_list
 		FROM user_locations
-		WHERE last_seen > datetime('now', '-24 hours')
+		WHERE last_seen > NOW() - INTERVAL '24 hours'
 		GROUP BY user_email
-		HAVING countries >= 3
+		HAVING COUNT(DISTINCT country_code) >= 3
 	`)
 	if err != nil {
 		return nil, err
@@ -348,43 +417,34 @@ func (s *Storage) detectMultipleCountries(ctx context.Context, now time.Time) ([
 
 // detectPortScan flags masscan-style sweeps: many unique IPv4 destinations
 // inside a single /16 from one user, on any port, within a short window.
-//
-// Why "same /16" instead of a port whitelist: a targeted scan always hits a
-// single network range (the thing the scanner is enumerating). Normal
-// browsing — even the worst WhatsApp/CDN chatter — scatters across many
-// providers' /16s. Concentration in one /16 is what distinguishes the two,
-// and it works regardless of whether the target port is :443 or :8317.
-//
-// We drop known-infra ports to cut residual noise: :80/:443/:53/:8080 are
-// the web/DNS that still account for most multi-IP sessions.
-//
-// Threshold: ≥20 unique IPs in the same /16 in the last 5 minutes.
 func (s *Storage) detectPortScan(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
 	const (
 		minUniqueIPs  = 20
 		windowMinutes = 5
 	)
 
-	rows, err := s.db.QueryContext(ctx, `
+	cutoff := now.Add(-time.Duration(windowMinutes) * time.Minute).UTC()
+
+	rows, err := s.pool.Query(ctx, `
 		WITH parsed AS (
 			SELECT user_email,
-			       SUBSTR(destination, 1, INSTR(destination, ':') - 1) AS ip,
-			       SUBSTR(destination, INSTR(destination, ':') + 1) AS port
+			       SUBSTRING(destination, 1, POSITION(':' IN destination) - 1) AS ip,
+			       SUBSTRING(destination, POSITION(':' IN destination) + 1)    AS port
 			FROM user_destinations
-			WHERE last_seen > datetime('now', ?)
-			  AND destination GLOB '[0-9]*.[0-9]*.[0-9]*.[0-9]*:[0-9]*'
+			WHERE last_seen > $1
+			  AND destination ~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$'
 		)
 		SELECT user_email,
-		       SUBSTR(ip, 1, INSTR(ip, '.') + INSTR(SUBSTR(ip, INSTR(ip, '.') + 1), '.') - 1) AS slash16,
+		       split_part(ip, '.', 1) || '.' || split_part(ip, '.', 2) AS slash16,
 		       port,
 		       COUNT(DISTINCT ip) AS uniq_ips
 		FROM parsed
 		WHERE port NOT IN ('80', '443', '53', '8080')
 		GROUP BY user_email, slash16, port
-		HAVING uniq_ips >= ?
+		HAVING COUNT(DISTINCT ip) >= $2
 		ORDER BY uniq_ips DESC
 		LIMIT 50
-	`, fmt.Sprintf("-%d minutes", windowMinutes), minUniqueIPs)
+	`, cutoff, minUniqueIPs)
 	if err != nil {
 		return nil, err
 	}
@@ -419,61 +479,45 @@ func (s *Storage) detectPortScan(ctx context.Context, now time.Time) ([]*threati
 }
 
 // abusePortList is the set of destination ports where a flood of distinct
-// destinations is almost always malicious from a VPN user: ssh/telnet/smtp
-// (credential stuffing, spam), SMB/RDP/VNC (brute force), database ports
-// (exposed-DB scanning), memcache/redis/mongo (open-instance looting).
+// destinations is almost always malicious from a VPN user.
 var abusePortList = []string{
 	"22", "23", "25", "135", "139", "445", "465", "587",
 	"1433", "3306", "3389", "5432", "5900", "6379", "11211", "27017",
 }
 
-// detectAbusePortFlood flags brute-force / spam patterns: many distinct
-// destinations on one abuse port within 10 min. Unlike port_scan this one
-// does NOT require /16 concentration — a campaign against random SMTP
-// servers or an SSH dictionary sweep naturally hits scattered networks.
-//
-// Threshold: ≥15 unique destinations (IP or domain) on one port.
+// detectAbusePortFlood flags brute-force / spam patterns.
 func (s *Storage) detectAbusePortFlood(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
 	const (
 		minUniqueDests = 15
 		windowMinutes  = 10
 	)
 
-	placeholders := make([]string, len(abusePortList))
-	args := make([]interface{}, 0, len(abusePortList)+2)
-	args = append(args, fmt.Sprintf("-%d minutes", windowMinutes))
-	for i, p := range abusePortList {
-		placeholders[i] = "?"
-		args = append(args, p)
-	}
-	args = append(args, minUniqueDests)
+	cutoff := now.Add(-time.Duration(windowMinutes) * time.Minute).UTC()
 
-	query := fmt.Sprintf(`
+	pgRows, err := s.pool.Query(ctx, `
 		SELECT user_email,
-		       SUBSTR(destination, INSTR(destination, ':') + 1) AS port,
+		       SUBSTRING(destination, POSITION(':' IN destination) + 1) AS port,
 		       COUNT(DISTINCT destination) AS uniq_dst
 		FROM user_destinations
-		WHERE last_seen > datetime('now', ?)
-		  AND SUBSTR(destination, INSTR(destination, ':') + 1) IN (%s)
+		WHERE last_seen > $1
+		  AND SUBSTRING(destination, POSITION(':' IN destination) + 1) = ANY($2)
 		GROUP BY user_email, port
-		HAVING uniq_dst >= ?
+		HAVING COUNT(DISTINCT destination) >= $3
 		ORDER BY uniq_dst DESC
 		LIMIT 50
-	`, strings.Join(placeholders, ","))
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	`, cutoff, abusePortList, minUniqueDests)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer pgRows.Close()
 
 	var out []*threatintel.Anomaly
-	for rows.Next() {
+	for pgRows.Next() {
 		var (
 			email, port string
 			uniq        int
 		)
-		if err := rows.Scan(&email, &port, &uniq); err != nil {
+		if err := pgRows.Scan(&email, &port, &uniq); err != nil {
 			continue
 		}
 		out = append(out, &threatintel.Anomaly{
@@ -495,10 +539,8 @@ func (s *Storage) detectAbusePortFlood(ctx context.Context, now time.Time) ([]*t
 }
 
 // GetAttackAnomalies returns anomalies whose type belongs to the supplied
-// allow-list (e.g. port_scan + abuse_port_flood) within `since`. Unlike
-// GetAnomalies this is narrowed to active attack-type detections so the UI
-// can render a dedicated "Attacks" screen without the activity_spike /
-// night_activity noise that dominates the generic anomalies list.
+// allow-list within `since`. Unlike GetAnomalies this is narrowed to active
+// attack-type detections.
 func (s *Storage) GetAttackAnomalies(ctx context.Context, types []string, since time.Duration, limit int, includeResolved bool) ([]*threatintel.Anomaly, error) {
 	if len(types) == 0 {
 		return nil, nil
@@ -510,16 +552,7 @@ func (s *Storage) GetAttackAnomalies(ctx context.Context, types []string, since 
 		since = 24 * time.Hour
 	}
 
-	placeholders := make([]string, len(types))
-	args := make([]interface{}, 0, len(types)+2)
-	for i, t := range types {
-		placeholders[i] = "?"
-		args = append(args, t)
-	}
-	// modernc.org/sqlite binds time.Time → DATETIME correctly but string →
-	// string comparison on a DATETIME column does not match rows written from
-	// time.Time. Pass the threshold as time.Time so the driver handles it.
-	args = append(args, time.Now().Add(-since).UTC())
+	threshold := time.Now().Add(-since).UTC()
 
 	resolvedClause := "AND resolved = 0"
 	if includeResolved {
@@ -529,92 +562,71 @@ func (s *Storage) GetAttackAnomalies(ctx context.Context, types []string, since 
 	query := fmt.Sprintf(`
 		SELECT id, type, severity, user_email, description, details, detected_at, resolved
 		FROM anomalies
-		WHERE type IN (%s)
-		  AND detected_at >= ?
+		WHERE type = ANY($1)
+		  AND detected_at >= $2
 		  %s
 		ORDER BY detected_at DESC
-		LIMIT ?
-	`, strings.Join(placeholders, ","), resolvedClause)
-	args = append(args, limit)
+		LIMIT $3
+	`, resolvedClause)
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	pgRows, err := s.pool.Query(ctx, query, types, threshold, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer pgRows.Close()
 
-	return scanAnomalies(rows)
+	return scanAnomalies(pgRows)
 }
 
 // benignHighVolumePorts are ports where a single user legitimately touches
-// many distinct IPs in normal operation. Exclude them from burst-scan so
-// NTP clients, BitTorrent peers, XMPP messengers and RTSP cameras don't
-// get flagged as mamka-hackers.
+// many distinct IPs in normal operation.
 var benignHighVolumePorts = []string{
-	"80", "443", "53", "8080", "8443", // web/DNS
-	"123",         // NTP
-	"554",         // RTSP (cameras)
-	"5222", "5223", // XMPP (Telegram, WhatsApp signalling)
-	"6881", "6882", "6883", "6884", "6885", "6886", "6887", "6888", "6889", // BitTorrent
-	"51413",       // deluge/qBittorrent default
+	"80", "443", "53", "8080", "8443",
+	"123",
+	"554",
+	"5222", "5223",
+	"6881", "6882", "6883", "6884", "6885", "6886", "6887", "6888", "6889",
+	"51413",
 }
 
-// detectBurstScanAnyTarget flags "target-agnostic" scans: a user hits many
-// distinct IPv4 destinations on one non-web, non-benign port inside a single
-// minute. Unlike detectPortScan (which needs a /16 concentration) this catches
-// SSH/RDP/RTSP/exposed-service sweeps against scattered networks — the thing
-// mamka-hackers actually do.
-//
-// Threshold: ≥15 unique IPs on one port in 60 seconds.
+// detectBurstScanAnyTarget flags "target-agnostic" scans.
 func (s *Storage) detectBurstScanAnyTarget(ctx context.Context, now time.Time) ([]*threatintel.Anomaly, error) {
 	const (
 		minUniqueIPs = 15
 		windowMin    = 1
 	)
 
-	placeholders := make([]string, len(benignHighVolumePorts))
-	args := make([]interface{}, 0, len(benignHighVolumePorts)+1)
-	args = append(args, fmt.Sprintf("-%d minutes", windowMin))
-	for i, p := range benignHighVolumePorts {
-		placeholders[i] = "?"
-		args = append(args, p)
-	}
+	cutoff := now.Add(-time.Duration(windowMin) * time.Minute).UTC()
 
-	// first_seen is the signal — it marks the *first time* we saw this
-	// (user, destination) pair, which is exactly what a scanner generates
-	// in bulk (each probe is a brand-new dest). Repeat traffic doesn't
-	// qualify here; port_scan/abuse_port_flood cover steady-state flood.
-	query := fmt.Sprintf(`
+	pgRows, err := s.pool.Query(ctx, `
 		WITH parsed AS (
 			SELECT user_email,
-			       SUBSTR(destination, 1, INSTR(destination, ':') - 1) AS ip,
-			       SUBSTR(destination, INSTR(destination, ':') + 1) AS port
+			       SUBSTRING(destination, 1, POSITION(':' IN destination) - 1) AS ip,
+			       SUBSTRING(destination, POSITION(':' IN destination) + 1)    AS port
 			FROM user_destinations
-			WHERE first_seen > datetime('now', ?)
-			  AND destination GLOB '[0-9]*.[0-9]*.[0-9]*.[0-9]*:[0-9]*'
+			WHERE first_seen > $1
+			  AND destination ~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$'
 		)
 		SELECT user_email, port, COUNT(DISTINCT ip) AS uniq_ips
 		FROM parsed
-		WHERE port NOT IN (%s)
+		WHERE NOT (port = ANY($2))
 		GROUP BY user_email, port
-		HAVING uniq_ips >= %d
+		HAVING COUNT(DISTINCT ip) >= $3
 		ORDER BY uniq_ips DESC
 		LIMIT 50
-	`, strings.Join(placeholders, ","), minUniqueIPs)
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	`, cutoff, benignHighVolumePorts, minUniqueIPs)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer pgRows.Close()
 
 	var out []*threatintel.Anomaly
-	for rows.Next() {
+	for pgRows.Next() {
 		var (
 			email, port string
 			uniq        int
 		)
-		if err := rows.Scan(&email, &port, &uniq); err != nil {
+		if err := pgRows.Scan(&email, &port, &uniq); err != nil {
 			continue
 		}
 		out = append(out, &threatintel.Anomaly{
@@ -635,22 +647,37 @@ func (s *Storage) detectBurstScanAnyTarget(ctx context.Context, now time.Time) (
 	return out, nil
 }
 
-// scanAnomalies is a helper to scan anomaly rows
-func scanAnomalies(rows *sql.Rows) ([]*threatintel.Anomaly, error) {
+// scanAnomalies is a helper to scan anomaly rows from pgx rows.
+func scanAnomalies(rows pgx.Rows) ([]*threatintel.Anomaly, error) {
 	var result []*threatintel.Anomaly
 	for rows.Next() {
 		a := &threatintel.Anomaly{}
-		var userEmail sql.NullString
+		var userEmailVal interface{}
 		var detailsJSON string
 		var resolved int
+		var severityInt int16
 
-		if err := rows.Scan(&a.ID, &a.Type, &a.Severity, &userEmail, &a.Description, &detailsJSON, &a.DetectedAt, &resolved); err != nil {
+		if err := rows.Scan(&a.ID, &a.Type, &severityInt, &userEmailVal, &a.Description, &detailsJSON, &a.DetectedAt, &resolved); err != nil {
 			continue
 		}
 
-		if userEmail.Valid {
-			a.UserEmail = userEmail.String
+		a.Severity = intToSeverity(severityInt)
+
+		// user_email is uuid (nullable) — convert back to string
+		if userEmailVal != nil {
+			switch v := userEmailVal.(type) {
+			case [16]byte:
+				a.UserEmail = uuid.UUID(v).String()
+			case uuid.UUID:
+				a.UserEmail = v.String()
+			default:
+				// Try string conversion
+				if s, ok := v.(string); ok {
+					a.UserEmail = s
+				}
+			}
 		}
+
 		a.Resolved = resolved == 1
 
 		if detailsJSON != "" && detailsJSON != "{}" {
@@ -660,5 +687,5 @@ func scanAnomalies(rows *sql.Rows) ([]*threatintel.Anomaly, error) {
 		result = append(result, a)
 	}
 
-	return result, nil
+	return result, rows.Err()
 }
