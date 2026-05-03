@@ -121,22 +121,50 @@ docker compose up -d
 
 #### Caddy (рекомендуется — auto-HTTPS, простой синтаксис, WS работает out-of-the-box)
 
-`/etc/caddy/Caddyfile`:
+**Установка Caddy с нуля (Ubuntu/Debian):**
 
-```caddy
+```bash
+# 1. Добавь репо Caddy
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
+  sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | \
+  sudo tee /etc/apt/sources.list.d/caddy-stable.list
+
+# 2. Установка
+sudo apt update && sudo apt install -y caddy
+
+# 3. Открой firewall
+sudo ufw allow 80/tcp comment 'HTTP for Caddy ACME challenge'
+sudo ufw allow 443/tcp comment 'HTTPS analyzer'
+
+# 4. Запиши Caddyfile (замени analyzer.example.com на свой домен)
+sudo tee /etc/caddy/Caddyfile > /dev/null <<'EOF'
 analyzer.example.com {
-    # /ws* и /api/* идут на Go-backend
+    # /ws*, /api/* и /health → Go-backend
     @backend path /ws* /api/* /health
     reverse_proxy @backend localhost:8237
 
-    # Всё остальное — Next.js UI
+    # Всё остальное → Next.js UI
     reverse_proxy localhost:3925
 }
+EOF
+
+# 5. Проверка синтаксиса + reload
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+sudo systemctl enable caddy
+
+# 6. Проверь что слушает
+sudo ss -tlnp | grep ':\(80\|443\) '
 ```
 
-Перезагрузи: `sudo systemctl reload caddy`.
+Caddy автоматически получит Let's Encrypt сертификат при первом запросе (если DNS уже указывает на сервер). Ничего дополнительно настраивать для TLS не нужно.
 
-Caddy сам корректно обрабатывает WebSocket Upgrade — ничего дополнительно настраивать не нужно.
+Проверь логи если что-то не так:
+```bash
+sudo journalctl -u caddy -n 50 --no-pager
+```
 
 #### nginx (нужны явные WS headers)
 
@@ -344,51 +372,178 @@ sudo crontab -e
 
 ### Шаг 1. Настрой Xray на запись access log
 
-В Remnawave panel → Config Profiles → выбери профиль ноды → добавь в JSON:
+#### 1.1 В Remnawave panel
+
+Открой **Config Profiles** → выбери профиль конкретной ноды → в JSON добавь блок `log`:
 
 ```json
-"log": {
-  "access":   "/var/log/remnanode/access.log",
-  "error":    "/var/log/remnanode/error.log",
-  "loglevel": "warning"
+{
+  "log": {
+    "access":   "/var/log/remnanode/access.log",
+    "error":    "/var/log/remnanode/error.log",
+    "loglevel": "warning"
+  },
+  "inbounds": [...],
+  "outbounds": [...]
 }
 ```
 
-И на ноде проверь docker-compose `remnanode`:
+Сохрани, **отправь конфиг на ноду** (кнопка Sync / Apply в panel).
 
-```yaml
-volumes:
-  - /var/log/remnanode:/var/log/remnanode
-```
-
-Перезапусти `remnanode` контейнер на ноде, подожди минуту, проверь:
+#### 1.2 На ноде — проверь volume mount у remnanode
 
 ```bash
-ls -la /var/log/remnanode/access.log
-tail -3 /var/log/remnanode/access.log
+# Подключись к ноде по SSH, проверь docker-compose remnanode
+ssh root@<node-ip>
+cd /opt/remnanode    # или где у тебя стоит remnanode
+
+# Посмотри docker-compose.yml — должен быть volume на /var/log/remnanode
+grep -A 5 'volumes:' docker-compose.yml
 ```
 
-Должен быть не-пустой и обновляться. Если пустой — xray не пишет.
+Если volume отсутствует или закомментирован — добавь:
+
+```bash
+sudo nano docker-compose.yml
+```
+
+```yaml
+services:
+  remnanode:
+    # ...existing config
+    volumes:
+      - /var/log/remnanode:/var/log/remnanode    # <— добавь эту строку
+```
+
+Создай директорию (если её нет) и перезапусти remnanode:
+
+```bash
+sudo mkdir -p /var/log/remnanode
+sudo chmod 755 /var/log/remnanode
+docker compose up -d --force-recreate remnanode
+```
+
+#### 1.3 Проверка что xray пишет access.log
+
+Подожди 30-60 секунд (нужно реальное соединение через ноду), потом:
+
+```bash
+# Файл существует и не пустой?
+ls -la /var/log/remnanode/access.log
+
+# Свежие записи появляются?
+tail -f /var/log/remnanode/access.log     # Ctrl+C через 5-10 секунд
+```
+
+Должны видеть строки вида:
+```
+2026/05/03 12:34:56 192.168.1.5:54321 accepted tcp:example.com:443 [vless-in -> direct] email: user-uuid
+```
+
+**Если файл пустой через минуту:**
+- Конфиг не сохранился в panel — повтори шаг 1.1, проверь Sync
+- xray не перезапустился с новым конфигом: `docker compose restart remnanode`
+- Loglevel слишком высокий: убедись что `"loglevel": "warning"` или `"info"`
+- Volume не смонтирован: `docker exec remnanode ls -la /var/log/remnanode/` — должна быть та же директория что на хосте
 
 ### Шаг 2. Установка агента
 
-На ноде:
+#### Вариант А — Автоматически через скрипт (рекомендуется)
+
+Один curl-and-bash. На ноде, замени значения переменных:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh \
-  | sudo SERVER_URL="wss://analyzer.example.com/ws" \
-         AUTH_TOKEN="<AGENT_TOKEN из server .env>" \
-         NODE_ID="germany-1" \
-         bash
+curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh | \
+  sudo SERVER_URL="wss://analyzer.example.com/ws" \
+       AUTH_TOKEN="ВСТАВЬ_AGENT_TOKEN_ИЗ_SERVER_ENV" \
+       NODE_ID="germany-1" \
+       bash
 ```
 
-`NODE_ID` должен быть **уникальным** на каждой ноде (`germany-1`, `est-1`, `poland-1`, ...). Скрипт:
+`NODE_ID` должен быть **уникальным на каждой ноде** (`germany-1`, `est-1`, `poland-1`, `ru-bridge`, ...). Скрипт автоматически:
 - Проверит ОС, поставит Docker если нет
 - Клонирует репо в `/opt/xray-analyzer`
-- Создаст `.env` для агента
-- Настроит logrotate для `/var/log/remnanode/*.log`
+- Создаст `.env` для агента (mode 600)
+- Настроит logrotate для `/var/log/remnanode/*.log` (ротация 50M × 5)
 - Соберёт image, поднимет контейнер
-- Через 8 секунд проверит что подключение к серверу работает
+- Через 8 секунд проверит что подключение к серверу работает и расскажет об ошибке если что-то не так
+
+#### Вариант Б — Вручную (если автоскрипт не подходит)
+
+Если на ноде ограниченный доступ или хочется контроля каждого шага:
+
+```bash
+# 1. Поставь Docker если нет (Ubuntu/Debian)
+if ! command -v docker >/dev/null; then
+  sudo apt update
+  sudo apt install -y ca-certificates curl gnupg
+  sudo install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL "https://download.docker.com/linux/$(. /etc/os-release && echo $ID)/gpg" | \
+    sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$(. /etc/os-release && echo $ID) $(. /etc/os-release && echo $VERSION_CODENAME) stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list
+  sudo apt update
+  sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+fi
+
+# 2. Клонируй репо
+sudo git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
+cd /opt/xray-analyzer
+
+# 3. Создай .env агента (замени значения)
+sudo tee .env > /dev/null <<EOF
+NODE_ID=germany-1
+SERVER_URL=wss://analyzer.example.com/ws
+AUTH_TOKEN=ВСТАВЬ_AGENT_TOKEN_ИЗ_SERVER
+LOG_HOST_PATH=/var/log/remnanode
+LOG_FILE_PATH=/var/log/remnanode/access.log
+BATCH_SIZE=1000
+BATCH_TIMEOUT=5s
+ENABLE_COMPRESSION=true
+EOF
+sudo chmod 600 .env
+
+# 4. Logrotate для access.log (без него файл разрастётся до GB)
+sudo tee /etc/logrotate.d/remnanode > /dev/null <<'EOF'
+/var/log/remnanode/*.log {
+    size 50M
+    rotate 5
+    compress
+    delaycompress
+    notifempty
+    missingok
+    copytruncate
+}
+EOF
+
+# 5. Билд + запуск агента
+sudo docker compose -f docker-compose.agent.yml build xray-log-agent
+sudo docker compose -f docker-compose.agent.yml up -d xray-log-agent
+
+# 6. Проверь подключение через 10 секунд
+sleep 10
+sudo docker compose -f docker-compose.agent.yml logs --tail 30 xray-log-agent
+```
+
+В логах должно появиться `connected` или `websocket connection established`. Если ошибки — см. Часть 5 (Troubleshooting).
+
+#### Полезные команды для управления агентом
+
+```bash
+cd /opt/xray-analyzer
+
+# Логи в реальном времени
+sudo docker compose -f docker-compose.agent.yml logs -f xray-log-agent
+
+# Restart
+sudo docker compose -f docker-compose.agent.yml restart xray-log-agent
+
+# Stop
+sudo docker compose -f docker-compose.agent.yml down
+
+# Status
+sudo docker compose -f docker-compose.agent.yml ps
+```
 
 ### Шаг 3. Проверка на сервере
 
