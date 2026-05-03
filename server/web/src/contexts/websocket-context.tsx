@@ -114,22 +114,37 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           console.log("[WS] threatintel received:", update.data);
         }
         
+        // Server may send `null` for fields that are typed as arrays in
+        // the dashboard (e.g. `nodes: null` when there are no nodes yet).
+        // Coerce arrays to [] so consumer components can safely .filter()
+        // / .map() without crashing into "Cannot read properties of null".
+        const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+
         setState(prev => {
           switch (update.type) {
             case "stats":
               return { ...prev, stats: update.data as Stats };
             case "nodes":
-              return { ...prev, nodes: update.data as NodeStats[] };
+              return { ...prev, nodes: arr<NodeStats>(update.data) };
             case "users":
-              return { ...prev, users: update.data as UserStats[] };
+              return { ...prev, users: arr<UserStats>(update.data) };
             case "hourly":
-              return { ...prev, hourly: update.data as HourlyStats[] };
+              return { ...prev, hourly: arr<HourlyStats>(update.data) };
             case "anomalies":
-              return { ...prev, anomalies: update.data as StatsAnomaly[] };
+              return { ...prev, anomalies: arr<StatsAnomaly>(update.data) };
             case "blacklist":
               return { ...prev, blacklist: update.data as BlacklistAnalytics };
-            case "threatintel":
-              return { ...prev, threatIntel: update.data as ThreatIntelData };
+            case "threatintel": {
+              const ti = (update.data ?? {}) as Partial<ThreatIntelData>;
+              return {
+                ...prev,
+                threatIntel: {
+                  stats: ti.stats ?? null,
+                  matches: arr<ThreatMatch>(ti.matches),
+                  topUsers: ti.topUsers ?? null,
+                },
+              };
+            }
             default:
               return prev;
           }
