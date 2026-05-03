@@ -46,16 +46,67 @@ xray-log-agent (docker)  →  WSS /ws  →  analyzer-server
 - **Disk**: 20 GB free (15 GB для system + Postgres growth)
 - **Сеть**: открыты порты 80/443 (или reverse-proxy уже настроен)
 - **Domain**: один для analyzer (например, `analyzer.example.com`)
+- **DNS**: A-запись `analyzer.example.com` → IP сервера (см. шаг 1.2)
 
 ### Шаг 1. Подготовка сервера
 
-```bash
-# Обнови систему
-sudo apt update && sudo apt upgrade -y
+#### 1.1 Обновление системы и базовые тулзы
 
-# Установи минимальный toolset (если нет)
-sudo apt install -y curl git ca-certificates openssl
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl git ca-certificates openssl dnsutils
 ```
+
+#### 1.2 DNS — настрой ДО установки Caddy/nginx
+
+Caddy при первом старте получает Let's Encrypt сертификат через ACME challenge. Для этого DNS должен резолвиться **до** первого старта Caddy.
+
+**В панели твоего DNS-провайдера** (Cloudflare, Hetzner DNS, Route53, ...) создай:
+
+```
+Type:  A
+Name:  analyzer  (или analyzer.example.com — зависит от UI провайдера)
+Value: <публичный IP твоего сервера>
+TTL:   автоматический / 60
+```
+
+Подожди 1-5 минут на пропагацию, проверь:
+
+```bash
+# С твоего сервера
+dig +short analyzer.example.com
+# Должен вернуть IP сервера. Пусто или другой IP — DNS не пропагнулся.
+
+# Альтернативно — с любой машины
+nslookup analyzer.example.com 1.1.1.1
+```
+
+⚠️ Если используешь **Cloudflare с прокси (orange cloud)** — выключи прокси на этой A-записи перед первым запуском Caddy (LE challenge не пройдёт через CF-прокси). После выпуска сертификата прокси можно включить обратно.
+
+#### 1.3 Firewall — открой порты
+
+```bash
+# Если ufw активен (на Ubuntu по умолчанию)
+sudo ufw status                                   # проверка состояния
+sudo ufw allow 80/tcp comment 'HTTP / ACME'
+sudo ufw allow 443/tcp comment 'HTTPS analyzer'
+sudo ufw allow 22/tcp comment 'SSH'              # на всякий, чтобы сам себя не запер
+sudo ufw status numbered
+
+# Если используешь iptables напрямую
+sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+```
+
+#### 1.4 Проверь что порты 8237 и 3925 свободны
+
+Контейнеры будут слушать на этих портах локально:
+
+```bash
+sudo ss -tlnp | grep -E ':(8237|3925) '
+```
+
+Пусто = всё ок. Если что-то висит — найди и останови, иначе compose не сможет занять порты.
 
 ### Шаг 2. Установка через скрипт (рекомендуется)
 
@@ -343,7 +394,43 @@ curl -sS -H "Authorization: Bearer $API_TOKEN" \
   https://analyzer.example.com/api/stats | jq
 ```
 
-Открой `https://analyzer.example.com` в браузере — должен загрузиться dashboard. Логин с `API_TOKEN`.
+#### Первичная загрузка дашборда
+
+Открой `https://analyzer.example.com` в браузере. Будет login-форма — **введи туда `API_TOKEN`** (его значение из `/opt/xray-analyzer/.env`, поле `API_TOKEN=...`). Это твой "пароль" в дашборд, отдельной системы пользователей нет.
+
+Получить значение:
+
+```bash
+grep '^API_TOKEN=' /opt/xray-analyzer/.env | cut -d= -f2
+```
+
+⚠️ **Первые 1-3 минуты после первого старта** дашборд может показывать неполные/нулевые данные:
+- Threat-intel feeds грузят 1.5M+ indicators (ads/malware/casino/social/tor) — занимает 30-90 сек
+- Remnawave sync стартует с задержкой `REMNAWAVE_SYNC_INTERVAL` (default 1m)
+- Партиции для сегодня создаются при старте partition manager
+
+Это нормально. Подожди 2-3 минуты, обнови страницу. В логах сервера увидишь:
+
+```bash
+docker logs --since 5m xray-log-analyzer 2>&1 | grep -E "threatintel|partition|remnawave"
+```
+
+Должны быть строки вида `threatintel: loaded 1634005 indicators`, `partition manager: started`, `remnawave: synced N users`.
+
+#### Если Caddy не выдаёт сертификат
+
+```bash
+sudo journalctl -u caddy -n 50 --no-pager | grep -iE "error|certificate|acme"
+```
+
+Типичные причины:
+
+| Что в логах | Причина | Фикс |
+|---|---|---|
+| `connection refused: 80` | Порт 80 закрыт извне (firewall / провайдер) | Проверь что 80 открыт в ufw + у провайдера |
+| `no such host` / `NXDOMAIN` | DNS не резолвится / не пропагнулся | `dig +short analyzer.example.com` — должен вернуть IP сервера |
+| `rate limited` | LE rate limit (5 сертификатов/неделя на домен) | Подожди или используй staging: добавь `acme_ca https://acme-staging-v02.api.letsencrypt.org/directory` в Caddyfile (получит untrusted cert) |
+| `redirected to /cdn-cgi/...` | Cloudflare proxy (orange cloud) | Выключи CF-прокси на этой A-записи на время выпуска сертификата |
 
 ### Шаг 6. Backup (рекомендуется настроить cron)
 
@@ -359,6 +446,50 @@ sudo crontab -e
 0 2 * * * docker exec analyzer-postgres pg_dump -U xray_analyzer -Fc xray_analyzer > /opt/xray-analyzer/backups/pg-$(date +\%Y\%m\%d).dump 2>&1 ; find /opt/xray-analyzer/backups -name "pg-*.dump" -mtime +7 -delete
 ```
 
+⚠️ **Backup на ту же машину = не backup.** Если сервер умрёт — потеряешь всё. Настрой syncing на отдельный storage (rsync на S3/B2, Backblaze, Hetzner Storage Box):
+
+```bash
+# Пример с rclone к S3-совместимому storage
+sudo apt install -y rclone
+rclone config                  # настрой remote один раз
+
+# Добавь в crontab после pg_dump:
+# 30 2 * * * rclone copy /opt/xray-analyzer/backups remote:analyzer-backups/$(hostname) --max-age 7d
+```
+
+#### Восстановление из backup на новом сервере
+
+Если основной сервер умер и нужно поднять analyzer на новой машине:
+
+```bash
+# 1. На новом сервере — стандартная установка (Часть 1, Шаги 1-4)
+git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
+sudo bash /opt/xray-analyzer/scripts/install-server.sh
+# (запомни новые tokens — их подменишь старыми ниже!)
+
+# 2. Останови analyzer-server, чтобы не писал поверх восстановления
+cd /opt/xray-analyzer
+docker compose stop analyzer-server
+
+# 3. Скопируй backup-файл на новый сервер
+# (с резерва или старого сервера)
+scp pg-backup-YYYYMMDD.dump root@<new-server>:/tmp/
+
+# 4. Восстанови БД
+docker exec -i analyzer-postgres pg_restore -U xray_analyzer -d xray_analyzer --clean --if-exists < /tmp/pg-backup-YYYYMMDD.dump
+
+# 5. Восстанови старый .env (или хотя бы старые токены)
+# Иначе агенты на нодах не подключатся (AGENT_TOKEN изменится)
+sudo nano /opt/xray-analyzer/.env
+
+# 6. Запусти сервер обратно
+docker compose up -d analyzer-server
+```
+
+После восстановления:
+- Если IP сервера сменился — обнови DNS A-запись
+- Если **AGENT_TOKEN сменился** — на каждой ноде обновить `/opt/xray-analyzer/.env` и `docker compose -f docker-compose.agent.yml restart`
+
 ---
 
 ## Часть 2 — Агенты на VPN-нодах
@@ -368,7 +499,18 @@ sudo crontab -e
 ### Требования
 
 - Docker уже работает (на Remnawave-нодах он есть)
-- Xray пишет access log в `/var/log/remnanode/access.log`
+- Xray пишет access log (по умолчанию `/var/log/remnanode/access.log` для Remnawave-нод; для vanilla Xray путь другой — см. ниже)
+- **NTP** (system clock sync) — обязательно если используешь bridge correlation (она работает в окне ±15s, расхождение времени между нодами ломает атрибуцию). Проверка: `timedatectl` должен показать `System clock synchronized: yes`. Если нет — `sudo systemctl enable --now systemd-timesyncd` или `sudo apt install -y chrony`.
+
+#### Если у тебя НЕ Remnawave-нода (чистый Xray)
+
+Гайд написан в первую очередь под Remnawave (стандартный путь логов `/var/log/remnanode/`). Для vanilla Xray:
+
+- Путь логов обычно `/var/log/xray/access.log` или `/var/log/xray-core/access.log` (зависит от пакета/способа установки)
+- Запись логов настраивается в `/usr/local/etc/xray/config.json` через тот же `log` блок
+- В `.env` агента поменяй `LOG_HOST_PATH=/var/log/xray` и `LOG_FILE_PATH=/var/log/xray/access.log`
+
+Дальше всё аналогично Remnawave-флоу.
 
 ### Шаг 1. Настрой Xray на запись access log
 
@@ -456,6 +598,16 @@ tail -f /var/log/remnanode/access.log     # Ctrl+C через 5-10 секунд
 | **Вариант Б** — пошагово вручную | Те же действия, но каждая команда видна | Хочешь аудит каждого шага / нет sudo / встроишь в свой Ansible / Terraform |
 
 Оба варианта требуют интернет на ноде (Docker pull, git clone, и т.д.).
+
+#### Получи AGENT_TOKEN с сервера (понадобится для обоих вариантов)
+
+На **сервере** (где стоит analyzer):
+
+```bash
+grep '^AGENT_TOKEN=' /opt/xray-analyzer/.env | cut -d= -f2
+```
+
+Скопируй вывод — это длинная hex-строка типа `e9b8e8b0cb4aa2bb1d78a16955186ed97dbe6332ec3c8ee2`. **Один и тот же** AGENT_TOKEN используется на всех нодах (это server-side токен который сервер ожидает от агентов).
 
 #### Вариант А — Автоматически через скрипт (рекомендуется)
 
