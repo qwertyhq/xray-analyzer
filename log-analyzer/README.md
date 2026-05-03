@@ -2,6 +2,20 @@
 
 Real-time analytics для Xray-core access logs c интеграцией с Remnawave panel. Собирает access logs со всех VPN-нод через WebSocket-агентов, агрегирует в Postgres, детектит abuse/threat-traffic, рисует дашборд.
 
+> 📦 **Установка по шагам:** [INSTALL.md](./INSTALL.md) — production-ready гайд для server + agents + reverse-proxy.
+
+## Содержание
+
+- [Возможности](#возможности)
+- [Архитектура](#архитектура)
+- [Tech stack](#tech-stack)
+- [Quick install — server](#quick-install--server)
+- [Quick install — agent](#quick-install--agent-на-каждой-xray-ноде)
+- [Configuration reference](#configuration-reference)
+- [Operations](#operations)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+
 ## Возможности
 
 - **Real-time ingest** — агенты на каждой ноде читают access.log через `inotify` и стримят батчи (gzip, WebSocket) на сервер
@@ -201,10 +215,13 @@ SUSPICIOUS_TIME_WINDOW=1h
 BLACKLIST_REMOTE_URL=https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/domains_all.lst
 BLACKLIST_RELOAD=5m
 
-# Aleria AI assistant (optional)
-ALERIA_API_KEY=<key>
+# AI assistant (опционально, любой OpenAI-compatible /v1 endpoint)
+# Примеры: OpenAI, Together AI, OpenRouter, Aleria, локальный llama.cpp/vLLM.
+OPENAI_API_KEY=<key>
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
 
-# Optional: web UI Mapbox token для geo map
+# Web UI Mapbox token для geo map (опционально)
 NEXT_PUBLIC_MAPBOX_TOKEN=<token>
 ```
 

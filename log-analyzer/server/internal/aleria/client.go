@@ -14,27 +14,45 @@ import (
 )
 
 const (
+	// DefaultBaseURL points to Aleria's hosted inference endpoint, but any
+	// OpenAI-compatible /v1 base URL works (OpenAI, Together, OpenRouter,
+	// local llama.cpp/vLLM, etc.) — the wire format is identical.
 	DefaultBaseURL = "https://aleria.com/_inference/v1"
 	DefaultModel   = "default"
 )
 
-// Client is the Aleria AI API client
+// Client is an OpenAI-compatible chat-completions client. It speaks the
+// standard /v1/chat/completions wire format so any compatible endpoint
+// can be plugged in via env (OPENAI_BASE_URL, OPENAI_MODEL, OPENAI_API_KEY).
 type Client struct {
 	baseURL    string
 	apiKey     string
+	model      string
 	httpClient *http.Client
 }
 
-// NewClient creates a new Aleria AI client
-func NewClient(apiKey string) *Client {
+// NewClient creates a new client. Empty baseURL falls back to DefaultBaseURL,
+// empty model falls back to DefaultModel — this preserves backward
+// compatibility with the original Aleria-only configuration.
+func NewClient(apiKey, baseURL, model string) *Client {
+	if baseURL == "" {
+		baseURL = DefaultBaseURL
+	}
+	if model == "" {
+		model = DefaultModel
+	}
 	return &Client{
-		baseURL: DefaultBaseURL,
+		baseURL: baseURL,
 		apiKey:  apiKey,
+		model:   model,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
 	}
 }
+
+// Model returns the configured model name.
+func (c *Client) Model() string { return c.model }
 
 // IsConfigured returns true if the client has an API key
 func (c *Client) IsConfigured() bool {
@@ -57,15 +75,18 @@ type ToolCall struct {
 	} `json:"function"`
 }
 
-// ChatRequest represents a chat completion request
+// ChatRequest represents a chat completion request.
+// Model is set automatically from Client.model when sent via Chat().
 type ChatRequest struct {
+	Model       string    `json:"model,omitempty"`
 	Messages    []Message `json:"messages"`
 	Temperature float64   `json:"temperature,omitempty"`
 	MaxTokens   int       `json:"max_tokens,omitempty"`
 }
 
-// ChatRequestWithTools represents a chat request with function calling
+// ChatRequestWithTools represents a chat request with function calling.
 type ChatRequestWithTools struct {
+	Model       string                   `json:"model,omitempty"`
 	Messages    []map[string]interface{} `json:"messages"`
 	Tools       []map[string]interface{} `json:"tools,omitempty"`
 	Temperature float64                  `json:"temperature,omitempty"`
@@ -105,6 +126,9 @@ func (c *Client) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 	}
 	if req.MaxTokens == 0 {
 		req.MaxTokens = 2000
+	}
+	if req.Model == "" {
+		req.Model = c.model
 	}
 
 	body, err := json.Marshal(req)
@@ -150,6 +174,7 @@ func (c *Client) ChatWithTools(ctx context.Context, messages []map[string]interf
 	}
 
 	req := ChatRequestWithTools{
+		Model:       c.model,
 		Messages:    messages,
 		Tools:       tools,
 		Temperature: 0.3,
@@ -234,6 +259,7 @@ func (c *Client) ChatStream(ctx context.Context, messages []map[string]interface
 	}
 
 	req := map[string]interface{}{
+		"model":       c.model,
 		"messages":    messages,
 		"temperature": 0.3,
 		"max_tokens":  4000,

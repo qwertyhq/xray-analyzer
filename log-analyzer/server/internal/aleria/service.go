@@ -20,10 +20,11 @@ type Service struct {
 	remnaClient *remnawave.Client
 }
 
-// NewService creates a new Aleria AI service
-func NewService(apiKey string, store *storage.Storage) *Service {
+// NewService creates a new AI service backed by an OpenAI-compatible
+// chat-completions endpoint. Empty baseURL/model fall back to defaults.
+func NewService(apiKey, baseURL, model string, store *storage.Storage) *Service {
 	return &Service{
-		client:  NewClient(apiKey),
+		client:  NewClient(apiKey, baseURL, model),
 		storage: store,
 	}
 }

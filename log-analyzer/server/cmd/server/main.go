@@ -234,8 +234,8 @@ func main() {
 	log.Println("correlation: service initialized")
 
 	// Initialize Aleria AI service
-	if cfg.AleriaAPIKey != "" {
-		aleriaSvc := aleria.NewService(cfg.AleriaAPIKey, store)
+	if cfg.OpenAIAPIKey != "" {
+		aleriaSvc := aleria.NewService(cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, cfg.OpenAIModel, store)
 		// Give AI access to Remnawave API for real-time data
 		if remnaClient != nil {
 			aleriaSvc.SetRemnaClient(remnaClient)

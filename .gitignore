@@ -39,3 +39,4 @@ log-analyzer/server/data/*.db-wal
 # Env files
 log-analyzer/.env
 log-analyzer/.env.agent
+.vscode/
