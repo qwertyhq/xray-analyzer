@@ -103,7 +103,7 @@ sudo bash scripts/install-server.sh
 
 **Что нужно настроить вручную после установки:**
 
-Отредактируй `/opt/xray-analyzer/log-analyzer/.env`:
+Отредактируй `/opt/xray-analyzer/.env`:
 
 | Переменная | Назначение |
 |---|---|
@@ -140,7 +140,7 @@ analyzer.example.com {
 Запусти на каждой ноде где работает Xray (Remnawave node, отдельный VPN endpoint, и т.д.):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/log-analyzer/scripts/install-agent.sh | \
+curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh | \
   sudo SERVER_URL="wss://analyzer.example.com/ws" \
        AUTH_TOKEN="<AGENT_TOKEN из server .env>" \
        NODE_ID="germany-1" \
@@ -369,11 +369,11 @@ curl http://localhost:8237/health
 
 ```bash
 # Server
-cd log-analyzer/server
+cd server
 go run ./cmd/server
 
 # Web UI
-cd log-analyzer/server/web
+cd server/web
 npm install
 npm run dev
 ```
@@ -381,7 +381,7 @@ npm run dev
 ### Tests
 
 ```bash
-cd log-analyzer/server
+cd server
 DOCKER_HOST=unix:///var/run/docker.sock go test ./...
 ```
 

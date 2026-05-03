@@ -1,3 +1,5 @@
+name: log-analyzer
+
 services:
   # Main analyzer server with Web UI
   analyzer-server:

@@ -27,7 +27,7 @@ set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/qwertyhq/xray-analyzer.git}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/xray-analyzer}"
-COMPOSE_DIR="$INSTALL_DIR/log-analyzer"
+COMPOSE_DIR="$INSTALL_DIR"
 ENV_FILE="$COMPOSE_DIR/.env"
 LOG_PATH_DEFAULT="/var/log/remnanode"
 
