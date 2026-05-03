@@ -160,10 +160,10 @@ export function RealTimeFeed({ events, maxEvents = 50, title = "Real-time Feed" 
           </DropdownMenu>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 overflow-hidden p-0">
-        <div 
+      <CardContent className="flex-1 overflow-hidden p-0 min-h-0">
+        <div
           ref={scrollRef}
-          className="h-[350px] overflow-y-auto scrollbar-thin px-4 pb-4"
+          className="h-full overflow-y-auto scrollbar-thin px-4 pb-4"
         >
           {filteredEvents.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
