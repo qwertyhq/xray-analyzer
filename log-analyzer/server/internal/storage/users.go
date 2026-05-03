@@ -612,7 +612,7 @@ func (s *Storage) GetGlobalStats(ctx context.Context) (*models.GlobalStats, erro
 			COUNT(*) FILTER (WHERE status = 'DISABLED'),
 			COUNT(*) FILTER (WHERE status = 'EXPIRED'),
 			COUNT(*) FILTER (WHERE status = 'LIMITED'),
-			COUNT(*) FILTER (WHERE online_at > now() - interval '1 minute'),
+			COUNT(*) FILTER (WHERE online_at > now() - interval '5 minutes'),
 			COUNT(*) FILTER (WHERE online_at > now() - interval '1 hour'),
 			COUNT(*) FILTER (WHERE online_at > now() - interval '24 hours'),
 			COUNT(*) FILTER (WHERE online_at IS NULL)
