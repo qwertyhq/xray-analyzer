@@ -95,6 +95,26 @@ func (s *Storage) UpdateRemnaUserHwidCounts(ctx context.Context) error {
 	return err
 }
 
+// PruneRemnaUsers deletes rows from remna_users whose uuid is not in
+// liveUUIDs. Called at the end of a successful Remnawave user sync so the
+// table reflects the current panel state (no stale rows for deleted users).
+// Returns the count of pruned rows.
+//
+// Refuses to delete anything when liveUUIDs is empty — defense against
+// pruning everything if the API returned an empty payload due to a glitch.
+func (s *Storage) PruneRemnaUsers(ctx context.Context, liveUUIDs []string) (int, error) {
+	if len(liveUUIDs) == 0 {
+		return 0, nil
+	}
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM remna_users WHERE uuid <> ALL($1::uuid[])
+	`, liveUUIDs)
+	if err != nil {
+		return 0, fmt.Errorf("prune remna_users: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // boolToInt converts a Go bool to 0/1 for INTEGER columns in remna_nodes.
 func boolToInt(b bool) int {
 	if b {
