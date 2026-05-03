@@ -7,6 +7,7 @@ Real-time analytics для Xray-core access logs c интеграцией с Rem
 ## Содержание
 
 - [Возможности](#возможности)
+- [Скриншоты](#скриншоты)
 - [Архитектура](#архитектура)
 - [Tech stack](#tech-stack)
 - [Quick install — server](#quick-install--server)
@@ -26,6 +27,46 @@ Real-time analytics для Xray-core access logs c интеграцией с Rem
 - **Web UI** на Next.js (RU + EN, dark theme, language switcher) — dashboard, threat intel breakdown, per-user details, abuse analytics, geo map
 - **Telegram alerts** — threat alerts с категориями + контекстом
 - **AI assistant** — встроенный chat для запросов вроде "найди abusers за последний час"
+
+## Скриншоты
+
+> Все usernames / UUID / IP на скриншотах замаскированы (demo-данные). Реальный интерфейс выглядит точно так же.
+
+### Дашборд
+
+Live-метрики, статус системы, аномалии, гео-карта, real-time feed, активные ноды, blacklist-алерты.
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+### Threat Intelligence
+
+1.5M+ indicators (ads, malware, casino, tor, blocklist-fraud), категории, алерты, recent matches, top countries.
+
+![Threat Intelligence](docs/screenshots/threatintel.png)
+
+### Пользователи
+
+Все пользователи со всех нод с risk-score, поиском по email/IP, фильтрами, экспортом.
+
+![Users](docs/screenshots/users.png)
+
+### Remnawave
+
+Расширенная аналитика на основе Remnawave API: онлайн сейчас / 15 мин / 1ч / 24ч, HWID-устройства, платформы.
+
+![Remnawave](docs/screenshots/remnawave.png)
+
+### Ноды
+
+Управление и мониторинг VPN-нод: статус подключения, запросы, blacklist hits, онлайн пользователи.
+
+![Nodes](docs/screenshots/nodes.png)
+
+### Чёрный список
+
+Детальная аналитика блокировок: топ доменов, топ пользователей, временной график, поиск.
+
+![Blacklist](docs/screenshots/blacklist.png)
 
 ## Архитектура
 

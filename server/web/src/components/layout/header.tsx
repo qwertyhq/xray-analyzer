@@ -61,9 +61,6 @@ export function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground hidden lg:block">
-            analyzer.z-hq.com
-          </span>
           <LanguageSwitcher />
           <ThemeToggle />
           {isAuthenticated && (
