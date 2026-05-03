@@ -39,8 +39,11 @@ type Config struct {
 	RemnawaveAPIToken     string
 	RemnawaveSyncInterval time.Duration // Interval for syncing data from Remnawave
 
-	// Aleria AI settings
-	AleriaAPIKey string
+	// AI assistant settings — OpenAI-compatible chat-completions endpoint.
+	// Works with OpenAI, Aleria, Together, OpenRouter, local llama.cpp/vLLM.
+	OpenAIAPIKey  string
+	OpenAIBaseURL string
+	OpenAIModel   string
 
 	// Bridge filtering: regex matching inbound tags whose source IP is an
 	// infrastructure hop (another Xray bridge node), not a real client.
@@ -94,7 +97,11 @@ func Load() *Config {
 		RemnawaveURL:           getEnv("REMNAWAVE_URL", ""),
 		RemnawaveAPIToken:      getEnv("REMNAWAVE_API_TOKEN", ""),
 		RemnawaveSyncInterval:  getDurationEnv("REMNAWAVE_SYNC_INTERVAL", 1*time.Minute), // More frequent for accurate online stats
-		AleriaAPIKey:           getEnv("ALERIA_API_KEY", ""),
+		// OPENAI_* are the canonical env names; ALERIA_API_KEY is kept as
+		// a back-compat fallback so existing deployments don't break.
+		OpenAIAPIKey:           getEnv("OPENAI_API_KEY", getEnv("ALERIA_API_KEY", "")),
+		OpenAIBaseURL:          getEnv("OPENAI_BASE_URL", ""),
+		OpenAIModel:            getEnv("OPENAI_MODEL", ""),
 		BridgeInboundPattern:    getEnv("BRIDGE_INBOUND_PATTERN", `^BRIDGE_.*_IN(_\d+)?$`),
 		BridgeNodeIDs:           getStringSliceEnv("BRIDGE_NODE_IDS", []string{"ru-white", "ru-bride"}),
 		BridgeCorrelationWindow: getDurationEnv("BRIDGE_CORRELATION_WINDOW", 15*time.Second),
