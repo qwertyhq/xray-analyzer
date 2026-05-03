@@ -61,7 +61,7 @@ sudo apt install -y curl git ca-certificates openssl
 
 ```bash
 git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
-sudo bash /opt/xray-analyzer/log-analyzer/scripts/install-server.sh
+sudo bash /opt/xray-analyzer/scripts/install-server.sh
 ```
 
 Скрипт:
@@ -74,12 +74,12 @@ sudo bash /opt/xray-analyzer/log-analyzer/scripts/install-server.sh
 После завершения у тебя:
 - `analyzer-server` слушает на `:8237` (API+WS) и `:3925` (UI)
 - Postgres + Redis запущены в Docker
-- `/opt/xray-analyzer/log-analyzer/.env` с tokens
+- `/opt/xray-analyzer/.env` с tokens
 
 ### Шаг 3. Заполни Remnawave + Telegram настройки
 
 ```bash
-sudo nano /opt/xray-analyzer/log-analyzer/.env
+sudo nano /opt/xray-analyzer/.env
 ```
 
 Минимум что нужно поправить:
@@ -162,7 +162,7 @@ server {
 curl -fsS https://analyzer.example.com/health
 
 # Stats endpoint (нужен API_TOKEN из .env)
-source /opt/xray-analyzer/log-analyzer/.env
+source /opt/xray-analyzer/.env
 curl -sS -H "Authorization: Bearer $API_TOKEN" \
   https://analyzer.example.com/api/stats | jq
 ```
@@ -227,7 +227,7 @@ tail -3 /var/log/remnanode/access.log
 На ноде:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/log-analyzer/scripts/install-agent.sh \
+curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh \
   | sudo SERVER_URL="wss://analyzer.example.com/ws" \
          AUTH_TOKEN="<AGENT_TOKEN из server .env>" \
          NODE_ID="germany-1" \
@@ -246,7 +246,7 @@ curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/log-ana
 
 ```bash
 # На сервере, не на ноде
-source /opt/xray-analyzer/log-analyzer/.env
+source /opt/xray-analyzer/.env
 curl -sS -H "Authorization: Bearer $API_TOKEN" \
   https://analyzer.example.com/api/nodes | \
   jq '.[] | {node_id, is_connected, total_requests}'
@@ -371,7 +371,7 @@ sudo docker compose -f docker-compose.agent.yml up -d --force-recreate
 
 ```bash
 # На ноде
-docker compose -f /opt/xray-analyzer/log-analyzer/docker-compose.agent.yml logs --tail 30 xray-log-agent
+docker compose -f /opt/xray-analyzer/docker-compose.agent.yml logs --tail 30 xray-log-agent
 ```
 
 | Ошибка в логах | Причина | Фикс |
