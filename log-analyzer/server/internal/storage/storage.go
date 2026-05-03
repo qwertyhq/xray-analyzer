@@ -30,6 +30,13 @@ type Storage struct {
 	cache        *cache.Cache
 	nodeRemnaMap map[string]string
 
+	// nodeIDCache memoizes node_id (text) → NodeID (smallint) to avoid
+	// hitting the nodes() ON CONFLICT path on every storage write —
+	// that was burning the smallint identity sequence in <48h under
+	// production write rates.
+	nodeIDCacheMu sync.RWMutex
+	nodeIDCache   map[string]NodeID
+
 	closeOnce sync.Once
 }
 
@@ -56,9 +63,10 @@ func New(ctx context.Context, dsn string) (*Storage, error) {
 	sqlDB := stdlib.OpenDBFromPool(pool)
 
 	s := &Storage{
-		pool:  pool,
-		db:    sqlDB,
-		cache: cache.New(),
+		pool:        pool,
+		db:          sqlDB,
+		cache:       cache.New(),
+		nodeIDCache: make(map[string]NodeID),
 	}
 	if err := s.migrate(ctx); err != nil {
 		s.Close()
