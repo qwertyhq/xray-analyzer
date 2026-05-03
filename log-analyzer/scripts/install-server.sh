@@ -1,0 +1,266 @@
+#!/usr/bin/env bash
+# install-server.sh — установка main analyzer server
+#
+# Что делает:
+#   1. Проверяет ОС, права, минимальные ресурсы
+#   2. Устанавливает Docker + docker-compose-plugin (если нет)
+#   3. Клонирует репо в /opt/xray-analyzer (если запущен через curl|bash)
+#   4. Генерирует .env с случайными tokens
+#   5. Собирает images + поднимает стек
+#   6. Ждёт healthcheck'ов и печатает endpoints
+#
+# Использование:
+#   sudo bash install-server.sh                    # из локального чекаута
+#   curl -fsSL <raw_url>/install-server.sh | sudo bash
+#
+# Требования: Ubuntu 22.04+ / Debian 12+, 2+ CPU, 4+ GB RAM, 20+ GB диска
+#
+# Идемпотентно: повторный запуск не сломает существующую установку.
+
+set -euo pipefail
+
+# ─── Constants ──────────────────────────────────────────────────────────────
+
+REPO_URL="${REPO_URL:-https://github.com/qwertyhq/xray-analyzer.git}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/xray-analyzer}"
+COMPOSE_DIR="$INSTALL_DIR/log-analyzer"
+ENV_FILE="$COMPOSE_DIR/.env"
+MIN_RAM_MB=3500
+MIN_DISK_GB=15
+
+# ─── Colors ─────────────────────────────────────────────────────────────────
+
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+BLUE=$'\033[34m'
+BOLD=$'\033[1m'
+RESET=$'\033[0m'
+
+log()  { printf "%s[%s]%s %s\n"   "$BLUE"  "INFO"  "$RESET" "$*"; }
+ok()   { printf "%s[%s]%s %s\n"   "$GREEN" " OK "  "$RESET" "$*"; }
+warn() { printf "%s[%s]%s %s\n"   "$YELLOW" "WARN" "$RESET" "$*"; }
+err()  { printf "%s[%s]%s %s\n"   "$RED"   "FAIL" "$RESET" "$*" >&2; }
+
+die() { err "$*"; exit 1; }
+
+# ─── Pre-flight ─────────────────────────────────────────────────────────────
+
+[[ $EUID -eq 0 ]] || die "Запусти под root (sudo bash $0)"
+
+if [[ -f /etc/os-release ]]; then
+    . /etc/os-release
+    case "$ID" in
+        ubuntu|debian) ;;
+        *) warn "OS '$ID' не тестировалась. Скрипт может работать или нет." ;;
+    esac
+else
+    warn "Не могу определить ОС (/etc/os-release missing)"
+fi
+
+# Resources check
+TOTAL_RAM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+[[ $TOTAL_RAM -lt $MIN_RAM_MB ]] && warn "RAM ${TOTAL_RAM} MB < рекомендуемых ${MIN_RAM_MB} MB. Postgres tuning будет вяло."
+
+DISK_FREE_GB=$(df -BG --output=avail / | tail -1 | tr -d 'G ')
+[[ $DISK_FREE_GB -lt $MIN_DISK_GB ]] && die "Свободного места на / только ${DISK_FREE_GB} GB, нужно минимум ${MIN_DISK_GB} GB"
+
+ok "Pre-flight: $(uname -srm), RAM=${TOTAL_RAM} MB, free disk=${DISK_FREE_GB} GB"
+
+# ─── Install Docker ─────────────────────────────────────────────────────────
+
+if ! command -v docker >/dev/null 2>&1; then
+    log "Docker не найден. Устанавливаю официальный пакет..."
+
+    apt-get update -qq
+    apt-get install -qq -y ca-certificates curl gnupg
+
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/${ID}/gpg \
+        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+        https://download.docker.com/linux/${ID} \
+        $(. /etc/os-release && echo "${VERSION_CODENAME}") stable" \
+        > /etc/apt/sources.list.d/docker.list
+
+    apt-get update -qq
+    apt-get install -qq -y \
+        docker-ce docker-ce-cli containerd.io \
+        docker-buildx-plugin docker-compose-plugin
+
+    systemctl enable --now docker
+    ok "Docker установлен ($(docker --version))"
+else
+    ok "Docker уже установлен ($(docker --version))"
+fi
+
+if ! docker compose version >/dev/null 2>&1; then
+    die "docker compose plugin не работает. Установи docker-compose-plugin вручную."
+fi
+
+# ─── Clone repo ─────────────────────────────────────────────────────────────
+
+if [[ -d "$INSTALL_DIR/.git" ]]; then
+    log "Репо уже клонирован в $INSTALL_DIR — git pull..."
+    git -C "$INSTALL_DIR" fetch --quiet origin
+    git -C "$INSTALL_DIR" checkout --quiet main
+    git -C "$INSTALL_DIR" pull --quiet --ff-only origin main
+    ok "Репо обновлён до $(git -C "$INSTALL_DIR" rev-parse --short HEAD)"
+else
+    if [[ ! -d "$INSTALL_DIR" ]]; then
+        log "Клонирую $REPO_URL → $INSTALL_DIR"
+        if ! command -v git >/dev/null; then
+            apt-get install -qq -y git
+        fi
+        git clone --quiet "$REPO_URL" "$INSTALL_DIR"
+        ok "Клонирован: $(git -C "$INSTALL_DIR" rev-parse --short HEAD)"
+    else
+        die "$INSTALL_DIR существует, но не git-repo. Удали или используй другой путь через INSTALL_DIR=..."
+    fi
+fi
+
+[[ -d "$COMPOSE_DIR" ]] || die "Не нашёл $COMPOSE_DIR — структура репо изменилась?"
+
+# ─── Generate .env ──────────────────────────────────────────────────────────
+
+gen_secret() { openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p; }
+
+if [[ -f "$ENV_FILE" ]]; then
+    log ".env уже существует, не перезаписываю. Проверь что нужные ключи заполнены."
+else
+    log "Генерирую $ENV_FILE с случайными tokens..."
+    API_TOKEN_VAL="$(gen_secret)"
+    AGENT_TOKEN_VAL="$(gen_secret)"
+    POSTGRES_PASSWORD_VAL="$(gen_secret | head -c 32)"
+
+    cat > "$ENV_FILE" <<EOF
+# Generated by install-server.sh on $(date -Iseconds)
+# Регенерируй tokens если они утекли: openssl rand -hex 32
+
+# Authentication — REQUIRED
+API_TOKEN=${API_TOKEN_VAL}
+AGENT_TOKEN=${AGENT_TOKEN_VAL}
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD_VAL}
+
+# Remnawave integration — заполни вручную
+REMNAWAVE_ENABLED=false
+REMNAWAVE_URL=
+REMNAWAVE_API_TOKEN=
+REMNAWAVE_SYNC_INTERVAL=1m
+
+# Bridge architecture (при необходимости)
+BRIDGE_NODE_IDS=
+BRIDGE_CORRELATION_WINDOW=15s
+BRIDGE_INBOUND_PATTERN=^BRIDGE_.*_IN(_\\d+)?$
+
+# Node mapping (опционально)
+# NODE_REMNA_MAP=germany-1=Germany 2,est-1=Estonia,...
+
+# Telegram alerts — заполни вручную
+TELEGRAM_ENABLED=false
+TELEGRAM_TOKEN=
+TELEGRAM_CHAT_ID=
+
+# Threat detection
+SUSPICIOUS_REQUEST_COUNT=5
+SUSPICIOUS_TIME_WINDOW=1h
+
+# Threat-intel feeds (defaults OK)
+BLACKLIST_REMOTE_URL=https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/domains_all.lst
+BLACKLIST_RELOAD=5m
+
+# Aleria AI assistant (опционально)
+ALERIA_API_KEY=
+
+# Mapbox для UI geo map (опционально)
+NEXT_PUBLIC_MAPBOX_TOKEN=
+EOF
+
+    chmod 600 "$ENV_FILE"
+    ok "Создан $ENV_FILE (mode 600)"
+fi
+
+# ─── Build & start ──────────────────────────────────────────────────────────
+
+cd "$COMPOSE_DIR"
+
+log "Билдим analyzer-server image (Go + Next.js, обычно 2-5 минут)..."
+docker compose build analyzer-server 2>&1 | tail -5
+
+log "Поднимаем стек..."
+docker compose up -d
+
+# ─── Wait for health ────────────────────────────────────────────────────────
+
+log "Жду healthcheck'ов (timeout 90s)..."
+DEADLINE=$(( $(date +%s) + 90 ))
+while (( $(date +%s) < DEADLINE )); do
+    pg_health=$(docker inspect --format='{{.State.Health.Status}}' analyzer-postgres 2>/dev/null || echo "missing")
+    srv_health=$(docker inspect --format='{{.State.Health.Status}}' xray-log-analyzer 2>/dev/null || echo "missing")
+
+    if [[ "$pg_health" == "healthy" && "$srv_health" == "healthy" ]]; then
+        ok "Все контейнеры healthy"
+        break
+    fi
+    sleep 3
+done
+
+if [[ "$pg_health" != "healthy" || "$srv_health" != "healthy" ]]; then
+    err "Healthcheck не прошёл за 90s. pg=$pg_health srv=$srv_health"
+    err "Логи: docker compose -f $COMPOSE_DIR/docker-compose.yml logs"
+    exit 1
+fi
+
+# ─── Summary ────────────────────────────────────────────────────────────────
+
+API_TOKEN_VAL=$(grep -E '^API_TOKEN=' "$ENV_FILE" | cut -d= -f2-)
+AGENT_TOKEN_VAL=$(grep -E '^AGENT_TOKEN=' "$ENV_FILE" | cut -d= -f2-)
+
+cat <<EOF
+
+${BOLD}${GREEN}════════════════════════════════════════════════════════════════════${RESET}
+${BOLD}${GREEN}✓ Установка завершена${RESET}
+${BOLD}${GREEN}════════════════════════════════════════════════════════════════════${RESET}
+
+${BOLD}Endpoints (в локальной сети):${RESET}
+  • UI:   http://$(hostname -I | awk '{print $1}'):3925
+  • API:  http://$(hostname -I | awk '{print $1}'):8237/api/
+  • WS:   ws://$(hostname -I | awk '{print $1}'):8237/ws
+
+${BOLD}Tokens (сохрани, они в $ENV_FILE):${RESET}
+  • API_TOKEN:   ${API_TOKEN_VAL}
+  • AGENT_TOKEN: ${AGENT_TOKEN_VAL}
+
+${BOLD}Дальнейшие шаги:${RESET}
+  1. Настрой reverse-proxy (Caddy/nginx) с TLS на твоём домене.
+     Пример Caddyfile:
+       analyzer.example.com {
+         @ws path /ws*
+         reverse_proxy @ws localhost:8237
+         @api path /api/* /health
+         reverse_proxy @api localhost:8237
+         reverse_proxy localhost:3925
+       }
+
+  2. Заполни Remnawave + Telegram настройки в:
+       ${ENV_FILE}
+     После правок:
+       cd $COMPOSE_DIR && docker compose up -d
+
+  3. Установи агентов на каждой Xray-ноде:
+       sudo SERVER_URL="wss://analyzer.example.com/ws" \\
+            AUTH_TOKEN="${AGENT_TOKEN_VAL}" \\
+            NODE_ID="<unique-id>" \\
+            bash $COMPOSE_DIR/scripts/install-agent.sh
+
+  4. Healthcheck:
+       curl -fsS http://localhost:8237/health
+       curl -sS -H "Authorization: Bearer ${API_TOKEN_VAL}" http://localhost:8237/api/stats | jq
+
+${BOLD}Логи:${RESET}
+  cd $COMPOSE_DIR
+  docker compose logs -f analyzer-server
+
+EOF
