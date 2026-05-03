@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -577,6 +578,18 @@ func (s *Server) handleRemnawaveOnline(w http.ResponseWriter, r *http.Request) {
 		stats.LastSync = lastSync.Format("2006-01-02T15:04:05Z")
 	}
 
+	// "Online now" = real-time XTLS-tracked sum across all Remnawave nodes,
+	// rather than `OnlineAt > now() - 5min` (which was always 0 in the gap
+	// between 5-min sync cycles). Falls back to OnlineAt-window count if
+	// the storage path isn't available.
+	if s.storage != nil {
+		var nodesOnline sql.NullInt64
+		if err := s.storage.DB().QueryRowContext(r.Context(),
+			`SELECT COALESCE(SUM(users_online), 0) FROM remna_nodes`).Scan(&nodesOnline); err == nil {
+			stats.Now = int(nodesOnline.Int64)
+		}
+	}
+
 	for _, u := range users {
 		if u.Status == "ACTIVE" {
 			stats.TotalActive++
@@ -587,7 +600,8 @@ func (s *Server) handleRemnawaveOnline(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if u.OnlineAt.After(fiveMinAgo) {
+		if stats.Now == 0 && u.OnlineAt.After(fiveMinAgo) {
+			// Only used when XTLS sum unavailable above.
 			stats.Now++
 		}
 		if u.OnlineAt.After(fifteenMinAgo) {
