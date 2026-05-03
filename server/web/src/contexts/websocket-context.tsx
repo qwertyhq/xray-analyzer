@@ -53,15 +53,17 @@ interface DashboardUpdate {
   data: unknown;
 }
 
-import { getAuthToken } from "@/contexts/auth-context";
+import { useAuth } from "@/contexts/auth-context";
 
-// Get WebSocket URL based on environment
-function getWebSocketUrl(): string {
+// Build WebSocket URL with the auth token in the query string. The token
+// MUST be present before opening — without it the server immediately
+// closes the connection with 1006, which historically caused a 4-attempt
+// reconnect storm visible in the browser console before login finished.
+function buildWebSocketUrl(token: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const hostname = window.location.hostname;
   const port = window.location.port;
-  const token = getAuthToken();
-  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
+  const tokenParam = `?token=${encodeURIComponent(token)}`;
 
   // Development: Next.js on port 3925, Go backend on 8237 (same host)
   if (port === "3925") {
@@ -74,6 +76,7 @@ function getWebSocketUrl(): string {
 }
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
+  const { token, isAuthenticated } = useAuth();
   const [state, setState] = useState<WebSocketState>(defaultState);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -84,10 +87,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
+    if (!token) {
+      // No token yet — wait until auth settles. The effect below will
+      // call connect() again when `token` changes.
+      return;
+    }
 
-    const wsUrl = getWebSocketUrl();
-    console.log("[WS] Connecting to:", wsUrl);
-    
+    const wsUrl = buildWebSocketUrl(token);
+    console.log("[WS] Connecting to:", wsUrl.replace(/token=[^&]+/, "token=***"));
+
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -147,7 +155,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     ws.onerror = (error) => {
       console.error("[WS] Error:", error);
     };
-  }, []);
+  }, [token]);
 
   const refetch = useCallback(() => {
     // Force reconnect to get fresh data
@@ -156,7 +164,23 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Connect when auth settles with a token; close on logout.
   useEffect(() => {
+    if (!isAuthenticated || !token) {
+      // Auth flipped off (logout). Tear down any active connection.
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      reconnectAttempts.current = 0;
+      setState(prev => ({ ...prev, connected: false }));
+      return;
+    }
+
     connect();
 
     return () => {
@@ -167,7 +191,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         wsRef.current.close();
       }
     };
-  }, [connect]);
+  }, [connect, isAuthenticated, token]);
 
   return (
     <WebSocketContext.Provider value={{ ...state, refetch }}>

@@ -106,54 +106,202 @@ cd /opt/xray-analyzer
 docker compose up -d
 ```
 
-### Шаг 4. Reverse-proxy
+### Шаг 4. Reverse-proxy (с особым вниманием к WebSocket)
 
-Скрипт **не настраивает** Caddy/nginx — это специфично. Минимальный Caddyfile:
+Скрипт **не настраивает** Caddy/nginx — это специфично. **WebSocket — самая частая точка отказа на этом шаге**, поэтому важно настроить корректно с первого раза.
+
+#### Что должен пропустить proxy:
+
+| Path | Backend | Особенности |
+|---|---|---|
+| `/ws*` | `localhost:8237` | **WebSocket** — нужен Upgrade/Connection headers, длинный read timeout, no buffering |
+| `/api/*` | `localhost:8237` | Обычный HTTP REST |
+| `/health` | `localhost:8237` | Healthcheck |
+| `/` (всё остальное) | `localhost:3925` | Next.js UI |
+
+#### Caddy (рекомендуется — auto-HTTPS, простой синтаксис, WS работает out-of-the-box)
+
+`/etc/caddy/Caddyfile`:
 
 ```caddy
 analyzer.example.com {
-    @ws path /ws*
-    reverse_proxy @ws localhost:8237
+    # /ws* и /api/* идут на Go-backend
+    @backend path /ws* /api/* /health
+    reverse_proxy @backend localhost:8237
 
-    @api path /api/* /health
-    reverse_proxy @api localhost:8237
-
+    # Всё остальное — Next.js UI
     reverse_proxy localhost:3925
 }
 ```
 
-Сохрани в `/etc/caddy/Caddyfile`, перезагрузи: `sudo systemctl reload caddy`.
+Перезагрузи: `sudo systemctl reload caddy`.
 
-Для nginx:
+Caddy сам корректно обрабатывает WebSocket Upgrade — ничего дополнительно настраивать не нужно.
+
+#### nginx (нужны явные WS headers)
+
+`/etc/nginx/sites-available/analyzer.example.com`:
 
 ```nginx
+# WebSocket Upgrade map — обязательно для WS
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 server {
     listen 443 ssl http2;
     server_name analyzer.example.com;
 
-    # ssl_certificate ... (через certbot или ручной cert)
+    # SSL — если используешь certbot:
+    #   sudo certbot --nginx -d analyzer.example.com
+    ssl_certificate     /etc/letsencrypt/live/analyzer.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/analyzer.example.com/privkey.pem;
 
-    # WebSocket — ОБЯЗАТЕЛЬНО Upgrade headers
+    # WebSocket — критичные настройки
     location /ws {
-        proxy_pass http://localhost:8237;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_pass http://127.0.0.1:8237;
+        proxy_http_version 1.1;                       # ОБЯЗАТЕЛЬНО — HTTP/1.1 для Upgrade
+        proxy_set_header Upgrade $http_upgrade;       # пропустить Upgrade: websocket
+        proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $host;
-        proxy_read_timeout 86400;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WS — длинная сессия, отключаем буферизацию + большой timeout
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 86400s;                    # 24h — иначе WS отвалится при тишине
+        proxy_send_timeout 86400s;
     }
 
-    location ~ ^/(api|health) {
-        proxy_pass http://localhost:8237;
+    # Обычные API endpoints
+    location ~ ^/(api/|health$) {
+        proxy_pass http://127.0.0.1:8237;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Next.js UI
     location / {
-        proxy_pass http://localhost:3925;
+        proxy_pass http://127.0.0.1:3925;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;       # Next dev server использует HMR-WS
+        proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
+
+server {
+    listen 80;
+    server_name analyzer.example.com;
+    return 301 https://$host$request_uri;
+}
 ```
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/analyzer.example.com /etc/nginx/sites-enabled/
+sudo nginx -t                  # проверка синтаксиса
+sudo systemctl reload nginx
+```
+
+#### Apache (если очень надо)
+
+В `httpd.conf` или vhost-конфиге:
+
+```apache
+LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_http_module modules/mod_proxy_http.so
+LoadModule proxy_wstunnel_module modules/mod_proxy_wstunnel.so
+
+<VirtualHost *:443>
+    ServerName analyzer.example.com
+
+    SSLEngine on
+    SSLCertificateFile      /etc/letsencrypt/live/analyzer.example.com/fullchain.pem
+    SSLCertificateKeyFile   /etc/letsencrypt/live/analyzer.example.com/privkey.pem
+
+    # WebSocket — отдельная директива
+    ProxyPass        /ws    ws://127.0.0.1:8237/ws    upgrade=websocket timeout=86400
+    ProxyPassReverse /ws    ws://127.0.0.1:8237/ws
+
+    ProxyPass        /api   http://127.0.0.1:8237/api
+    ProxyPassReverse /api   http://127.0.0.1:8237/api
+    ProxyPass        /health http://127.0.0.1:8237/health
+    ProxyPassReverse /health http://127.0.0.1:8237/health
+
+    ProxyPass        /      http://127.0.0.1:3925/
+    ProxyPassReverse /      http://127.0.0.1:3925/
+
+    ProxyPreserveHost On
+    RequestHeader set X-Forwarded-Proto "https"
+</VirtualHost>
+```
+
+#### Cloudflare / другие edge-прокси
+
+Если перед твоим nginx/Caddy стоит **Cloudflare** или другой CDN:
+- WebSocket поддержка должна быть включена (Cloudflare: `Network → WebSockets: ON`)
+- На Free-плане WebSocket работает, но **idle timeout = 100 секунд** — WS будет рваться при отсутствии трафика. Решение: agent уже шлёт ping каждые 30s (см. `agent/internal/websocket/client.go`), это удерживает соединение.
+- Cloudflare Proxy режим (orange cloud) **поддерживает WSS** — менять не нужно.
+- **gRPC / HTTP/3 / "Rocket Loader"** — НЕ используй для analyzer.example.com, они ломают WebSocket.
+
+#### Проверка после настройки proxy
+
+```bash
+# 1. DNS резолвится?
+dig +short analyzer.example.com
+
+# 2. TCP открыт на 443?
+nc -zv analyzer.example.com 443
+
+# 3. TLS handshake работает?
+echo | openssl s_client -servername analyzer.example.com -connect analyzer.example.com:443 2>/dev/null | grep -E "subject=|issuer="
+
+# 4. /health отвечает 200?
+curl -fsS https://analyzer.example.com/health
+
+# 5. WebSocket Upgrade проходит? (HTTP 101 Switching Protocols)
+curl -i -N \
+  -H "Connection: Upgrade" \
+  -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" \
+  -H "Sec-WebSocket-Key: $(openssl rand -base64 16)" \
+  https://analyzer.example.com/ws
+```
+
+В шаге 5 ожидаемый ответ:
+
+```
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: ...
+```
+
+Если ты видишь `200 OK`, `404 Not Found` или `400 Bad Request` — proxy не настроен на WS Upgrade. См. таблицу troubleshooting в Части 5.
+
+#### Установить websocat для дополнительной проверки
+
+```bash
+# На любой машине с сетевым доступом
+cargo install websocat                          # если есть Rust
+# или
+sudo curl -fsSL -o /usr/local/bin/websocat \
+  https://github.com/vi/websocat/releases/latest/download/websocat.x86_64-unknown-linux-musl
+sudo chmod +x /usr/local/bin/websocat
+
+# Тест с правильным AGENT_TOKEN (из server .env)
+websocat -H="Authorization: Bearer $AGENT_TOKEN" wss://analyzer.example.com/ws
+```
+
+Если соединение остаётся открытым — proxy настроен правильно. Закроется сразу с `403` — токен неверный.
 
 ### Шаг 5. Проверка
 
@@ -365,19 +513,97 @@ sudo docker compose -f docker-compose.agent.yml up -d --force-recreate
 
 ## Часть 5 — Что-то сломалось
 
-### Агент не подключается
+### Агент не подключается (WebSocket failures)
+
+**Это частая проблема. Большинство случаев = неправильно настроенный reverse-proxy (см. Часть 1, Шаг 4) или неверный AUTH_TOKEN.**
+
+Сначала смотри логи агента:
 
 ```bash
-# На ноде
-docker compose -f /opt/xray-analyzer/docker-compose.agent.yml logs --tail 30 xray-log-agent
+# На агентной ноде
+docker compose -f /opt/xray-analyzer/docker-compose.agent.yml logs --tail 50 xray-log-agent
 ```
 
-| Ошибка в логах | Причина | Фикс |
+#### Таблица типичных ошибок
+
+| Что в логах агента | Причина | Куда смотреть |
 |---|---|---|
-| `403 forbidden` | wrong AUTH_TOKEN | Проверь что `AUTH_TOKEN` агента совпадает с `AGENT_TOKEN` сервера |
-| `tls: failed to verify` | invalid cert | Проверь что `SERVER_URL` использует правильный domain, не self-signed cert |
-| `connection refused` | reverse-proxy не пропускает WS | nginx нужен `Upgrade $http_upgrade` (см. шаг 4 выше) |
-| `no such file: /var/log/remnanode/access.log` | xray не пишет туда | См. Часть 2 шаг 1 |
+| `websocket: bad handshake` | Server вернул не 101. Чаще всего proxy не пропускает Upgrade headers | Часть 1 Шаг 4 → проверь nginx Upgrade/Connection headers; для Cloudflare — WebSockets включены? |
+| `403 Forbidden` | AUTH_TOKEN не совпадает с AGENT_TOKEN на сервере | На сервере: `grep AGENT_TOKEN /opt/xray-analyzer/.env`, на агенте: `grep AUTH_TOKEN /opt/xray-analyzer/.env`. Должны быть одинаковыми. |
+| `404 Not Found` | proxy не роутит `/ws` куда нужно | nginx: проверь `location /ws { proxy_pass http://127.0.0.1:8237; }` |
+| `400 Bad Request` | proxy буферизует или ломает Upgrade | nginx: `proxy_buffering off`, `proxy_http_version 1.1` |
+| `tls: failed to verify certificate` | self-signed cert / wrong domain | `openssl s_client -connect <server>:443` — посмотреть кто issuer. Если самоподписанный: нужен Let's Encrypt (через certbot или Caddy auto-HTTPS) |
+| `dial tcp: lookup ... no such host` | DNS не резолвится | `dig +short analyzer.example.com` на ноде. Если пусто — A-запись не настроена |
+| `connection refused` | server не слушает на этом порту | На сервере: `ss -tlnp \| grep 8237` — должен быть LISTEN. Проверь `docker ps` — analyzer-server up? |
+| `i/o timeout` / `connection reset` | firewall блокирует или idle timeout слишком короткий | Server: `ufw status` / `iptables -L`. Cloudflare Free — idle timeout 100s, agent ping каждые 30s должен спасать |
+| `no such file: /var/log/remnanode/access.log` | xray не пишет access log | См. Часть 2 Шаг 1 (config profile + volume mount) |
+| `i/o timeout` после `Connected` | proxy_read_timeout слишком короткий | nginx: `proxy_read_timeout 86400s;` обязательно |
+
+#### Пошаговая проверка с агентной ноды
+
+Запускай команды НА НОДЕ (не на сервере):
+
+```bash
+# 1. DNS резолвится?
+dig +short analyzer.example.com
+# Должен вернуть IP. Пусто → DNS не настроен.
+
+# 2. TCP открыт на 443? (или 80 если без TLS)
+nc -zv analyzer.example.com 443
+# "succeeded" = порт открыт. "Connection refused" / "timed out" = firewall или server down.
+
+# 3. TLS handshake работает?
+echo | openssl s_client -servername analyzer.example.com -connect analyzer.example.com:443 2>&1 | grep -E "subject=|verify return code"
+# Ожидаем "verify return code: 0 (ok)". 18 (self signed) / 21 = сертификат проблемный.
+
+# 4. /health отвечает 200?
+curl -fsS https://analyzer.example.com/health
+# 200 / "ok" = backend жив. 502 / 504 = proxy не достучался до backend. 404 = proxy не настроен.
+
+# 5. WebSocket handshake проходит?
+curl -i -N \
+  -H "Connection: Upgrade" \
+  -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" \
+  -H "Sec-WebSocket-Key: $(openssl rand -base64 16)" \
+  https://analyzer.example.com/ws
+# Ожидаем "HTTP/1.1 101 Switching Protocols". Любое другое = proxy/server проблема.
+
+# 6. С токеном (полная имитация агента, нужен websocat):
+websocat -H="Authorization: Bearer $AGENT_TOKEN_FROM_SERVER" wss://analyzer.example.com/ws
+# "Connected" и виcит = всё работает. "403" = токен неверный.
+```
+
+#### Если на шаге 4 вернулось `502 Bad Gateway`
+
+Backend не отвечает — на сервере проверь:
+
+```bash
+docker ps --filter name=xray-log-analyzer --format "{{.Status}}"
+# Должно быть "Up X (healthy)". Если "unhealthy" или нет — рестартнуть:
+cd /opt/xray-analyzer && docker compose restart analyzer-server
+
+curl -fsS http://localhost:8237/health
+# Если 200 локально, а через домен 502 → proxy промахивается с upstream-адресом.
+```
+
+#### Если на шаге 5 возвращается `200 OK` вместо `101`
+
+Proxy не пробрасывает Upgrade headers. Самое частое:
+- **nginx**: забыли `proxy_http_version 1.1` или `proxy_set_header Upgrade $http_upgrade`
+- **Cloudflare**: WebSockets выключены в Network settings, или включён "Rocket Loader"
+- **HAProxy**: нужен `option http-server-close` + `timeout tunnel 24h` для backend
+
+#### Логи на сервере
+
+Параллельно смотри что видит сервер:
+
+```bash
+# На сервере
+docker logs --since 2m xray-log-analyzer 2>&1 | grep -iE "agent|connect|ws"
+```
+
+Ожидаемое при подключении агента: строчка вида `agent connected: node_id=germany-1` или подобная. Если в логах ничего — request до сервера не доходит, проблема на уровне proxy/network.
 
 ### Дашборд показывает 0 пользователей
 
