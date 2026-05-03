@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { authFetch } from "@/contexts/auth-context";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -73,6 +74,7 @@ function getStatusBadge(status: string) {
 }
 
 export function RemnawaveUsersTable() {
+  const t = useTranslations("remnawaveUsersTable");
   const [stats, setStats] = useState<RemnawaveStats | null>(null);
   const [users, setUsers] = useState<RemnawaveUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -287,7 +289,7 @@ export function RemnawaveUsersTable() {
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Поиск по имени, email, телефону, telegram..."
+              placeholder={t("searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-8"
@@ -296,10 +298,10 @@ export function RemnawaveUsersTable() {
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[130px]">
-            <SelectValue placeholder="Статус" />
+            <SelectValue placeholder={t("statusFilter")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Все статусы</SelectItem>
+            <SelectItem value="all">{t("allStatuses")}</SelectItem>
             <SelectItem value="ACTIVE">Active</SelectItem>
             <SelectItem value="DISABLED">Disabled</SelectItem>
             <SelectItem value="LIMITED">Limited</SelectItem>
@@ -308,40 +310,40 @@ export function RemnawaveUsersTable() {
         </Select>
         <Select value={abuseFilter} onValueChange={setAbuseFilter}>
           <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="HWID" />
+            <SelectValue placeholder={t("abuseFilter")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Все</SelectItem>
-            <SelectItem value="exceeds">Превышен лимит</SelectItem>
+            <SelectItem value="all">{t("allAbuse")}</SelectItem>
+            <SelectItem value="exceeds">{t("exceedsLimit")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={String(minDevices)} onValueChange={(v) => setMinDevices(Number(v))}>
           <SelectTrigger className="w-[130px]">
-            <SelectValue placeholder="Устройства" />
+            <SelectValue placeholder={t("devicesFilter")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="0">Все устр.</SelectItem>
-            <SelectItem value="2">≥ 2 устр.</SelectItem>
-            <SelectItem value="3">≥ 3 устр.</SelectItem>
-            <SelectItem value="5">≥ 5 устр.</SelectItem>
+            <SelectItem value="0">{t("allDevices")}</SelectItem>
+            <SelectItem value="2">≥ 2 {t("devicesFilter").toLowerCase()}</SelectItem>
+            <SelectItem value="3">≥ 3 {t("devicesFilter").toLowerCase()}</SelectItem>
+            <SelectItem value="5">≥ 5 {t("devicesFilter").toLowerCase()}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
           <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Сортировка" />
+            <SelectValue placeholder={t("sortBy")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="username">По имени</SelectItem>
-            <SelectItem value="devices">По устройствам</SelectItem>
-            <SelectItem value="traffic">По трафику</SelectItem>
-            <SelectItem value="online">По онлайну</SelectItem>
+            <SelectItem value="username">{t("sortByName")}</SelectItem>
+            <SelectItem value="devices">{t("sortByDevices")}</SelectItem>
+            <SelectItem value="traffic">{t("sortByTraffic")}</SelectItem>
+            <SelectItem value="online">{t("sortByOnline")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {/* Results count */}
       <p className="text-sm text-muted-foreground">
-        Показано {paginatedUsers.length} из {filteredUsers.length} пользователей
+        {t("showing", { shown: paginatedUsers.length, total: filteredUsers.length })}
       </p>
 
       {/* Users Table */}
@@ -476,7 +478,7 @@ export function RemnawaveUsersTable() {
             {paginatedUsers.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  Пользователи не найдены
+                  {t("noUsers")}
                 </TableCell>
               </TableRow>
             )}
@@ -489,7 +491,7 @@ export function RemnawaveUsersTable() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Страница {page} из {totalPages}
+            {t("page", { page, total: totalPages })}
           </p>
           <div className="flex gap-2">
             <Button
@@ -499,7 +501,7 @@ export function RemnawaveUsersTable() {
               disabled={page === 1}
             >
               <ChevronLeft className="h-4 w-4" />
-              Назад
+              {t("prev")}
             </Button>
             <Button
               variant="outline"
@@ -507,7 +509,7 @@ export function RemnawaveUsersTable() {
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
-              Далее
+              {t("next")}
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

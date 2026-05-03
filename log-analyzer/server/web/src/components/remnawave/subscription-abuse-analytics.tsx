@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { authFetch } from "@/contexts/auth-context";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -114,15 +115,14 @@ function getRiskColor(level: string): string {
   }
 }
 
-function getRiskLabel(level: string): string {
-  switch (level) {
-    case "critical": return "Критический";
-    case "high": return "Высокий";
-    case "medium": return "Средний";
-    case "low": return "Низкий";
-    default: return "Чистый";
-  }
-}
+// getRiskLabel moved to use translations inside the component
+const riskLabelKeys: Record<string, string> = {
+  critical: "riskLabelCritical",
+  high: "riskLabelHigh",
+  medium: "riskLabelMedium",
+  low: "riskLabelLow",
+  clean: "riskLabelClean",
+};
 
 interface CombinedAbuseUser {
   // Common fields
@@ -185,12 +185,14 @@ interface SubscriptionAbuseAnalyticsProps {
   onHwidCleared?: () => void;
 }
 
-export function SubscriptionAbuseAnalytics({ 
+export function SubscriptionAbuseAnalytics({
   defaultPeriod = "24h",
   ipAbuseData,
   hwidAbuseData,
   onHwidCleared
 }: SubscriptionAbuseAnalyticsProps) {
+  const t = useTranslations("abuseAnalytics");
+  const tCommon = useTranslations("common");
   const [ipAbusers, setIpAbusers] = useState<SubscriptionAbuse[]>(ipAbuseData || []);
   const [hwidAbusers, setHwidAbusers] = useState<RemnawaveAbuseUser[]>(hwidAbuseData || []);
   const [loading, setLoading] = useState(!ipAbuseData && !hwidAbuseData);
@@ -308,7 +310,7 @@ export function SubscriptionAbuseAnalytics({
       }
     } catch (error) {
       console.error("Failed to clear HWID:", error);
-      alert(`Ошибка: ${error instanceof Error ? error.message : "Не удалось очистить HWID"}`);
+      alert(`${t("errorFailed", { error: error instanceof Error ? error.message : t("clearHwidTitle") })}`);
     } finally {
       setClearingHwid(null);
     }
@@ -430,40 +432,40 @@ export function SubscriptionAbuseAnalytics({
 
       // IP factors
       if (user.unique_ips >= 10) {
-        factors.push(`${user.unique_ips} уникальных IP`);
+        factors.push(t("uniqueIPFactors", { count: user.unique_ips }));
         score = Math.max(score, 60);
       } else if (user.unique_ips >= 5) {
-        factors.push(`${user.unique_ips} IP адресов`);
+        factors.push(t("ipFactors", { count: user.unique_ips }));
         score = Math.max(score, 40);
       }
 
       // Country factors
       if (user.unique_countries >= 5) {
-        factors.push(`${user.unique_countries} стран`);
+        factors.push(t("countryFactors", { count: user.unique_countries }));
         score += 20;
       } else if (user.unique_countries >= 3) {
-        factors.push(`${user.unique_countries} страны`);
+        factors.push(t("countryFew", { count: user.unique_countries }));
         score += 10;
       }
 
       // Node factors
       if (user.unique_nodes >= 5) {
-        factors.push(`${user.unique_nodes} нод`);
+        factors.push(t("nodeFactors", { count: user.unique_nodes }));
         score += 15;
       }
 
       // HWID excess
       if (user.excess_devices && user.excess_devices > 0) {
-        factors.push(`Превышение HWID лимита на ${user.excess_devices}`);
+        factors.push(t("hwidExcessFactor", { count: user.excess_devices }));
         score += 25 + (user.excess_devices * 10);
       } else if (user.device_limit && user.unique_hwids >= user.device_limit) {
-        factors.push("На пределе HWID");
+        factors.push(t("hwidAtLimitFactor"));
         score += 15;
       }
 
       // High request volume
       if (user.total_requests >= 10000) {
-        factors.push(`${user.total_requests.toLocaleString()} запросов`);
+        factors.push(t("requestsFactor", { count: user.total_requests.toLocaleString() }));
         score += 10;
       }
 
@@ -607,10 +609,10 @@ export function SubscriptionAbuseAnalytics({
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-4">
         <AlertTriangle className="h-12 w-12 opacity-50" />
-        <p className="text-lg">Не удалось загрузить данные: {error}</p>
+        <p className="text-lg">{t("errorFailed", { error })}</p>
         <Button variant="outline" onClick={fetchData}>
           <RefreshCw className="h-4 w-4 mr-2" />
-          Повторить
+          {t("errorRetry")}
         </Button>
       </div>
     );
@@ -624,12 +626,12 @@ export function SubscriptionAbuseAnalytics({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <UserX className="h-4 w-4 text-red-500" />
-              Подозрительных
+              {t("suspicious")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalSuspicious}</div>
-            <p className="text-xs text-muted-foreground">пользователей</p>
+            <p className="text-xs text-muted-foreground">{t("suspiciousUsers")}</p>
           </CardContent>
         </Card>
 
@@ -637,7 +639,7 @@ export function SubscriptionAbuseAnalytics({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <AlertCircle className="h-4 w-4 text-red-600" />
-              Критический
+              {t("critical")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -650,7 +652,7 @@ export function SubscriptionAbuseAnalytics({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-orange-600" />
-              Высокий
+              {t("high")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -663,7 +665,7 @@ export function SubscriptionAbuseAnalytics({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Shield className="h-4 w-4 text-yellow-600" />
-              Средний
+              {t("medium")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -676,12 +678,12 @@ export function SubscriptionAbuseAnalytics({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Monitor className="h-4 w-4 text-muted-foreground" />
-              Уникальных IP
+              {t("uniqueIPs")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalUniqueIPs}</div>
-            <p className="text-xs text-muted-foreground">адресов</p>
+            <p className="text-xs text-muted-foreground">{t("ipAddresses")}</p>
           </CardContent>
         </Card>
 
@@ -689,12 +691,12 @@ export function SubscriptionAbuseAnalytics({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Smartphone className="h-4 w-4 text-muted-foreground" />
-              HWID устройств
+              {t("hwidDevices")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalUniqueHWIDs}</div>
-            <p className="text-xs text-muted-foreground">устройств</p>
+            <p className="text-xs text-muted-foreground">{t("devices")}</p>
           </CardContent>
         </Card>
       </div>
@@ -703,7 +705,7 @@ export function SubscriptionAbuseAnalytics({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Средний Abuse Score</CardTitle>
+            <CardTitle className="text-sm font-medium">{t("avgAbuseScore")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-4">
@@ -720,7 +722,7 @@ export function SubscriptionAbuseAnalytics({
                   value={stats.avgAbuseScore} 
                   className="h-2"
                 />
-                <p className="text-xs text-muted-foreground mt-1">из 100</p>
+                <p className="text-xs text-muted-foreground mt-1">{t("outOf100")}</p>
               </div>
             </div>
           </CardContent>
@@ -730,7 +732,7 @@ export function SubscriptionAbuseAnalytics({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Globe className="h-4 w-4" />
-              Топ стран
+              {t("topCountries")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -742,7 +744,7 @@ export function SubscriptionAbuseAnalytics({
                 </Badge>
               ))}
               {stats.topCountries.length === 0 && (
-                <span className="text-sm text-muted-foreground">Нет данных о странах</span>
+                <span className="text-sm text-muted-foreground">{t("noCountryData")}</span>
               )}
             </div>
           </CardContent>
@@ -754,9 +756,9 @@ export function SubscriptionAbuseAnalytics({
         <CardHeader className="pb-3">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <CardTitle>Подозрительные пользователи</CardTitle>
+              <CardTitle>{t("suspiciousUsers2")}</CardTitle>
               <CardDescription>
-                Объединённый анализ по IP адресам и HWID устройствам
+                {t("combinedAnalysis")}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -772,7 +774,7 @@ export function SubscriptionAbuseAnalytics({
                       <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Синхронизировать HWID из Remnawave</TooltipContent>
+                  <TooltipContent>{t("syncTooltip")}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
@@ -783,7 +785,7 @@ export function SubscriptionAbuseAnalytics({
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Поиск по email или username..."
+              placeholder={t("searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-8"
@@ -797,11 +799,11 @@ export function SubscriptionAbuseAnalytics({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1h">1ч</SelectItem>
-                <SelectItem value="6h">6ч</SelectItem>
-                <SelectItem value="24h">24ч</SelectItem>
-                <SelectItem value="7d">7д</SelectItem>
-                <SelectItem value="30d">30д</SelectItem>
+                <SelectItem value="1h">{t("period1h")}</SelectItem>
+                <SelectItem value="6h">{t("period6h")}</SelectItem>
+                <SelectItem value="24h">{t("period24h")}</SelectItem>
+                <SelectItem value="7d">{t("period7d")}</SelectItem>
+                <SelectItem value="30d">{t("period30d")}</SelectItem>
               </SelectContent>
             </Select>
             
@@ -822,35 +824,35 @@ export function SubscriptionAbuseAnalytics({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Все</SelectItem>
-                <SelectItem value="critical">🔴 Крит</SelectItem>
-                <SelectItem value="high">🟠 Выс</SelectItem>
-                <SelectItem value="medium">🟡 Сред</SelectItem>
-                <SelectItem value="low">🟢 Низ</SelectItem>
+                <SelectItem value="all">{t("riskAll")}</SelectItem>
+                <SelectItem value="critical">{t("riskCritical")}</SelectItem>
+                <SelectItem value="high">{t("riskHigh")}</SelectItem>
+                <SelectItem value="medium">{t("riskMedium")}</SelectItem>
+                <SelectItem value="low">{t("riskLow")}</SelectItem>
               </SelectContent>
             </Select>
-            
+
             <Select value={hwidFilter} onValueChange={(v) => setHwidFilter(v as typeof hwidFilter)}>
               <SelectTrigger className="h-8 w-auto min-w-[85px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">HWID: все</SelectItem>
-                <SelectItem value="exceeded">Превышен</SelectItem>
-                <SelectItem value="at_limit">На лимите</SelectItem>
-                <SelectItem value="with_hwid">С HWID</SelectItem>
+                <SelectItem value="all">{t("hwidAll")}</SelectItem>
+                <SelectItem value="exceeded">{t("hwidExceeded")}</SelectItem>
+                <SelectItem value="at_limit">{t("hwidAtLimit")}</SelectItem>
+                <SelectItem value="with_hwid">{t("hwidWithHwid")}</SelectItem>
               </SelectContent>
             </Select>
-            
+
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
               <SelectTrigger className="h-8 w-auto min-w-[75px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="score">⚡ Риск</SelectItem>
-                <SelectItem value="ips">🌐 IP</SelectItem>
-                <SelectItem value="hwids">📱 HWID</SelectItem>
-                <SelectItem value="requests">📊 Запр</SelectItem>
+                <SelectItem value="score">{t("sortByRisk")}</SelectItem>
+                <SelectItem value="ips">{t("sortByIPs")}</SelectItem>
+                <SelectItem value="hwids">{t("sortByHWIDs")}</SelectItem>
+                <SelectItem value="requests">{t("sortByRequests")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -858,16 +860,16 @@ export function SubscriptionAbuseAnalytics({
           {/* Results count */}
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Users className="h-4 w-4" />
-            <span>Показано {filteredAbusers.length} из {combinedAbusers.length} пользователей</span>
+            <span>{t("showing", { filtered: filteredAbusers.length, total: combinedAbusers.length })}</span>
           </div>
 
           {/* Users List */}
           {filteredAbusers.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <CheckCircle2 className="h-12 w-12 opacity-20 mb-3" />
-              <p className="text-lg font-medium">Подозрительная активность не обнаружена</p>
+              <p className="text-lg font-medium">{t("noSuspiciousTitle")}</p>
               <p className="text-sm">
-                {search ? "Нет пользователей по вашему запросу" : `Нет пользователей с ${minIPs}+ IP адресами`}
+                {search ? t("noSuspiciousSearch") : t("noSuspiciousDesc", { minIPs })}
               </p>
             </div>
           ) : (
@@ -925,7 +927,7 @@ export function SubscriptionAbuseAnalytics({
                                     <span>•</span>
                                     <span className="flex items-center gap-1">
                                       <Globe className="h-3 w-3" />
-                                      {user.unique_countries} стран
+                                      {t("countries", { count: user.unique_countries })}
                                     </span>
                                   </>
                                 )}
@@ -950,7 +952,7 @@ export function SubscriptionAbuseAnalytics({
                                       {user.unique_ips}
                                     </Badge>
                                   </TooltipTrigger>
-                                  <TooltipContent>Уникальных IP</TooltipContent>
+                                  <TooltipContent>{t("uniqueIPsTooltip")}</TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
 
@@ -967,8 +969,8 @@ export function SubscriptionAbuseAnalytics({
                                     </Badge>
                                   </TooltipTrigger>
                                   <TooltipContent>
-                                    HWID устройств
-                                    {user.excess_devices && user.excess_devices > 0 && ` (превышение на ${user.excess_devices})`}
+                                    {t("hwidTooltip")}
+                                    {user.excess_devices && user.excess_devices > 0 && t("hwidExcessTooltip", { count: user.excess_devices })}
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
@@ -990,7 +992,7 @@ export function SubscriptionAbuseAnalytics({
 
                             {/* Risk Badge */}
                             <Badge variant="outline" className={getRiskColor(riskLevel)}>
-                              {getRiskLabel(riskLevel)}
+                              {t(riskLabelKeys[riskLevel] as Parameters<typeof t>[0])}
                             </Badge>
 
                             {/* Clear HWID button */}
@@ -1013,20 +1015,18 @@ export function SubscriptionAbuseAnalytics({
                                 </AlertDialogTrigger>
                                 <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                                   <AlertDialogHeader>
-                                    <AlertDialogTitle>Очистить HWID устройства?</AlertDialogTitle>
+                                    <AlertDialogTitle>{t("clearHwidTitle")}</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      Будут удалены все устройства пользователя{" "}
-                                      <span className="font-medium text-foreground">{user.username || user.user_email}</span>.
-                                      Пользователю придётся заново подключить устройства.
+                                      {t("clearHwidDesc", { username: user.username || user.user_email })}
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
-                                    <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                    <AlertDialogCancel>{tCommon("cancel")}</AlertDialogCancel>
                                     <AlertDialogAction
                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                       onClick={() => user.uuid && handleClearHwid(user.uuid)}
                                     >
-                                      Очистить HWID
+                                      {t("clearHwidAction")}
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
@@ -1063,7 +1063,7 @@ export function SubscriptionAbuseAnalytics({
                             <div>
                               <div className="text-sm font-medium mb-2 flex items-center gap-2">
                                 <AlertTriangle className="h-4 w-4 text-orange-500" />
-                                Факторы риска
+                                {t("riskFactors")}
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 {user.risk_factors.map((factor, i) => (
@@ -1080,7 +1080,7 @@ export function SubscriptionAbuseAnalytics({
                             <div>
                               <div className="text-sm font-medium mb-2 flex items-center gap-2">
                                 <Monitor className="h-4 w-4" />
-                                IP адреса ({user.ips.length})
+                                {t("ipAddressesSection", { count: user.ips.length })}
                               </div>
                               <div className="grid gap-2 max-h-48 overflow-y-auto">
                                 {user.ips.slice(0, 10).map((ip) => (
@@ -1104,7 +1104,7 @@ export function SubscriptionAbuseAnalytics({
                                 ))}
                                 {user.ips.length > 10 && (
                                   <p className="text-xs text-muted-foreground">
-                                    ... и ещё {user.ips.length - 10} IP адресов
+                                    {t("moreIPs", { count: user.ips.length - 10 })}
                                   </p>
                                 )}
                               </div>
@@ -1116,10 +1116,10 @@ export function SubscriptionAbuseAnalytics({
                             <div>
                               <div className="text-sm font-medium mb-2 flex items-center gap-2">
                                 <Smartphone className="h-4 w-4" />
-                                HWID устройства ({user.hwid_devices.length})
+                                {t("hwidDevicesSection", { count: user.hwid_devices.length })}
                                 {user.device_limit && (
                                   <span className="text-muted-foreground font-normal">
-                                    / лимит: {user.device_limit}
+                                    {t("deviceLimit", { limit: user.device_limit })}
                                   </span>
                                 )}
                               </div>
@@ -1156,7 +1156,7 @@ export function SubscriptionAbuseAnalytics({
                             <div>
                               <div className="text-sm font-medium mb-2 flex items-center gap-2">
                                 <Globe className="h-4 w-4" />
-                                Страны ({user.countries.length})
+                                {t("countriesSection", { count: user.countries.length })}
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 {user.countries.map((c) => (
@@ -1173,7 +1173,7 @@ export function SubscriptionAbuseAnalytics({
                           {user.last_activity && isValidDate(user.last_activity) && (
                             <div className="text-xs text-muted-foreground flex items-center gap-1">
                               <Clock className="h-3 w-3" />
-                              Последняя активность: {formatDistanceToNow(new Date(user.last_activity), { addSuffix: true })}
+                              {t("lastActivity")} {formatDistanceToNow(new Date(user.last_activity), { addSuffix: true })}
                             </div>
                           )}
                         </div>

@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { StatCard, StatCardGrid } from "@/components/threatintel/stat-card";
 import { Wifi, WifiOff, Users, Activity, ShieldAlert, AlertTriangle, ShieldX } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 // Calculate risk score (same logic as in users-table)
 function calculateRiskScore(user: { total_requests: number; blacklist_hits: number; last_blacklist_hit?: string }) {
@@ -29,6 +30,8 @@ function calculateRiskScore(user: { total_requests: number; blacklist_hits: numb
 }
 
 export default function UsersPage() {
+  const t = useTranslations("users");
+  const tCommon = useTranslations("common");
   const { users, loading, connected } = useWsUsers();
   const { stats } = useWsStats();
 
@@ -70,9 +73,9 @@ export default function UsersPage() {
     <div className="p-4 md:p-8 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Users</h2>
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t("title")}</h2>
           <p className="text-sm text-muted-foreground">
-            All users across all nodes with risk assessment
+            {t("description")}
           </p>
         </div>
         <Badge 
@@ -82,12 +85,12 @@ export default function UsersPage() {
           {connected ? (
             <>
               <Wifi className="h-3 w-3" />
-              Live
+              {tCommon("live")}
             </>
           ) : (
             <>
               <WifiOff className="h-3 w-3" />
-              Disconnected
+              {tCommon("disconnected")}
             </>
           )}
         </Badge>
@@ -95,33 +98,33 @@ export default function UsersPage() {
 
       <StatCardGrid columns={5}>
         <StatCard
-          label="Total Users"
+          label={t("totalUsers")}
           value={(stats.total_unique_users || users.length).toLocaleString()}
           icon={<Users className="h-4 w-4" />}
         />
         <StatCard
-          label="Total Requests"
+          label={t("totalRequests")}
           value={totalRequests.toLocaleString()}
           icon={<Activity className="h-4 w-4" />}
         />
         <StatCard
-          label="High Risk"
+          label={t("highRisk")}
           value={highRisk}
-          subValue="Score ≥ 70"
+          subValue={t("highRiskSub")}
           icon={<ShieldAlert className="h-4 w-4" />}
           variant="danger"
         />
         <StatCard
-          label="Medium Risk"
+          label={t("mediumRisk")}
           value={mediumRisk}
-          subValue="Score 40-69"
+          subValue={t("mediumRiskSub")}
           icon={<AlertTriangle className="h-4 w-4" />}
           variant="warning"
         />
         <StatCard
-          label="Blacklist Hits"
+          label={t("blacklistHits")}
           value={totalBlacklistHits.toLocaleString()}
-          subValue={`${blacklistUsers.length} users affected`}
+          subValue={t("usersAffected", { count: blacklistUsers.length })}
           icon={<ShieldX className="h-4 w-4" />}
           variant="danger"
         />
@@ -129,20 +132,20 @@ export default function UsersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>User Activity</CardTitle>
+          <CardTitle>{t("userActivity")}</CardTitle>
           <CardDescription>
-            Filter by node, search by email/IP, sort by risk score
+            {t("filterDesc")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="all">
             <TabsList>
               <TabsTrigger value="all">
-                All Users
+                {t("allUsers")}
                 <Badge variant="secondary" className="ml-2">{users.length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="blacklist">
-                Flagged
+                {t("flagged")}
                 <Badge variant="destructive" className="ml-2">{blacklistUsers.length}</Badge>
               </TabsTrigger>
             </TabsList>

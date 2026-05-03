@@ -157,7 +157,7 @@ export default function CorrelationPage() {
   useEffect(() => {
     fetchData();
     
-    // Авто-обновление каждые 10 секунд (мгновенно из кэша)
+    // Auto-refresh every 10 seconds (instant from cache)
     const interval = setInterval(() => {
       fetchData(true);
     }, 10000);

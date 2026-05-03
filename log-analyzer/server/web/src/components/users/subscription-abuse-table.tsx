@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { authFetch } from "@/contexts/auth-context";
 import Link from "next/link";
 import {
@@ -70,10 +71,12 @@ interface SubscriptionAbuseTableProps {
   defaultMinIPs?: number;
 }
 
-export function SubscriptionAbuseTable({ 
+export function SubscriptionAbuseTable({
   defaultPeriod = "24h",
   defaultMinIPs = 3
 }: SubscriptionAbuseTableProps) {
+  const t = useTranslations("subscriptionAbuse");
+  const tCommon = useTranslations("common");
   const [abusers, setAbusers] = useState<SubscriptionAbuse[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -141,7 +144,7 @@ export function SubscriptionAbuseTable({
       await fetchData();
     } catch (error) {
       console.error("Failed to clear HWID:", error);
-      alert(`Ошибка: ${error instanceof Error ? error.message : "Не удалось очистить HWID"}`);
+      alert(`${t("errorPrefix")} ${error instanceof Error ? error.message : t("errorFailed")}`);
     } finally {
       setClearingHwid(null);
     }
@@ -239,7 +242,7 @@ export function SubscriptionAbuseTable({
         <div className="relative">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Поиск по email или username..."
+            placeholder={t("searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8"
@@ -250,7 +253,7 @@ export function SubscriptionAbuseTable({
         <div className="flex flex-wrap gap-2 items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Users className="h-4 w-4" />
-            <span>{filteredAbusers.length} из {abusers.length} пользователей</span>
+            <span>{t("usersCount", { filtered: filteredAbusers.length, total: abusers.length })}</span>
           </div>
           <div className="flex flex-wrap gap-2">
             <Select value={period} onValueChange={(v) => setPeriod(v as TimeRange)}>
@@ -258,11 +261,11 @@ export function SubscriptionAbuseTable({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1h">1 час</SelectItem>
-                <SelectItem value="6h">6 часов</SelectItem>
-                <SelectItem value="24h">24 часа</SelectItem>
-                <SelectItem value="7d">7 дней</SelectItem>
-                <SelectItem value="30d">30 дней</SelectItem>
+                <SelectItem value="1h">{t("period1h")}</SelectItem>
+                <SelectItem value="6h">{t("period6h")}</SelectItem>
+                <SelectItem value="24h">{t("period24h")}</SelectItem>
+                <SelectItem value="7d">{t("period7d")}</SelectItem>
+                <SelectItem value="30d">{t("period30d")}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={String(minIPs)} onValueChange={(v) => setMinIPs(Number(v))}>
@@ -281,7 +284,7 @@ export function SubscriptionAbuseTable({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="0">Все HWID</SelectItem>
+                <SelectItem value="0">{t("allHwid")}</SelectItem>
                 <SelectItem value="2">≥ 2 HWID</SelectItem>
                 <SelectItem value="3">≥ 3 HWID</SelectItem>
                 <SelectItem value="5">≥ 5 HWID</SelectItem>
@@ -292,10 +295,10 @@ export function SubscriptionAbuseTable({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="score">По риску</SelectItem>
-                <SelectItem value="ips">По кол-ву IP</SelectItem>
-                <SelectItem value="hwids">По кол-ву HWID</SelectItem>
-                <SelectItem value="requests">По запросам</SelectItem>
+                <SelectItem value="score">{t("sortByRisk")}</SelectItem>
+                <SelectItem value="ips">{t("sortByIPs")}</SelectItem>
+                <SelectItem value="hwids">{t("sortByHWIDs")}</SelectItem>
+                <SelectItem value="requests">{t("sortByRequests")}</SelectItem>
               </SelectContent>
             </Select>
             <TooltipProvider>
@@ -311,7 +314,7 @@ export function SubscriptionAbuseTable({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Синхронизировать HWID из Remnawave</p>
+                  <p>{t("syncTooltip")}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -322,8 +325,8 @@ export function SubscriptionAbuseTable({
       {filteredAbusers.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
           <Users className="h-12 w-12 opacity-20 mb-3" />
-          <p className="text-lg font-medium">Подозрительная активность не обнаружена</p>
-          <p className="text-sm">Нет пользователей с {minIPs}+ IP{minHWIDs > 0 ? ` и ${minHWIDs}+ HWID` : ""}</p>
+          <p className="text-lg font-medium">{t("noSuspiciousTitle")}</p>
+          <p className="text-sm">{t("noSuspiciousDesc", { minIPs, hwids: minHWIDs > 0 ? t("noSuspiciousDescHwid", { minHWIDs }) : "" })}</p>
         </div>
       ) : (
         <div className="space-y-2 max-h-[600px] overflow-y-auto scrollbar-thin pr-1">
@@ -496,20 +499,18 @@ export function SubscriptionAbuseTable({
                             </AlertDialogTrigger>
                             <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Очистить HWID устройства?</AlertDialogTitle>
+                                <AlertDialogTitle>{t("clearHwidTitle")}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Будут удалены все {abuser.unique_hwids} устройств пользователя{" "}
-                                  <span className="font-medium text-foreground">{abuser.username || abuser.user_email}</span>.
-                                  Пользователю придётся заново подключить устройства.
+                                  {t("clearHwidDesc", { count: abuser.unique_hwids, username: abuser.username || abuser.user_email })}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                <AlertDialogCancel>{tCommon("cancel")}</AlertDialogCancel>
                                 <AlertDialogAction
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                 onClick={() => handleClearHwid(abuser.user_uuid!)}
                               >
-                                Очистить HWID
+                                {t("clearHwidAction")}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -571,7 +572,7 @@ export function SubscriptionAbuseTable({
       {totalPages > 1 && (
         <div className="flex items-center justify-between pt-2">
           <p className="text-sm text-muted-foreground">
-            Страница {page} из {totalPages}
+            {t("page", { page, total: totalPages })}
           </p>
           <div className="flex gap-2">
             <Button
@@ -581,7 +582,7 @@ export function SubscriptionAbuseTable({
               disabled={page === 1}
             >
               <ChevronLeft className="h-4 w-4" />
-              Назад
+              {t("prev")}
             </Button>
             <Button
               variant="outline"
@@ -589,7 +590,7 @@ export function SubscriptionAbuseTable({
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
-              Далее
+              {t("next")}
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

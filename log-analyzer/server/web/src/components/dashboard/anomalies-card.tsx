@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, TrendingUp, User } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { isValidDate } from "@/lib/utils/date";
 
@@ -26,12 +27,13 @@ const anomalyColors = {
   user_spike: "default",
 } as const;
 
-// Генерируем уникальный ключ для аномалии
+// Generate a unique key for an anomaly
 function getAnomalyKey(anomaly: StatsAnomaly): string {
   return `${anomaly.type}-${anomaly.hour}-${anomaly.user_email || "global"}-${anomaly.deviation}`;
 }
 
 export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
+  const t = useTranslations("anomalies");
   const prevAnomaliesRef = useRef<Set<string>>(new Set());
   const [newAnomalyKeys, setNewAnomalyKeys] = useState<Set<string>>(new Set());
 
@@ -39,7 +41,7 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
     const currentKeys = new Set(anomalies.map(getAnomalyKey));
     const newKeys = new Set<string>();
 
-    // Находим новые аномалии
+    // Find new anomalies
     currentKeys.forEach((key) => {
       if (!prevAnomaliesRef.current.has(key)) {
         newKeys.add(key);
@@ -49,7 +51,7 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
     if (newKeys.size > 0) {
       setNewAnomalyKeys(newKeys);
 
-      // Убираем подсветку через 2 секунды
+      // Remove highlight after 2 seconds
       const timer = setTimeout(() => {
         setNewAnomalyKeys(new Set());
       }, 2000);
@@ -57,11 +59,11 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
       return () => clearTimeout(timer);
     }
 
-    // Обновляем предыдущее состояние
+    // Update previous state
     prevAnomaliesRef.current = currentKeys;
   }, [anomalies]);
 
-  // Обновляем ref после каждого рендера
+  // Update ref after each render
   useEffect(() => {
     prevAnomaliesRef.current = new Set(anomalies.map(getAnomalyKey));
   }, [anomalies]);
@@ -72,7 +74,7 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
-            Anomalies
+            {t("title")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -91,7 +93,7 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
       <CardHeader className="pb-3">
         <CardTitle className="text-sm sm:text-base flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-          Anomalies
+          {t("title")}
           {anomalies.length > 0 && (
             <Badge variant="destructive" className="ml-auto">
               {anomalies.length}
@@ -102,7 +104,7 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
       <CardContent>
         {anomalies.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
-            No anomalies detected
+            {t("noAnomalies")}
           </p>
         ) : (
           <div className="space-y-3 max-h-[350px] overflow-y-auto scrollbar-thin pr-1">
@@ -154,7 +156,7 @@ export function AnomaliesCard({ anomalies, loading }: AnomaliesCardProps) {
                       {anomaly.deviation.toFixed(1)}x
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      vs baseline
+                      {t("vsBaseline")}
                     </p>
                   </div>
                 </div>

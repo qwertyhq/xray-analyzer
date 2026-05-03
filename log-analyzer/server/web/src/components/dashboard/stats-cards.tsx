@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Activity, Server, Users, ShieldAlert, UserCheck } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Stats } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -135,26 +136,28 @@ function StatCard({
 }
 
 export function StatsCards({ stats }: StatsCardsProps) {
+  const t = useTranslations("stats");
+
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
       <StatCard
-        title="Total Requests"
+        title={t("totalRequests")}
         value={stats.total_requests}
         icon={Activity}
-        description="Processed log entries"
+        description={t("processedLogs")}
       />
 
       <StatCard
-        title="Blacklist Hits"
+        title={t("blacklistHits")}
         value={stats.total_blacklist}
         icon={ShieldAlert}
-        description="Suspicious destinations"
+        description={t("suspiciousDestinations")}
         valueClassName="text-destructive"
       />
 
       <Card className="transition-all duration-300">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Nodes</CardTitle>
+          <CardTitle className="text-sm font-medium">{t("nodes")}</CardTitle>
           <Server className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
@@ -165,24 +168,24 @@ export function StatsCards({ stats }: StatsCardsProps) {
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Online / Total
+            {t("nodesOnlineTotal")}
           </p>
         </CardContent>
       </Card>
 
       <StatCard
-        title="Online Users"
+        title={t("onlineUsers")}
         value={stats.online_users || 0}
         icon={UserCheck}
-        description="Active in last minute"
+        description={t("activeLastMinute")}
         valueClassName="text-green-500"
       />
 
       <StatCard
-        title="Total Users"
+        title={t("totalUsers")}
         value={stats.total_unique_users || 0}
         icon={Users}
-        description="Across all nodes"
+        description={t("acrossAllNodes")}
       />
     </div>
   );

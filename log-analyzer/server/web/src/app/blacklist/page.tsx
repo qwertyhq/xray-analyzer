@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink, Wifi, WifiOff, Search } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { format } from "date-fns";
 import { TimeRange, BlacklistAnalytics } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
@@ -43,6 +44,8 @@ import {
 } from "recharts";
 
 export default function BlacklistPage() {
+  const t = useTranslations("blacklist");
+  const tCommon = useTranslations("common");
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
   const { blacklist: wsBlacklist, loading: wsLoading, connected } = useWsBlacklist();
   const [httpAnalytics, setHttpAnalytics] = useState<BlacklistAnalytics | null>(null);
@@ -192,12 +195,12 @@ export default function BlacklistPage() {
   }
 
   const timeLabels: Record<TimeRange, string> = {
-    "1h": "Last Hour",
-    "6h": "Last 6 Hours",
-    "24h": "Last 24 Hours",
-    "7d": "Last 7 Days",
-    "30d": "Last 30 Days",
-    "custom": "Custom",
+    "1h": t("timeLastHour"),
+    "6h": t("timeLast6Hours"),
+    "24h": t("timeLast24Hours"),
+    "7d": t("timeLast7Days"),
+    "30d": t("timeLast30Days"),
+    "custom": t("timeCustom"),
   };
 
   // Prepare chart data
@@ -212,10 +215,10 @@ export default function BlacklistPage() {
         <div>
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
             <ShieldAlert className="h-5 w-5 sm:h-6 sm:w-6 text-destructive" />
-            Blacklist Analytics
+            {t("title")}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Detailed analysis of blocked resource access
+            {t("description")}
           </p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
@@ -226,12 +229,12 @@ export default function BlacklistPage() {
             {connected ? (
               <>
                 <Wifi className="h-3 w-3" />
-                Live
+                {tCommon("live")}
               </>
             ) : (
               <>
                 <WifiOff className="h-3 w-3" />
-                Disconnected
+                {tCommon("disconnected")}
               </>
             )}
           </Badge>
@@ -242,32 +245,32 @@ export default function BlacklistPage() {
       {/* Stats Cards */}
       <StatCardGrid columns={4}>
         <StatCard
-          label="Total Hits"
+          label={t("totalHits")}
           value={analytics.total_hits.toLocaleString()}
           subValue={timeLabels[timeRange]}
           icon={<TrendingUp className="h-4 w-4" />}
           variant="danger"
         />
         <StatCard
-          label="Unique Users"
+          label={t("uniqueUsers")}
           value={analytics.unique_users}
-          subValue="Accessed blocked resources"
+          subValue={t("accessedBlocked")}
           icon={<Users className="h-4 w-4" />}
           variant="muted"
         />
         <StatCard
-          label="Unique Domains"
+          label={t("uniqueDomains")}
           value={analytics.unique_domains}
-          subValue="Blocked destinations"
+          subValue={t("blockedDestinations")}
           icon={<Globe className="h-4 w-4" />}
           variant="muted"
         />
         <StatCard
-          label="Avg per User"
-          value={analytics.unique_users > 0 
-            ? (analytics.total_hits / analytics.unique_users).toFixed(1) 
+          label={t("avgPerUser")}
+          value={analytics.unique_users > 0
+            ? (analytics.total_hits / analytics.unique_users).toFixed(1)
             : "0"}
-          subValue="Hits per user"
+          subValue={t("hitsPerUser")}
           icon={<ShieldAlert className="h-4 w-4" />}
           variant="muted"
         />
@@ -277,8 +280,8 @@ export default function BlacklistPage() {
       {chartData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Blacklist Hits Over Time</CardTitle>
-            <CardDescription>Hourly distribution of blocked requests</CardDescription>
+            <CardTitle>{t("hitsOverTime")}</CardTitle>
+            <CardDescription>{t("hourlyDist")}</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
@@ -318,7 +321,7 @@ export default function BlacklistPage() {
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
           <TabsList className="w-max md:w-auto">
             <TabsTrigger value="domains" className="text-xs sm:text-sm whitespace-nowrap">
-              Top Domains
+              {t("topDomains")}
               {analytics.top_domains?.length > 0 && (
                 <Badge variant="secondary" className="ml-1 sm:ml-2">
                   {analytics.top_domains.length}
@@ -326,7 +329,7 @@ export default function BlacklistPage() {
               )}
             </TabsTrigger>
             <TabsTrigger value="users" className="text-xs sm:text-sm whitespace-nowrap">
-              Top Users
+              {t("topUsers")}
               {analytics.top_users?.length > 0 && (
                 <Badge variant="secondary" className="ml-1 sm:ml-2">
                   {analytics.top_users.length}
@@ -334,7 +337,7 @@ export default function BlacklistPage() {
               )}
             </TabsTrigger>
             <TabsTrigger value="by-domain" className="text-xs sm:text-sm whitespace-nowrap">
-              🔍 По домену
+              🔍 {t("byDomain")}
               {selectedDomains.size > 0 && (
                 <Badge variant="default" className="ml-1 sm:ml-2">
                   {selectedDomains.size}
@@ -342,7 +345,7 @@ export default function BlacklistPage() {
               )}
             </TabsTrigger>
             <TabsTrigger value="recent" className="text-xs sm:text-sm whitespace-nowrap">
-              Recent Matches
+              {t("recentMatches")}
               {analytics.recent_matches?.length > 0 && (
                 <Badge variant="secondary" className="ml-1 sm:ml-2">
                   {analytics.recent_matches.length}
@@ -358,15 +361,15 @@ export default function BlacklistPage() {
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                  <CardTitle>Most Accessed Blocked Domains</CardTitle>
+                  <CardTitle>{t("mostAccessedDomains")}</CardTitle>
                   <CardDescription>
-                    Domains sorted by total hits across all users
+                    {t("domainsByHits")}
                   </CardDescription>
                 </div>
                 <div className="relative w-full sm:w-64">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search domains..."
+                    placeholder={t("searchDomains")}
                     value={domainSearch}
                     onChange={(e) => setDomainSearch(e.target.value)}
                     className="pl-8"
@@ -379,11 +382,11 @@ export default function BlacklistPage() {
               <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead className="w-[40px]">#</TableHead>
-                    <TableHead className="whitespace-nowrap">Domain</TableHead>
-                    <TableHead className="whitespace-nowrap hidden md:table-cell">Matched Rule</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">Hits</TableHead>
-                    <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Users</TableHead>
+                    <TableHead className="w-[40px]">{t("rank")}</TableHead>
+                    <TableHead className="whitespace-nowrap">{t("domain")}</TableHead>
+                    <TableHead className="whitespace-nowrap hidden md:table-cell">{t("matchedRule")}</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">{t("hits")}</TableHead>
+                    <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">{t("users")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -405,7 +408,7 @@ export default function BlacklistPage() {
                   {domainsPagination.paginatedData.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground">
-                        {domainSearch ? "No domains match your search" : "No blocked domains in this period"}
+                        {domainSearch ? t("noDomainsSearch") : t("noDomainsPeriod")}
                       </TableCell>
                     </TableRow>
                   )}
@@ -421,9 +424,9 @@ export default function BlacklistPage() {
         <TabsContent value="users">
           <Card>
             <CardHeader>
-              <CardTitle>Users Accessing Blocked Resources</CardTitle>
+              <CardTitle>{t("usersAccessingBlocked")}</CardTitle>
               <CardDescription>
-                Users sorted by number of blacklist hits
+                {t("usersByHits")}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -431,12 +434,12 @@ export default function BlacklistPage() {
               <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead className="w-[40px]">#</TableHead>
-                    <TableHead className="whitespace-nowrap">User</TableHead>
-                    <TableHead className="whitespace-nowrap hidden lg:table-cell">Last IP</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">Hits</TableHead>
-                    <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Domains</TableHead>
-                    <TableHead className="hidden md:table-cell">Top Blocked Domains</TableHead>
+                    <TableHead className="w-[40px]">{t("rank")}</TableHead>
+                    <TableHead className="whitespace-nowrap">{t("user")}</TableHead>
+                    <TableHead className="whitespace-nowrap hidden lg:table-cell">{t("lastIp")}</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">{t("hits")}</TableHead>
+                    <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">{t("uniqueDomains")}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t("topBlockedDomains")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -482,7 +485,7 @@ export default function BlacklistPage() {
                   {topUsersPagination.paginatedData.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-muted-foreground">
-                        No users with blacklist hits in this period
+                        {t("noUsersHits")}
                       </TableCell>
                     </TableRow>
                   )}
@@ -499,10 +502,10 @@ export default function BlacklistPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                🔍 Кто посещает определённые домены
+                🔍 {t("whoVisitsDomains")}
               </CardTitle>
               <CardDescription>
-                Выберите домены для фильтрации и увидьте, какие пользователи их посещают
+                {t("selectDomainsFilter")}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -512,7 +515,7 @@ export default function BlacklistPage() {
                   <div className="relative flex-1">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Поиск домена..."
+                      placeholder={t("searchDomain")}
                       value={userDomainSearch}
                       onChange={(e) => setUserDomainSearch(e.target.value)}
                       className="pl-8"
@@ -524,7 +527,7 @@ export default function BlacklistPage() {
                       className="cursor-pointer self-start sm:self-auto"
                       onClick={() => setSelectedDomains(new Set())}
                     >
-                      Сбросить ({selectedDomains.size})
+                      {t("resetFilter", { count: selectedDomains.size })}
                     </Badge>
                   )}
                 </div>
@@ -532,7 +535,7 @@ export default function BlacklistPage() {
                 {/* Quick domain selection */}
                 <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto p-2 border rounded-md bg-muted/30">
                   {filteredDomainSelector.length === 0 ? (
-                    <span className="text-muted-foreground text-sm p-2">Нет доменов для отображения</span>
+                    <span className="text-muted-foreground text-sm p-2">{t("noDomainsDisplay")}</span>
                   ) : (
                     filteredDomainSelector.map(domain => (
                       <Badge
@@ -560,22 +563,22 @@ export default function BlacklistPage() {
               {selectedDomains.size === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Globe className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>Выберите один или несколько доменов выше</p>
+                  <p>{t("selectDomains")}</p>
                 </div>
               ) : (
                 <>
                   <div className="text-sm text-muted-foreground">
-                    Найдено {usersByDomains.length} пользователей, посещавших выбранные домены
+                    {t("foundUsers", { count: usersByDomains.length })}
                   </div>
                   <div className="overflow-auto max-h-[400px] border rounded-md">
                     <Table>
                       <TableHeader className="sticky top-0 bg-background z-10">
                         <TableRow>
-                          <TableHead className="w-[40px]">#</TableHead>
-                          <TableHead className="whitespace-nowrap">Пользователь</TableHead>
-                          <TableHead className="whitespace-nowrap hidden lg:table-cell">Last IP</TableHead>
-                          <TableHead className="text-right whitespace-nowrap">Hits</TableHead>
-                          <TableHead className="hidden md:table-cell">Посещённые домены</TableHead>
+                          <TableHead className="w-[40px]">{t("rank")}</TableHead>
+                          <TableHead className="whitespace-nowrap">{t("user")}</TableHead>
+                          <TableHead className="whitespace-nowrap hidden lg:table-cell">{t("lastIp")}</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">{t("hits")}</TableHead>
+                          <TableHead className="hidden md:table-cell">{t("visitedDomains")}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -622,7 +625,7 @@ export default function BlacklistPage() {
                         {usersByDomainsPagination.paginatedData.length === 0 && (
                           <TableRow>
                             <TableCell colSpan={5} className="text-center text-muted-foreground">
-                              Нет пользователей, посещавших выбранные домены
+                              {t("noUsersSelectedDomains")}
                             </TableCell>
                           </TableRow>
                         )}
@@ -642,16 +645,16 @@ export default function BlacklistPage() {
             <CardHeader>
               <div className="flex flex-col gap-4">
                 <div>
-                  <CardTitle>Recent Blacklist Matches</CardTitle>
+                  <CardTitle>{t("recentMatchesTitle")}</CardTitle>
                   <CardDescription>
-                    Last 100 blocked requests
+                    {t("last100")}
                   </CardDescription>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <div className="relative flex-1 sm:max-w-xs">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search destination, IP, rule..."
+                      placeholder={t("searchMatchPlaceholder")}
                       value={matchSearch}
                       onChange={(e) => setMatchSearch(e.target.value)}
                       className="pl-8"
@@ -660,10 +663,10 @@ export default function BlacklistPage() {
                   {uniqueNodes.length > 0 && (
                     <Select value={nodeFilter} onValueChange={setNodeFilter}>
                       <SelectTrigger className="w-full sm:w-[180px]">
-                        <SelectValue placeholder="Filter by node" />
+                        <SelectValue placeholder={t("filterByNode")} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All Nodes</SelectItem>
+                        <SelectItem value="all">{t("allNodes")}</SelectItem>
                         {uniqueNodes.map(node => (
                           <SelectItem key={node} value={node}>{node}</SelectItem>
                         ))}
@@ -678,11 +681,11 @@ export default function BlacklistPage() {
               <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead className="whitespace-nowrap">Time</TableHead>
-                    <TableHead className="whitespace-nowrap hidden sm:table-cell">Node</TableHead>
-                    <TableHead className="whitespace-nowrap hidden lg:table-cell">Source IP</TableHead>
-                    <TableHead className="whitespace-nowrap">Destination</TableHead>
-                    <TableHead className="whitespace-nowrap hidden md:table-cell">Matched Rule</TableHead>
+                    <TableHead className="whitespace-nowrap">{t("time")}</TableHead>
+                    <TableHead className="whitespace-nowrap hidden sm:table-cell">{t("node")}</TableHead>
+                    <TableHead className="whitespace-nowrap hidden lg:table-cell">{t("sourceIp")}</TableHead>
+                    <TableHead className="whitespace-nowrap">{t("destination")}</TableHead>
+                    <TableHead className="whitespace-nowrap hidden md:table-cell">{t("matchedRule")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -711,9 +714,9 @@ export default function BlacklistPage() {
                   {matchesPagination.paginatedData.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground">
-                        {matchSearch || nodeFilter !== "all" 
-                          ? "No matches found with current filters" 
-                          : "No blacklist matches in this period"}
+                        {matchSearch || nodeFilter !== "all"
+                          ? t("noMatchesFilters")
+                          : t("noMatchesPeriod")}
                       </TableCell>
                     </TableRow>
                   )}

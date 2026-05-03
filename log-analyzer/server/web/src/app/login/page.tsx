@@ -2,6 +2,7 @@
 
 import { useState, FormEvent, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useAuth, authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ export default function LoginPage() {
 
   const { login, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
+  const t = useTranslations("login");
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -39,11 +41,11 @@ export default function LoginPage() {
         login(token);
         router.replace("/dashboard");
       } else {
-        setError("Неверны�� токен");
+        setError(t("errorInvalidToken"));
         setIsSubmitting(false);
       }
     } catch {
-      setError("Ошибка подключения к серверу");
+      setError(t("errorConnection"));
       setIsSubmitting(false);
     }
   };
@@ -63,18 +65,18 @@ export default function LoginPage() {
           <div className="mx-auto mb-4 p-3 rounded-full bg-primary/10 w-fit">
             <ShieldAlert className="h-8 w-8 text-primary" />
           </div>
-          <CardTitle className="text-2xl">Xray Log Analyzer</CardTitle>
-          <CardDescription>Введите API токен для доступа</CardDescription>
+          <CardTitle className="text-2xl">{t("title")}</CardTitle>
+          <CardDescription>{t("description")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="token">API Token</Label>
+              <Label htmlFor="token">{t("tokenLabel")}</Label>
               <div className="relative">
                 <Input
                   id="token"
                   type={showToken ? "text" : "password"}
-                  placeholder="Введите токен"
+                  placeholder={t("tokenPlaceholder")}
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   disabled={isSubmitting}
@@ -107,10 +109,10 @@ export default function LoginPage() {
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Проверка...
+                  {t("submitting")}
                 </>
               ) : (
-                "Войти"
+                t("submit")
               )}
             </Button>
           </form>

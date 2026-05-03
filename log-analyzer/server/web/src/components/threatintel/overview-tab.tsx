@@ -13,6 +13,7 @@ import {
 import { ThreatMatch, ThreatStats, FeedStatus, CategoryTopUsers, TimeStats, GeoSummary, AnomalySummary, UserRiskSummary, ReportSummary, ReportConfig } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { threatTypeConfig, sourceLabels } from "./config";
+import { useTranslations } from "next-intl";
 import { UserList } from "./user-list";
 import { MatchesTable } from "./matches-table";
 import { TimeChart } from "./time-chart";
@@ -40,6 +41,7 @@ interface OverviewTabProps {
 }
 
 export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, geoStats, anomalies, riskProfiles, reports, onRiskRefresh, onReportsRefresh, onGenerateReport, onDeleteReport }: OverviewTabProps) {
+  const t = useTranslations("threatIntel");
   const activeFeeds = feeds.filter((f) => f.status === "ok").length;
   
   return (
@@ -158,7 +160,7 @@ export function OverviewTab({ stats, feeds, topUsers, threatMatches, timeStats, 
                       <span className="text-xl font-bold">{totalCount}</span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">Последние {users.length > 0 ? users.length : 10} пользователей</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t("recentUsers", { count: users.length > 0 ? users.length : 10 })}</p>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <UserList users={users} maxHeight="350px" />

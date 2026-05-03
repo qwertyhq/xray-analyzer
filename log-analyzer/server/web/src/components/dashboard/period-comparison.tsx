@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Minus, Activity, ShieldAlert, Users, Server } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 interface PeriodStat {
   label: string;
@@ -67,17 +68,19 @@ function TrendBadge({ trend, value, inverted = false }: { trend: "up" | "down" |
   );
 }
 
-export function PeriodComparison({ stats, periodLabel = "vs yesterday" }: PeriodComparisonProps) {
+export function PeriodComparison({ stats, periodLabel }: PeriodComparisonProps) {
+  const t = useTranslations("periodComparison");
+
   const comparisons = useMemo(() => [
     {
-      label: "Requests",
+      label: t("requests"),
       shortLabel: "Req",
       iconType: "activity" as const,
       current: stats.requests.current,
       previous: stats.requests.previous,
     },
     {
-      label: "Blacklist Hits",
+      label: t("blacklistHits"),
       shortLabel: "Blackli...",
       iconType: "shield" as const,
       current: stats.blacklistHits.current,
@@ -85,19 +88,20 @@ export function PeriodComparison({ stats, periodLabel = "vs yesterday" }: Period
       inverted: true, // Lower is better
     },
     {
-      label: "Unique Users",
+      label: t("uniqueUsers"),
       shortLabel: "Uniq...",
       iconType: "users" as const,
       current: stats.uniqueUsers.current,
       previous: stats.uniqueUsers.previous,
     },
     {
-      label: "Online Now",
+      label: t("onlineNow"),
       shortLabel: "Onli...",
       iconType: "server" as const,
       current: stats.onlineUsers.current,
       previous: stats.onlineUsers.previous,
     },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [stats]);
 
   const getIcon = (type: string) => {
@@ -114,7 +118,7 @@ export function PeriodComparison({ stats, periodLabel = "vs yesterday" }: Period
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-medium flex items-center justify-between">
-          <span>Period Comparison</span>
+          <span>{t("title")}</span>
           <Badge variant="secondary" className="text-xs font-normal">
             {periodLabel}
           </Badge>

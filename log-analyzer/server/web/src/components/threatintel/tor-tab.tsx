@@ -9,6 +9,7 @@ import { Globe, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { ThreatMatch, FeedStatus, CategoryUserStats } from "@/lib/types";
 import Link from "next/link";
 import { MatchesTable } from "./matches-table";
+import { useTranslations } from "next-intl";
 
 interface TorTabProps {
   topUsers: CategoryUserStats[];
@@ -24,6 +25,7 @@ interface PaginatedUsersResponse {
 }
 
 export function TorTab({ topUsers, feeds }: TorTabProps) {
+  const t = useTranslations("threatIntel");
   const [matches, setMatches] = useState<ThreatMatch[]>([]);
   
   // Paginated users state
@@ -223,7 +225,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
       <MatchesTable 
         matches={matches} 
         title="Recent Tor Activity"
-        description={`Последние обнаружения Tor-активности`}
+        description={t("noRecentActivity")}
       />
     </div>
   );

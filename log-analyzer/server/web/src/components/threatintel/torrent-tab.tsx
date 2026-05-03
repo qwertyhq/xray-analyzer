@@ -9,6 +9,7 @@ import { Download, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { ThreatMatch, FeedStatus, CategoryUserStats } from "@/lib/types";
 import Link from "next/link";
 import { MatchesTable } from "./matches-table";
+import { useTranslations } from "next-intl";
 
 interface TorrentTabProps {
   topUsers: CategoryUserStats[];
@@ -24,6 +25,7 @@ interface PaginatedUsersResponse {
 }
 
 export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
+  const t = useTranslations("threatIntel");
   const [matches, setMatches] = useState<ThreatMatch[]>([]);
   
   // Paginated users state
@@ -225,7 +227,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
       <MatchesTable 
         matches={matches} 
         title="Recent Torrent Activity"
-        description={`Последние обнаружения торрент-активности`}
+        description={t("noRecentActivity")}
       />
     </div>
   );

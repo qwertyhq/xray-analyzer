@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { authFetch } from "@/contexts/auth-context";
 import {
   Table,
@@ -66,6 +67,8 @@ interface RemnawaveAbuseTableProps {
 }
 
 export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTableProps) {
+  const t = useTranslations("hwidAbuse");
+  const tCommon = useTranslations("common");
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const [clearingHwid, setClearingHwid] = useState<string | null>(null);
 
@@ -98,7 +101,7 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
       onHwidCleared?.(userUuid);
     } catch (error) {
       console.error("Failed to clear HWID:", error);
-      alert(`Ошибка: ${error instanceof Error ? error.message : "Не удалось очистить HWID"}`);
+      alert(`${t("errorPrefix")} ${error instanceof Error ? error.message : t("errorFailed")}`);
     } finally {
       setClearingHwid(null);
     }
@@ -108,8 +111,8 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
     return (
       <div className="text-center py-8 text-muted-foreground">
         <Smartphone className="h-12 w-12 mx-auto mb-4 opacity-50" />
-        <p className="text-lg font-medium">Пользователей на пределе или с превышением нет</p>
-        <p className="text-sm">Все пользователи ниже лимитов устройств</p>
+        <p className="text-lg font-medium">{t("noUsersTitle")}</p>
+        <p className="text-sm">{t("noUsersDesc")}</p>
       </div>
     );
   }
@@ -120,13 +123,13 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
         <TableHeader>
           <TableRow>
             <TableHead className="w-8"></TableHead>
-            <TableHead>Пользователь</TableHead>
-            <TableHead>Статус</TableHead>
-            <TableHead className="text-right">Устройства</TableHead>
-            <TableHead className="text-right">Превышение</TableHead>
-            <TableHead>Платформы</TableHead>
-            <TableHead>Риск</TableHead>
-            <TableHead className="w-24">Действия</TableHead>
+            <TableHead>{t("userColumn")}</TableHead>
+            <TableHead>{t("statusColumn")}</TableHead>
+            <TableHead className="text-right">{t("devicesColumn")}</TableHead>
+            <TableHead className="text-right">{t("excessColumn")}</TableHead>
+            <TableHead>{t("platformsColumn")}</TableHead>
+            <TableHead>{t("riskColumn")}</TableHead>
+            <TableHead className="w-24">{t("actionsColumn")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -191,7 +194,7 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="border-orange-500 text-orange-500">
-                            На пределе
+                            {t("atLimit")}
                           </Badge>
                         )}
                       </TableCell>
@@ -209,7 +212,7 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                           variant={riskLevel === "high" ? "destructive" : riskLevel === "medium" ? "default" : "outline"}
                           className={riskLevel === "medium" ? "bg-orange-500" : riskLevel === "low" ? "border-yellow-500 text-yellow-500" : riskLevel === "at_limit" ? "border-blue-500 text-blue-500" : ""}
                         >
-                          {riskLevel === "high" ? "Высокий" : riskLevel === "medium" ? "Средний" : riskLevel === "low" ? "Низкий" : "На пределе"}
+                          {riskLevel === "high" ? t("riskHigh") : riskLevel === "medium" ? t("riskMedium") : riskLevel === "low" ? t("riskLow") : t("riskAtLimit")}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -232,20 +235,18 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                           </AlertDialogTrigger>
                           <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Очистить HWID устройства?</AlertDialogTitle>
+                              <AlertDialogTitle>{t("clearHwidTitle")}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Будут удалены все {user.deviceCount} устройств пользователя{" "}
-                                <span className="font-medium text-foreground">{user.username}</span>.
-                                Пользователю придётся заново подключить устройства.
+                                {t("clearHwidDesc", { count: user.deviceCount, username: user.username })}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Отмена</AlertDialogCancel>
+                              <AlertDialogCancel>{tCommon("cancel")}</AlertDialogCancel>
                               <AlertDialogAction
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                 onClick={() => handleClearHwid(user.uuid)}
                               >
-                                Очистить HWID
+                                {t("clearHwidAction")}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -279,7 +280,7 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                           <div>
                             <div className="text-sm font-medium mb-2 flex items-center gap-2">
                               <Smartphone className="h-4 w-4" />
-                              Устройства ({user.devices.length})
+                              {t("devicesSection", { count: user.devices.length })}
                             </div>
                             <div className="grid gap-2">
                               {user.devices.map((device) => (
@@ -311,7 +312,7 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                           {/* Last Activity */}
                           {user.lastActivity && (
                             <div className="text-xs text-muted-foreground">
-                              Последняя активность: {new Date(user.lastActivity).toLocaleString()}
+                              {t("lastActivity")} {new Date(user.lastActivity).toLocaleString()}
                             </div>
                           )}
                         </div>
