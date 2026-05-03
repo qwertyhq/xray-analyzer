@@ -434,7 +434,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Row 5: Geo Distribution (larger) + Real-time Feed */}
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 md:grid-rows-[620px]">
         <GeoMap data={geoData} cityData={cityData} title={t("geoMap.title")} mode="cities" />
         <RealTimeFeed events={feedEvents} title={t("realTimeFeed.title")} />
       </div>

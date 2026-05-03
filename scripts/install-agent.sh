@@ -25,7 +25,7 @@ set -euo pipefail
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 
-REPO_URL="${REPO_URL:-https://github.com/qwertyhq/xray.git}"
+REPO_URL="${REPO_URL:-https://github.com/qwertyhq/xray-analyzer.git}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/xray-analyzer}"
 COMPOSE_DIR="$INSTALL_DIR"
 ENV_FILE="$COMPOSE_DIR/.env"

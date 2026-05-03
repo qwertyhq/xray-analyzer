@@ -89,7 +89,7 @@ Real-time analytics для Xray-core access logs c интеграцией с Rem
 Один скрипт устанавливает Postgres + Redis + analyzer-server из исходников. Поддерживает Ubuntu 22.04+/Debian 12+. Подходит для bare-metal, VM, или контейнера с Docker access.
 
 ```bash
-git clone https://github.com/qwertyhq/xray.git /opt/xray-analyzer
+git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
 cd /opt/xray-analyzer
 sudo bash scripts/install-server.sh
 ```
@@ -140,7 +140,7 @@ analyzer.example.com {
 Запусти на каждой ноде где работает Xray (Remnawave node, отдельный VPN endpoint, и т.д.):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray/main/scripts/install-agent.sh | \
+curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh | \
   sudo SERVER_URL="wss://analyzer.example.com/ws" \
        AUTH_TOKEN="<AGENT_TOKEN из server .env>" \
        NODE_ID="germany-1" \
@@ -394,4 +394,4 @@ DOCKER_HOST=unix:///var/run/docker.sock go test ./...
 - UI components (vanilla shadcn/Radix)
 - Performance improvements
 
-Issue tracker: https://github.com/qwertyhq/xray/issues
+Issue tracker: https://github.com/qwertyhq/xray-analyzer/issues
