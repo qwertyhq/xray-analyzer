@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { Wifi, WifiOff } from "lucide-react";
+import { useTranslations } from "next-intl";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +22,8 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export default function NodesPage() {
+  const t = useTranslations("nodesPage");
+  const tCommon = useTranslations("common");
   const { nodes, loading, connected } = useWsNodes();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -62,9 +65,9 @@ export default function NodesPage() {
     <div className="p-4 md:p-8 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Nodes</h2>
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t("title")}</h2>
           <p className="text-sm text-muted-foreground">
-            Manage and monitor Xray proxy nodes
+            {t("description")}
           </p>
         </div>
         <Badge 
@@ -74,12 +77,12 @@ export default function NodesPage() {
           {connected ? (
             <>
               <Wifi className="h-3 w-3" />
-              Live
+              {tCommon("live")}
             </>
           ) : (
             <>
               <WifiOff className="h-3 w-3" />
-              Disconnected
+              {tCommon("disconnected")}
             </>
           )}
         </Badge>
@@ -88,7 +91,7 @@ export default function NodesPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Nodes</CardTitle>
+            <CardTitle className="text-sm font-medium">{t("totalNodes")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -98,7 +101,7 @@ export default function NodesPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-green-600">Online</CardTitle>
+            <CardTitle className="text-sm font-medium text-green-600">{t("online")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
@@ -108,7 +111,7 @@ export default function NodesPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Offline</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t("offline")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-muted-foreground">
@@ -121,8 +124,8 @@ export default function NodesPage() {
       {onlineNodes.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-green-600">Online Nodes</CardTitle>
-            <CardDescription>Currently connected and receiving data</CardDescription>
+            <CardTitle className="text-green-600">{t("onlineNodes")}</CardTitle>
+            <CardDescription>{t("onlineNodesDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             <NodesTable nodes={onlineNodes} />
@@ -133,9 +136,9 @@ export default function NodesPage() {
       {offlineNodes.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-muted-foreground">Offline Nodes</CardTitle>
+            <CardTitle className="text-muted-foreground">{t("offlineNodes")}</CardTitle>
             <CardDescription>
-              Not currently connected. Delete old nodes to clean up.
+              {t("offlineNodesDesc")}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -151,20 +154,19 @@ export default function NodesPage() {
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete node "{deleteTarget}"?</AlertDialogTitle>
+            <AlertDialogTitle>{t("deleteNodeTitle", { node: deleteTarget ?? "" })}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete the node and all its statistics.
-              This action cannot be undone.
+              {t("deleteNodeDesc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDelete} 
+            <AlertDialogCancel disabled={deleting}>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
               disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? "Deleting..." : "Delete"}
+              {deleting ? t("deleting") : t("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

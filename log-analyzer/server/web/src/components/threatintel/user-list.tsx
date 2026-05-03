@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { CategoryUserStats } from "@/lib/types";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 
 interface UserListProps {
   users: CategoryUserStats[];
@@ -10,10 +11,11 @@ interface UserListProps {
 }
 
 export function UserList({ users, maxHeight = "300px" }: UserListProps) {
+  const t = useTranslations("common");
   if (users.length === 0) {
     return (
       <div className="py-6 text-center text-sm text-muted-foreground">
-        Нет данных
+        {t("noData")}
       </div>
     );
   }

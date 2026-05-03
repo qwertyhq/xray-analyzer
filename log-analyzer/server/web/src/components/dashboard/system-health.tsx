@@ -15,6 +15,7 @@ import {
   Loader2
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useTranslations } from "next-intl";
 
 interface ServiceStatus {
   name: string;
@@ -44,30 +45,32 @@ export function SystemHealth({
   databaseStatus = "online",
   websocketConnected = true,
 }: SystemHealthProps) {
+  const t = useTranslations("systemHealth");
+
   // Remnawave not configured is not a system problem
   const remnawaveEffectiveStatus = !remnawaveEnabled ? "warning" : remnawaveStatus === "unknown" ? "loading" : remnawaveStatus;
-  const remnawaveDetails = !remnawaveEnabled 
-    ? "Not configured" 
-    : remnawaveStatus === "online" 
-      ? "Connected" 
-      : remnawaveStatus === "offline" 
-        ? "Not available" 
-        : "Checking...";
+  const remnawaveDetails = !remnawaveEnabled
+    ? t("remnaNotConfigured")
+    : remnawaveStatus === "online"
+      ? t("remnaConnected")
+      : remnawaveStatus === "offline"
+        ? t("remnaNotAvailable")
+        : t("remnaChecking");
 
   const services: ServiceStatus[] = [
     {
-      name: "WebSocket",
+      name: t("websocket"),
       status: websocketConnected ? "online" : "offline",
-      details: websocketConnected ? "Real-time updates active" : "Reconnecting...",
+      details: websocketConnected ? t("wsOnline") : t("wsOffline"),
     },
     {
-      name: "Remnawave API",
+      name: t("remnawave"),
       status: remnawaveEffectiveStatus,
       lastUpdate: remnawaveLastSync,
       details: remnawaveDetails,
     },
     {
-      name: "Threat Intel",
+      name: t("threatIntel"),
       // null/undefined = haven't received any stats yet — show "loading" not "warning".
       // Only flag warning when we KNOW indicator count is zero.
       status:
@@ -79,15 +82,15 @@ export function SystemHealth({
       lastUpdate: threatIntelLastUpdate,
       details:
         threatIntelIndicators == null
-          ? "Loading feeds..."
+          ? t("threatLoading")
           : threatIntelIndicators > 0
-            ? `${threatIntelIndicators.toLocaleString()} indicators`
-            : "No indicators loaded",
+            ? t("threatIndicators", { count: threatIntelIndicators.toLocaleString() })
+            : t("threatNoIndicators"),
     },
     {
-      name: "Database",
+      name: t("database"),
       status: databaseStatus,
-      details: databaseStatus === "online" ? "SQLite operational" : "Connection error",
+      details: databaseStatus === "online" ? t("dbOnline") : t("dbOffline"),
     },
   ];
 
@@ -107,13 +110,13 @@ export function SystemHealth({
   const statusBadge = (status: ServiceStatus["status"]) => {
     switch (status) {
       case "online":
-        return <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30 text-xs">Online</Badge>;
+        return <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30 text-xs">{t("statusOnline")}</Badge>;
       case "offline":
-        return <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/30 text-xs">Offline</Badge>;
+        return <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/30 text-xs">{t("statusOffline")}</Badge>;
       case "warning":
-        return <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/30 text-xs">Warning</Badge>;
+        return <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/30 text-xs">{t("statusWarning")}</Badge>;
       case "loading":
-        return <Badge variant="outline" className="text-xs">Loading</Badge>;
+        return <Badge variant="outline" className="text-xs">{t("statusLoading")}</Badge>;
     }
   };
 
@@ -129,19 +132,19 @@ export function SystemHealth({
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Activity className="h-4 w-4 text-blue-500" />
-            System Health
+            {t("title")}
           </CardTitle>
-          <Badge 
-            variant="outline" 
+          <Badge
+            variant="outline"
             className={
-              overallStatus === "healthy" 
-                ? "bg-green-500/10 text-green-600 border-green-500/30" 
+              overallStatus === "healthy"
+                ? "bg-green-500/10 text-green-600 border-green-500/30"
                 : overallStatus === "degraded"
                   ? "bg-red-500/10 text-red-600 border-red-500/30"
                   : "bg-yellow-500/10 text-yellow-600 border-yellow-500/30"
             }
           >
-            {overallStatus === "healthy" ? "All Systems Operational" : overallStatus === "degraded" ? "Degraded" : "Warning"}
+            {overallStatus === "healthy" ? t("allOperational") : overallStatus === "degraded" ? t("degraded") : t("warning")}
           </Badge>
         </div>
       </CardHeader>

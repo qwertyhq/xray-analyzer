@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { authFetch } from "@/contexts/auth-context";
+import { useTranslations } from "next-intl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,6 +30,7 @@ interface AIChatProps {
 }
 
 export function AIChat({ className }: AIChatProps) {
+  const t = useTranslations("aiChat");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -116,11 +118,11 @@ export function AIChat({ className }: AIChatProps) {
   };
 
   const quickPrompts = [
-    "Дай обзор состояния системы",
-    "Кто самые активные пользователи?",
-    "Какие угрозы были за последнее время?",
-    "Есть ли аномалии в поведении пользователей?",
-    "Покажи статистику по странам",
+    t("quickPrompt1"),
+    t("quickPrompt2"),
+    t("quickPrompt3"),
+    t("quickPrompt4"),
+    t("quickPrompt5"),
   ];
 
   return (
@@ -129,12 +131,12 @@ export function AIChat({ className }: AIChatProps) {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-purple-500" />
-            AI Аналитик
+            {t("title")}
           </CardTitle>
           <div className="flex items-center gap-2">
             {totalTokens > 0 && (
               <Badge variant="outline" className="text-xs">
-                {totalTokens.toLocaleString()} токенов
+                {t("tokens", { count: totalTokens.toLocaleString() })}
               </Badge>
             )}
             {messages.length > 0 && (
@@ -158,10 +160,10 @@ export function AIChat({ className }: AIChatProps) {
               <Bot className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
               <div>
                 <p className="text-muted-foreground">
-                  Задайте вопрос о данных системы
+                  {t("askQuestion")}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  AI проанализирует пользователей, угрозы, аномалии и статистику
+                  {t("aiWillAnalyze")}
                 </p>
               </div>
               {/* Quick prompts */}
@@ -209,7 +211,7 @@ export function AIChat({ className }: AIChatProps) {
                     )}
                     {msg.tokensUsed && (
                       <p className="text-xs text-muted-foreground mt-1 opacity-50">
-                        {msg.tokensUsed} токенов
+                        {t("tokens", { count: msg.tokensUsed })}
                       </p>
                     )}
                   </div>
@@ -248,7 +250,7 @@ export function AIChat({ className }: AIChatProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Спросите о пользователях, угрозах, статистике..."
+            placeholder={t("placeholder")}
             className="min-h-[60px] resize-none"
             disabled={loading}
           />

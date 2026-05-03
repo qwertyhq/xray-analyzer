@@ -7,6 +7,7 @@ import {
   useCallback,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { useTranslations } from "next-intl";
 import { authFetch } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -35,30 +36,24 @@ import {
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 
-// Thinking actions for the loading animation
-const thinkingActions = [
-  { icon: Database, text: "Подключаюсь к базе данных..." },
-  { icon: Search, text: "Анализирую запрос..." },
-  { icon: Users, text: "Ищу пользователей..." },
-  { icon: BarChart3, text: "Собираю статистику..." },
-  { icon: Shield, text: "Проверяю угрозы..." },
-  { icon: Globe, text: "Анализирую географию..." },
-  { icon: Database, text: "Обрабатываю данные..." },
-];
+// Thinking actions icon sequence (texts resolved via translations in ThinkingIndicator)
+const thinkingIcons = [Database, Search, Users, BarChart3, Shield, Globe, Database];
+const thinkingKeys = ["thinking1", "thinking2", "thinking3", "thinking4", "thinking5", "thinking6", "thinking7"] as const;
 
 // Thinking indicator component
 function ThinkingIndicator() {
+  const t = useTranslations("floatingAiChat");
   const [actionIndex, setActionIndex] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setActionIndex((prev) => (prev + 1) % thinkingActions.length);
+      setActionIndex((prev) => (prev + 1) % thinkingKeys.length);
     }, 1500);
     return () => clearInterval(interval);
   }, []);
 
-  const action = thinkingActions[actionIndex];
-  const Icon = action.icon;
+  const Icon = thinkingIcons[actionIndex];
+  const textKey = thinkingKeys[actionIndex];
 
   return (
     <div className="space-y-2">
@@ -70,7 +65,7 @@ function ThinkingIndicator() {
           </div>
         </div>
         <span className="text-sm animate-in fade-in duration-300" key={actionIndex}>
-          {action.text}
+          {t(textKey)}
         </span>
       </div>
       <div className="flex gap-1">
@@ -104,6 +99,7 @@ interface ChatSession {
 type ChatView = "chat" | "history";
 
 export function FloatingAIChat() {
+  const t = useTranslations("floatingAiChat");
   const [isOpen, setIsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [view, setView] = useState<ChatView>("chat");
@@ -207,7 +203,7 @@ export function FloatingAIChat() {
       const res = await authFetch("/api/ai/sessions", {
         method: "POST",
         headers,
-        body: JSON.stringify({ title: "Новый чат" }),
+        body: JSON.stringify({ title: t("newChatTitle") }),
       });
       const session = await res.json();
       if (session.id) {
@@ -463,10 +459,10 @@ export function FloatingAIChat() {
   }, [createSession, creatingChat, loadingSession]);
 
   const quickPrompts = [
-    "Обзор состояния системы",
-    "Топ активных пользователей",
-    "Есть ли угрозы?",
-    "Аномалии поведения",
+    t("quickPrompt1"),
+    t("quickPrompt2"),
+    t("quickPrompt3"),
+    t("quickPrompt4"),
   ];
 
   // Detect mobile on client side
@@ -538,7 +534,7 @@ export function FloatingAIChat() {
           )}
           <Sparkles className="h-5 w-5 text-purple-500" />
           <span className="font-semibold text-sm">
-            {view === "history" ? "История чатов" : "AI Аналитик"}
+            {view === "history" ? t("historyTitle") : t("title")}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -550,7 +546,7 @@ export function FloatingAIChat() {
                 className="h-7 w-7"
                 onClick={handleNewChat}
                 disabled={creatingChat || loading || streaming}
-                title="Новый чат"
+                title={t("newChat")}
               >
                 {creatingChat ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -563,7 +559,7 @@ export function FloatingAIChat() {
                 size="icon"
                 className="h-7 w-7"
                 onClick={() => setView("history")}
-                title="История"
+                title={t("history")}
               >
                 <History className="h-4 w-4" />
               </Button>
@@ -600,7 +596,7 @@ export function FloatingAIChat() {
             <div className="p-2 space-y-1">
               {sessions.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground text-sm">
-                  Нет сохранённых чатов
+                  {t("noSavedChats")}
                 </div>
               ) : (
                 sessions.map((session) => (
@@ -621,10 +617,10 @@ export function FloatingAIChat() {
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {new Date(session.updated_at).toLocaleDateString("ru")}
+                        {new Date(session.updated_at).toLocaleDateString()}
                         {session.total_tokens > 0 && (
                           <span className="ml-2">
-                            {session.total_tokens.toLocaleString()} токенов
+                            {t("tokens", { count: session.total_tokens.toLocaleString() })}
                           </span>
                         )}
                       </div>
@@ -654,7 +650,7 @@ export function FloatingAIChat() {
                 onClick={clearAllSessions}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                Очистить всё
+                {t("clearAll")}
               </Button>
             </div>
           )}
@@ -671,7 +667,7 @@ export function FloatingAIChat() {
                 <Bot className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
                 <div>
                   <p className="text-muted-foreground text-sm">
-                    Задайте вопрос о данных системы
+                    {t("askQuestion")}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2 justify-center">
@@ -768,7 +764,7 @@ export function FloatingAIChat() {
                     }, 300);
                   }
                 }}
-                placeholder="Спросите что-нибудь..."
+                placeholder={t("placeholder")}
                 className="min-h-[44px] max-h-[120px] resize-none text-base sm:text-sm"
                 disabled={loading || streaming}
               />

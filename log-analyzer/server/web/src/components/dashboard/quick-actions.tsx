@@ -13,6 +13,7 @@ import {
   FileText,
   AlertTriangle,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 
 interface QuickActionsProps {
@@ -28,6 +29,7 @@ export function QuickActions({
   onExportReport,
   problemUsersCount = 0,
 }: QuickActionsProps) {
+  const t = useTranslations("quickActions");
   const [syncing, setSyncing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -67,7 +69,7 @@ export function QuickActions({
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
           <Zap className="h-4 w-4 text-yellow-500" />
-          Quick Actions
+          {t("title")}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -80,7 +82,7 @@ export function QuickActions({
             disabled={syncing || !onSyncRemnawave}
           >
             <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
-            <span className="text-xs">Sync Remnawave</span>
+            <span className="text-xs">{t("syncRemnawave")}</span>
           </Button>
 
           <Button
@@ -91,7 +93,7 @@ export function QuickActions({
             disabled={refreshing || !onRefreshBlacklist}
           >
             <ShieldAlert className={cn("h-4 w-4", refreshing && "animate-spin")} />
-            <span className="text-xs">Refresh Blacklist</span>
+            <span className="text-xs">{t("refreshBlacklist")}</span>
           </Button>
 
           <Button
@@ -102,7 +104,7 @@ export function QuickActions({
             disabled={exporting || !onExportReport}
           >
             <Download className={cn("h-4 w-4", exporting && "animate-bounce")} />
-            <span className="text-xs">Export Report</span>
+            <span className="text-xs">{t("exportReport")}</span>
           </Button>
 
           <Button
@@ -113,7 +115,7 @@ export function QuickActions({
           >
             <a href="/users?filter=high-risk">
               <Users className="h-4 w-4" />
-              <span className="text-xs">Problem Users</span>
+              <span className="text-xs">{t("problemUsers")}</span>
               {problemUsersCount > 0 && (
                 <Badge 
                   variant="destructive" 

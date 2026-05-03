@@ -23,9 +23,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Wifi, WifiOff } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { BlacklistMatchInfo, StatsAnomaly } from "@/lib/types";
 
 export default function DashboardPage() {
+  const t = useTranslations();
+  const tThreat = useTranslations("threatIntel");
   const { stats, nodes, hourly, anomalies, blacklist, connected, loading } = useWebSocket();
   const { threatIntel } = useWsThreatIntel();
   // HTTP-polled copy as a fallback: WS may take up to 10s to push the first
@@ -135,8 +138,8 @@ export default function DashboardPage() {
       if (Array.isArray(alerts)) {
         const mappedAlerts: Alert[] = alerts.map((a: { id: number; type: string; user_email: string; destination: string; count: number; message: string; created_at: string; sent: boolean }) => ({
           id: `db-${a.id}`,
-          title: a.type === "blacklist_threshold" ? `🚨 Блоклист: ${a.user_email}` : `⚠️ ${a.type}`,
-          description: a.destination ? `${a.count}x → ${a.destination}` : `${a.count} нарушений`,
+          title: a.type === "blacklist_threshold" ? `🚨 ${t("nav.blacklist")}: ${a.user_email}` : `⚠️ ${a.type}`,
+          description: a.destination ? `${a.count}x → ${a.destination}` : `${a.count} ${t("blacklist.hits").toLowerCase()}`,
           severity: a.count >= 10 ? "critical" as const : a.count >= 5 ? "high" as const : "medium" as const,
           timestamp: a.created_at,
           read: a.sent,
@@ -206,8 +209,8 @@ export default function DashboardPage() {
     const categoryConfig: Record<string, { label: string; severity: "critical" | "high" | "medium"; icon: string }> = {
       tor: { label: "🌐 Tor", severity: "critical", icon: "🌐" },
       torrent: { label: "📥 Torrent", severity: "high", icon: "📥" },
-      porn: { label: "🔞 Порно", severity: "high", icon: "🔞" },
-      gambling: { label: "🎰 Казино", severity: "high", icon: "🎰" },
+      porn: { label: `🔞 ${tThreat("categories.porn")}`, severity: "high", icon: "🔞" },
+      gambling: { label: `🎰 ${tThreat("categories.gambling")}`, severity: "high", icon: "🎰" },
       malware: { label: "🦠 Malware", severity: "critical", icon: "🦠" },
     };
 
@@ -227,7 +230,7 @@ export default function DashboardPage() {
           newAlerts.push({
             id: `threat-${category}-${user.user_email}-${idx}`,
             title: `${config.label}: ${displayName}`,
-            description: domains ? `→ ${domains}` : `${user.match_count} обращений`,
+            description: domains ? `→ ${domains}` : `${user.match_count} ${t("blacklist.hits").toLowerCase()}`,
             severity: config.severity,
             timestamp: new Date().toISOString(), // Recent activity
             read: false,
@@ -342,9 +345,9 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Dashboard</h2>
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t("dashboard.title")}</h2>
           <p className="text-sm text-muted-foreground">
-            Real-time overview of Xray proxy activity
+            {t("dashboard.description")}
           </p>
         </div>
         <Badge 
@@ -354,12 +357,12 @@ export default function DashboardPage() {
           {connected ? (
             <>
               <Wifi className="h-3 w-3" />
-              Live
+              {t("common.live")}
             </>
           ) : (
             <>
               <WifiOff className="h-3 w-3" />
-              Disconnected
+              {t("common.disconnected")}
             </>
           )}
         </Badge>
@@ -396,7 +399,7 @@ export default function DashboardPage() {
           threatIntelLastUpdate={threatIntel.stats?.last_updated ?? tiStatsHTTP?.last_updated}
           websocketConnected={connected}
         />
-        <PeriodComparison stats={periodStats} periodLabel="vs yesterday" />
+        <PeriodComparison stats={periodStats} periodLabel={t("dashboard.vsYesterday")} />
         <AlertsSummary 
           alerts={alerts}
           onMarkRead={handleMarkAlertRead}
@@ -410,8 +413,8 @@ export default function DashboardPage() {
           <ActivityChart
             data={hourly}
             onlineHistory={onlineHistory}
-            title="Activity (Last 24 Hours)"
-            description="Requests and blacklist hits over time"
+            title={t("dashboard.activityTitle")}
+            description={t("dashboard.activityDesc")}
             loading={false}
             timeRange="24h"
           />
@@ -421,19 +424,19 @@ export default function DashboardPage() {
 
       {/* Row 4: Heatmap + Traffic Distribution + Top Offenders */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-        <ActivityHeatmap 
-          data={hourly} 
-          title="Activity Heatmap"
-          description="Average activity by hour of day"
+        <ActivityHeatmap
+          data={hourly}
+          title={t("activityHeatmap.title")}
+          description={t("activityHeatmap.description")}
         />
-        <TrafficDistribution nodes={nodes} title="Traffic by Node" />
-        <TopOffenders users={topOffenders} title="Top Offenders" />
+        <TrafficDistribution nodes={nodes} title={t("trafficDistribution.title")} />
+        <TopOffenders users={topOffenders} title={t("topOffenders.title")} />
       </div>
 
       {/* Row 5: Geo Distribution (larger) + Real-time Feed */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-        <GeoMap data={geoData} cityData={cityData} title="Geographic Distribution" mode="cities" />
-        <RealTimeFeed events={feedEvents} title="Real-time Feed" />
+        <GeoMap data={geoData} cityData={cityData} title={t("geoMap.title")} mode="cities" />
+        <RealTimeFeed events={feedEvents} title={t("realTimeFeed.title")} />
       </div>
 
       {/* Row 6: Threat Intel (full width) */}
@@ -445,9 +448,9 @@ export default function DashboardPage() {
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
         <Card className="overflow-hidden">
           <CardHeader className="pb-3">
-            <CardTitle>Active Nodes</CardTitle>
+            <CardTitle>{t("dashboard.activeNodes")}</CardTitle>
             <CardDescription>
-              {onlineNodes.length} of {nodes.length} nodes online
+              {t("dashboard.activeNodesDesc", { online: onlineNodes.length, total: nodes.length })}
             </CardDescription>
           </CardHeader>
           <CardContent className="max-h-[400px] overflow-y-auto scrollbar-thin">
@@ -457,9 +460,9 @@ export default function DashboardPage() {
 
         <Card className="overflow-hidden">
           <CardHeader className="pb-3">
-            <CardTitle>Blacklist Alerts</CardTitle>
+            <CardTitle>{t("dashboard.blacklistAlerts")}</CardTitle>
             <CardDescription>
-              Recent blocked requests
+              {t("dashboard.recentBlocked")}
             </CardDescription>
           </CardHeader>
           <CardContent className="max-h-[400px] overflow-y-auto scrollbar-thin">

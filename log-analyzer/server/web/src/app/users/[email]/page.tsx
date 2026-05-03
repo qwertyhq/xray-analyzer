@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ArrowLeft, User, Activity, ShieldAlert, Globe, Wifi, AlertTriangle, Gauge } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { formatDistanceToNow } from "date-fns";
 import { isValidDate } from "@/lib/utils/date";
 import { UserDestinationsTable } from "@/components/users/user-destinations-table";
@@ -24,6 +25,7 @@ import { UserIPHistoryTable } from "@/components/users/user-ip-history";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function UserDetailsPage() {
+  const t = useTranslations("users");
   const params = useParams();
   const email = decodeURIComponent(params.email as string);
   const { details, loading, error } = useUserDetails(email);
@@ -48,13 +50,13 @@ export default function UserDetailsPage() {
         <Link href="/users">
           <Button variant="ghost" className="mb-4">
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Users
+            {t("backToUsers")}
           </Button>
         </Link>
         <Card>
           <CardContent className="pt-6">
             <p className="text-center text-muted-foreground">
-              {error || "User not found"}
+              {error || t("userNotFound")}
             </p>
           </CardContent>
         </Card>
@@ -79,7 +81,7 @@ export default function UserDetailsPage() {
             {details.display_name && details.display_name !== details.user_email && (
               <span className="mr-2 font-mono text-xs">{details.user_email}</span>
             )}
-            User activity across {details.nodes.length} node(s)
+            {t("userActivity2", { count: details.nodes.length })}
           </p>
         </div>
       </div>
@@ -87,7 +89,7 @@ export default function UserDetailsPage() {
       <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">Requests</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t("requests")}</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground hidden sm:block" />
           </CardHeader>
           <CardContent>
@@ -99,7 +101,7 @@ export default function UserDetailsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">Blacklist</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t("blacklist")}</CardTitle>
             <ShieldAlert className="h-4 w-4 text-muted-foreground hidden sm:block" />
           </CardHeader>
           <CardContent>
@@ -111,7 +113,7 @@ export default function UserDetailsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">Threats</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t("threats")}</CardTitle>
             <AlertTriangle className="h-4 w-4 text-muted-foreground hidden sm:block" />
           </CardHeader>
           <CardContent>
@@ -123,7 +125,7 @@ export default function UserDetailsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">Risk</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t("risk")}</CardTitle>
             <Gauge className="h-4 w-4 text-muted-foreground hidden sm:block" />
           </CardHeader>
           <CardContent>
@@ -147,7 +149,7 @@ export default function UserDetailsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">Nodes</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t("nodes")}</CardTitle>
             <Globe className="h-4 w-4 text-muted-foreground hidden sm:block" />
           </CardHeader>
           <CardContent>
@@ -164,19 +166,18 @@ export default function UserDetailsPage() {
           .sort(([, a], [, b]) => b - a)
           .map(([type]) => type);
         const byCat: Record<string, typeof details.recent_threats> = {};
-        (details.recent_threats ?? []).forEach(t => {
-          (byCat[t.threat_type] ??= []).push(t);
+        (details.recent_threats ?? []).forEach(threat => {
+          (byCat[threat.threat_type] ??= []).push(threat);
         });
         return (
           <Card>
             <CardHeader>
               <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-orange-500" />
-                Threat Intelligence
+                {t("threatIntelTitle")}
               </CardTitle>
               <CardDescription className="text-xs sm:text-sm">
-                Threats grouped by category. Counts are lifetime (aggregated);
-                tables show last 50 recent matches per category.
+                {t("threatIntelDesc")}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -195,41 +196,41 @@ export default function UserDetailsPage() {
                     <TabsContent key={cat} value={cat} className="mt-4">
                       {rows.length === 0 ? (
                         <p className="text-sm text-muted-foreground py-4">
-                          No recent matches in this category (older matches trimmed).
+                          {t("noRecentMatches")}
                         </p>
                       ) : (
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="whitespace-nowrap">Time</TableHead>
-                                <TableHead>Destination</TableHead>
-                                <TableHead className="hidden md:table-cell">Source</TableHead>
-                                <TableHead className="text-right hidden sm:table-cell">Conf</TableHead>
-                                <TableHead className="hidden lg:table-cell">Node</TableHead>
+                                <TableHead className="whitespace-nowrap">{t("threatTime")}</TableHead>
+                                <TableHead>{t("threatDestination")}</TableHead>
+                                <TableHead className="hidden md:table-cell">{t("threatSource")}</TableHead>
+                                <TableHead className="text-right hidden sm:table-cell">{t("threatConf")}</TableHead>
+                                <TableHead className="hidden lg:table-cell">{t("threatNode")}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {rows.map((t, i) => (
+                              {rows.map((row, i) => (
                                 <TableRow key={i}>
                                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                                    {isValidDate(t.matched_at)
-                                      ? formatDistanceToNow(new Date(t.matched_at), { addSuffix: true })
+                                    {isValidDate(row.matched_at)
+                                      ? formatDistanceToNow(new Date(row.matched_at), { addSuffix: true })
                                       : "—"}
                                   </TableCell>
-                                  <TableCell className="font-mono text-xs max-w-[260px] truncate" title={t.destination}>
-                                    {t.destination}
+                                  <TableCell className="font-mono text-xs max-w-[260px] truncate" title={row.destination}>
+                                    {row.destination}
                                   </TableCell>
                                   <TableCell className="text-xs text-muted-foreground hidden md:table-cell">
-                                    {t.source}
+                                    {row.source}
                                   </TableCell>
                                   <TableCell className="text-right hidden sm:table-cell">
-                                    <span className={t.confidence >= 90 ? "text-destructive" : t.confidence >= 75 ? "text-orange-500" : ""}>
-                                      {t.confidence}
+                                    <span className={row.confidence >= 90 ? "text-destructive" : row.confidence >= 75 ? "text-orange-500" : ""}>
+                                      {row.confidence}
                                     </span>
                                   </TableCell>
                                   <TableCell className="hidden lg:table-cell">
-                                    <Badge variant="outline" className="text-xs">{t.node_id}</Badge>
+                                    <Badge variant="outline" className="text-xs">{row.node_id}</Badge>
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -248,19 +249,19 @@ export default function UserDetailsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base sm:text-lg">Activity by Node</CardTitle>
-          <CardDescription className="text-xs sm:text-sm">User statistics per connected node</CardDescription>
+          <CardTitle className="text-base sm:text-lg">{t("activityByNode")}</CardTitle>
+          <CardDescription className="text-xs sm:text-sm">{t("activityByNodeDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="whitespace-nowrap">Node</TableHead>
-                <TableHead className="text-right whitespace-nowrap">Requests</TableHead>
-                <TableHead className="text-right whitespace-nowrap">Blacklist</TableHead>
-                <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Destinations</TableHead>
-                <TableHead className="whitespace-nowrap hidden md:table-cell">Last Seen</TableHead>
-                <TableHead className="whitespace-nowrap hidden lg:table-cell">Last Blocked</TableHead>
+                <TableHead className="whitespace-nowrap">{t("nodeColumn")}</TableHead>
+                <TableHead className="text-right whitespace-nowrap">{t("requestsColumn")}</TableHead>
+                <TableHead className="text-right whitespace-nowrap">{t("blacklistColumn")}</TableHead>
+                <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">{t("destinationsColumn")}</TableHead>
+                <TableHead className="whitespace-nowrap hidden md:table-cell">{t("lastSeenColumn")}</TableHead>
+                <TableHead className="whitespace-nowrap hidden lg:table-cell">{t("lastBlockedColumn")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -302,9 +303,9 @@ export default function UserDetailsPage() {
         <CardHeader>
           <CardTitle className="text-base sm:text-lg flex items-center gap-2">
             <Wifi className="h-4 w-4" />
-            IP Address History
+            {t("ipHistory")}
           </CardTitle>
-          <CardDescription className="text-xs sm:text-sm">Last 20 IP addresses used by this user</CardDescription>
+          <CardDescription className="text-xs sm:text-sm">{t("ipHistoryDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <UserIPHistoryTable email={email} />
@@ -313,8 +314,8 @@ export default function UserDetailsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Visited Destinations</CardTitle>
-          <CardDescription>Resources visited by this user (sorted by request count)</CardDescription>
+          <CardTitle>{t("visitedDestinations")}</CardTitle>
+          <CardDescription>{t("visitedDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <UserDestinationsTable email={email} />
@@ -323,8 +324,8 @@ export default function UserDetailsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-destructive">Blacklist Matches</CardTitle>
-          <CardDescription>Blocked requests for this user</CardDescription>
+          <CardTitle className="text-destructive">{t("blacklistMatches")}</CardTitle>
+          <CardDescription>{t("blacklistMatchesDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <UserBlacklistMatches email={email} />

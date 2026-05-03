@@ -11,25 +11,25 @@ export const threatTypeConfig: Record<ThreatType, { icon: React.ReactNode; color
   adware: { icon: React.createElement(Activity, { className: "h-4 w-4" }), color: "bg-yellow-500", label: "Adware" },
   tracker: { icon: React.createElement(Activity, { className: "h-4 w-4" }), color: "bg-gray-500", label: "Tracker" },
   // Content categories
-  porn: { icon: React.createElement(Heart, { className: "h-4 w-4" }), color: "bg-pink-600", label: "Порно" },
-  gambling: { icon: React.createElement(Dice1, { className: "h-4 w-4" }), color: "bg-emerald-600", label: "Казино" },
-  social: { icon: React.createElement(Users, { className: "h-4 w-4" }), color: "bg-blue-500", label: "Соц.сети" },
-  fakenews: { icon: React.createElement(Newspaper, { className: "h-4 w-4" }), color: "bg-amber-600", label: "Фейки" },
+  porn: { icon: React.createElement(Heart, { className: "h-4 w-4" }), color: "bg-pink-600", label: "porn" },
+  gambling: { icon: React.createElement(Dice1, { className: "h-4 w-4" }), color: "bg-emerald-600", label: "gambling" },
+  social: { icon: React.createElement(Users, { className: "h-4 w-4" }), color: "bg-blue-500", label: "social" },
+  fakenews: { icon: React.createElement(Newspaper, { className: "h-4 w-4" }), color: "bg-amber-600", label: "fakenews" },
   // P2P
-  torrent: { icon: React.createElement(Download, { className: "h-4 w-4" }), color: "bg-cyan-600", label: "Торрент" },
+  torrent: { icon: React.createElement(Download, { className: "h-4 w-4" }), color: "bg-cyan-600", label: "torrent" },
   // Anonymization
-  tor: { icon: React.createElement(Globe, { className: "h-4 w-4" }), color: "bg-violet-600", label: "Tor" },
+  tor: { icon: React.createElement(Globe, { className: "h-4 w-4" }), color: "bg-violet-600", label: "tor" },
   // BlockList Project categories
-  abuse: { icon: React.createElement(AlertTriangle, { className: "h-4 w-4" }), color: "bg-orange-600", label: "Абьюз" },
-  ads: { icon: React.createElement(Megaphone, { className: "h-4 w-4" }), color: "bg-yellow-600", label: "Реклама" },
-  crypto: { icon: React.createElement(Coins, { className: "h-4 w-4" }), color: "bg-amber-500", label: "Крипто" },
-  drugs: { icon: React.createElement(Pill, { className: "h-4 w-4" }), color: "bg-lime-600", label: "Наркотики" },
-  fraud: { icon: React.createElement(ShieldAlert, { className: "h-4 w-4" }), color: "bg-red-600", label: "Мошенничество" },
-  piracy: { icon: React.createElement(Anchor, { className: "h-4 w-4" }), color: "bg-slate-600", label: "Пиратство" },
-  scam: { icon: React.createElement(BadgeAlert, { className: "h-4 w-4" }), color: "bg-rose-600", label: "Скам" },
-  redirect: { icon: React.createElement(ExternalLink, { className: "h-4 w-4" }), color: "bg-gray-600", label: "Редиректы" },
-  tiktok: { icon: React.createElement(Video, { className: "h-4 w-4" }), color: "bg-black", label: "TikTok" },
-  tracking: { icon: React.createElement(Eye, { className: "h-4 w-4" }), color: "bg-indigo-500", label: "Трекинг" },
+  abuse: { icon: React.createElement(AlertTriangle, { className: "h-4 w-4" }), color: "bg-orange-600", label: "abuse" },
+  ads: { icon: React.createElement(Megaphone, { className: "h-4 w-4" }), color: "bg-yellow-600", label: "ads" },
+  crypto: { icon: React.createElement(Coins, { className: "h-4 w-4" }), color: "bg-amber-500", label: "crypto" },
+  drugs: { icon: React.createElement(Pill, { className: "h-4 w-4" }), color: "bg-lime-600", label: "drugs" },
+  fraud: { icon: React.createElement(ShieldAlert, { className: "h-4 w-4" }), color: "bg-red-600", label: "fraud" },
+  piracy: { icon: React.createElement(Anchor, { className: "h-4 w-4" }), color: "bg-slate-600", label: "piracy" },
+  scam: { icon: React.createElement(BadgeAlert, { className: "h-4 w-4" }), color: "bg-rose-600", label: "scam" },
+  redirect: { icon: React.createElement(ExternalLink, { className: "h-4 w-4" }), color: "bg-gray-600", label: "redirect" },
+  tiktok: { icon: React.createElement(Video, { className: "h-4 w-4" }), color: "bg-black", label: "tiktok" },
+  tracking: { icon: React.createElement(Eye, { className: "h-4 w-4" }), color: "bg-indigo-500", label: "tracking" },
 };
 
 export const sourceLabels: Record<ThreatSource, string> = {

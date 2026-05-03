@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Trash2 } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { isValidDate, formatRelativeTime } from '@/lib/utils/date'
 import { NodeStats } from '@/lib/types'
 
@@ -22,7 +23,7 @@ interface NodesTableProps {
   showActions?: boolean
 }
 
-// Хранение предыдущих значений для отслеживания изменений
+// Store previous values for change tracking
 interface PrevNodeState {
   is_connected: boolean
   blacklist_hits: number
@@ -30,7 +31,8 @@ interface PrevNodeState {
 }
 
 export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: NodesTableProps) {
-  // Поддержка обоих вариантов: onDeleteNode и onDelete
+  const t = useTranslations('nodesTable')
+  // Support both variants: onDeleteNode and onDelete
   const handleDelete = onDeleteNode || onDelete
   const showDeleteButton = showActions || !!handleDelete
   
@@ -69,7 +71,7 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
     if (newChanges.size > 0) {
       setChangedNodes(newChanges)
       
-      // Убираем анимацию через 2 секунды
+      // Remove animation after 2 seconds
       const timer = setTimeout(() => {
         setChangedNodes(new Map())
       }, 2000)
@@ -77,7 +79,7 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
       return () => clearTimeout(timer)
     }
 
-    // Сохраняем текущее состояние
+    // Save current state
     const newPrevMap = new Map<string, PrevNodeState>()
     nodes.forEach(node => {
       newPrevMap.set(node.node_id, {
@@ -89,7 +91,7 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
     prevNodesRef.current = newPrevMap
   }, [nodes])
 
-  // Обновляем prevNodesRef после каждого рендера
+  // Update prevNodesRef after each render
   useEffect(() => {
     const newPrevMap = new Map<string, PrevNodeState>()
     nodes.forEach(node => {
@@ -107,13 +109,13 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="whitespace-nowrap">Node ID</TableHead>
-            <TableHead className="whitespace-nowrap">Status</TableHead>
-            <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Requests</TableHead>
-            <TableHead className="text-right whitespace-nowrap">Blacklist</TableHead>
-            <TableHead className="text-right whitespace-nowrap">Online</TableHead>
-            <TableHead className="text-right whitespace-nowrap hidden md:table-cell">Total Users</TableHead>
-            <TableHead className="whitespace-nowrap hidden lg:table-cell">Last Seen</TableHead>
+            <TableHead className="whitespace-nowrap">{t('nodeId')}</TableHead>
+            <TableHead className="whitespace-nowrap">{t('status')}</TableHead>
+            <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">{t('requests')}</TableHead>
+            <TableHead className="text-right whitespace-nowrap">{t('blacklist')}</TableHead>
+            <TableHead className="text-right whitespace-nowrap">{t('online')}</TableHead>
+            <TableHead className="text-right whitespace-nowrap hidden md:table-cell">{t('totalUsers')}</TableHead>
+            <TableHead className="whitespace-nowrap hidden lg:table-cell">{t('lastSeen')}</TableHead>
             {showDeleteButton && <TableHead className="w-[50px]"></TableHead>}
           </TableRow>
         </TableHeader>
@@ -137,7 +139,7 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
                         : ''
                     }`}
                   >
-                    {node.is_connected ? 'Online' : 'Offline'}
+                    {node.is_connected ? t('statusOnline') : t('statusOffline')}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right hidden sm:table-cell">{node.total_requests.toLocaleString()}</TableCell>
@@ -153,7 +155,7 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
                 </TableCell>
                 <TableCell className="text-right hidden md:table-cell">{node.unique_users.toLocaleString()}</TableCell>
                 <TableCell className="text-muted-foreground hidden lg:table-cell">
-                  {isValidDate(node.last_seen) ? formatRelativeTime(node.last_seen) : 'Never'}
+                  {isValidDate(node.last_seen) ? formatRelativeTime(node.last_seen) : t('never')}
                 </TableCell>
                 {showDeleteButton && handleDelete && (
                   <TableCell>

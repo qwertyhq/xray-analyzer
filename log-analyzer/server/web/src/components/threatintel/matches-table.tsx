@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,7 @@ interface MatchesTableProps {
 }
 
 export function MatchesTable({ matches: matchesProp, title, description }: MatchesTableProps) {
+  const t = useTranslations("threatIntel");
   const matches = matchesProp || [];
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -94,10 +96,9 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
         <CardContent>
           <div className="text-center py-12 text-muted-foreground">
             <div className="text-4xl mb-4">🔍</div>
-            <p className="text-sm">Нет недавней активности для этой категории</p>
+            <p className="text-sm">{t("noRecentActivity")}</p>
             <p className="text-xs mt-2 max-w-md mx-auto">
-              Статистика выше показывает общее число детекций за всё время. 
-              Детальные записи хранятся 30 дней — возможно, активность этого типа была давно.
+              {t("statsNote")}
             </p>
           </div>
         </CardContent>
@@ -115,7 +116,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
               <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
             </div>
             <div className="text-sm text-muted-foreground">
-              {filteredMatches.length} из {matches.length}
+              {t("ofTotal", { filtered: filteredMatches.length, total: matches.length })}
             </div>
           </div>
           
@@ -124,7 +125,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Поиск по email или destination..."
+                placeholder={t("searchPlaceholder")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 h-9"
@@ -132,15 +133,16 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
             </div>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
               <SelectTrigger className="w-[130px] h-9">
-                <SelectValue placeholder="Тип" />
+                <SelectValue placeholder={t("typeFilter")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Все типы</SelectItem>
+                <SelectItem value="all">{t("allTypes")}</SelectItem>
                 {threatTypes.map(type => {
                   const config = threatTypeConfig[type];
+                  const labelKey = config?.label as string;
                   return (
                     <SelectItem key={type} value={type}>
-                      {config?.label || type}
+                      {config ? t(`categories.${labelKey}` as Parameters<typeof t>[0]) : type}
                     </SelectItem>
                   );
                 })}
@@ -151,7 +153,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
                 <SelectValue placeholder="Confidence" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Все</SelectItem>
+                <SelectItem value="all">{t("confidenceAll")}</SelectItem>
                 <SelectItem value="90">≥ 90%</SelectItem>
                 <SelectItem value="80">≥ 80%</SelectItem>
                 <SelectItem value="50">≥ 50%</SelectItem>
@@ -182,7 +184,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
                   </TableCell>
                   <TableCell>
                     <Badge className={`${config.color} text-white text-xs`}>
-                      {config.label}
+                      {t(`categories.${config.label}` as Parameters<typeof t>[0])}
                     </Badge>
                   </TableCell>
                   <TableCell className="max-w-[100px] sm:max-w-none">
@@ -212,7 +214,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
             {filteredMatches.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  Совпадений не найдено
+                  {t("noMatchesFound")}
                 </TableCell>
               </TableRow>
             )}
@@ -224,7 +226,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
       {totalPages > 1 && (
         <div className="flex items-center justify-between p-4 pt-2 border-t">
           <p className="text-sm text-muted-foreground">
-            Страница {page} из {totalPages}
+            {t("page", { page, total: totalPages })}
           </p>
           <div className="flex gap-2">
             <Button
@@ -234,7 +236,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
               disabled={page === 1}
             >
               <ChevronLeft className="h-4 w-4" />
-              Назад
+              {t("prev")}
             </Button>
             <Button
               variant="outline"
@@ -242,7 +244,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
-              Далее
+              {t("next")}
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

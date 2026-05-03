@@ -65,8 +65,8 @@ export function AnimatedNumber({
   );
 }
 
-// Компонент для байтов (трафик)
-export function AnimatedBytes({ 
+// Component for bytes (traffic)
+export function AnimatedBytes({
   value, 
   duration = 500,
   className = "" 
@@ -89,7 +89,7 @@ export function AnimatedBytes({
   );
 }
 
-// Компонент для процентов
+// Component for percentages
 export function AnimatedPercent({ 
   value, 
   duration = 500,

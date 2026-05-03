@@ -30,9 +30,12 @@ import {
   Clock,
   Globe
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { RemnawaveStats, RemnawaveOnlineStats } from "@/lib/types";
 
 export default function RemnavewavePage() {
+  const t = useTranslations("remnawave");
+  const tCommon = useTranslations("common");
   const [stats, setStats] = useState<RemnawaveStats | null>(null);
   const [onlineStats, setOnlineStats] = useState<RemnawaveOnlineStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,14 +126,14 @@ export default function RemnavewavePage() {
           <CardHeader>
             <CardTitle className="text-destructive flex items-center gap-2">
               <AlertTriangle className="h-5 w-5" />
-              Ошибка подключения к Remnawave
+              {t("errorTitle")}
             </CardTitle>
             <CardDescription>{error}</CardDescription>
           </CardHeader>
           <CardContent>
             <Button onClick={() => fetchData()}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Повторить
+              {t("retry")}
             </Button>
           </CardContent>
         </Card>
@@ -145,18 +148,18 @@ export default function RemnavewavePage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Activity className="h-6 w-6 text-primary" />
-            Remnawave Analytics
+            {t("title")}
           </h1>
           <p className="text-muted-foreground">
-            Расширенная аналитика на основе данных Remnawave API
+            {t("description")}
             {lastUpdate && (
               <span className="ml-2 text-xs">
-                • Обновлено: {lastUpdate.toLocaleTimeString()}
+                • {t("updated")} {lastUpdate.toLocaleTimeString()}
               </span>
             )}
             {onlineStats?.lastSync && (
               <span className="ml-2 text-xs text-green-500">
-                • Синхронизация каждую минуту
+                • {t("syncEveryMinute")}
               </span>
             )}
           </p>
@@ -167,7 +170,7 @@ export default function RemnavewavePage() {
           disabled={refreshing}
         >
           <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-          Обновить
+          {t("refresh")}
         </Button>
       </div>
 
@@ -178,7 +181,7 @@ export default function RemnavewavePage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Wifi className="h-4 w-4 text-green-500" />
-              Онлайн сейчас
+              {t("onlineNow")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -186,9 +189,9 @@ export default function RemnavewavePage() {
               <AnimatedNumber value={onlineStats?.now ?? 0} />
             </div>
             <div className="flex gap-2 mt-2 text-xs text-muted-foreground">
-              <span>15 мин: <AnimatedNumber value={onlineStats?.recent ?? 0} /></span>
+              <span>{t("mins15")} <AnimatedNumber value={onlineStats?.recent ?? 0} /></span>
               <span>•</span>
-              <span>1ч: <AnimatedNumber value={onlineStats?.lastHour ?? 0} /></span>
+              <span>{t("hour1")} <AnimatedNumber value={onlineStats?.lastHour ?? 0} /></span>
             </div>
           </CardContent>
         </Card>
@@ -197,7 +200,7 @@ export default function RemnavewavePage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Users className="h-4 w-4 text-muted-foreground" />
-              Всего пользователей
+              {t("totalUsers")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -216,7 +219,7 @@ export default function RemnavewavePage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Smartphone className="h-4 w-4 text-muted-foreground" />
-              HWID устройств
+              {t("hwidDevices")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -224,7 +227,7 @@ export default function RemnavewavePage() {
               <AnimatedNumber value={stats?.hwidStats?.totalDevices ?? 0} />
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Уникальных: <AnimatedNumber value={stats?.hwidStats?.uniqueUsers ?? 0} />
+              {t("unique")} <AnimatedNumber value={stats?.hwidStats?.uniqueUsers ?? 0} />
             </p>
           </CardContent>
         </Card>
@@ -233,7 +236,7 @@ export default function RemnavewavePage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Server className="h-4 w-4 text-muted-foreground" />
-              Платформы
+              {t("platforms")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -249,7 +252,7 @@ export default function RemnavewavePage() {
                     </div>
                   ))
               ) : (
-                <span className="text-sm text-muted-foreground">Нет данных</span>
+                <span className="text-sm text-muted-foreground">{t("noData")}</span>
               )}
             </div>
           </CardContent>
@@ -261,7 +264,7 @@ export default function RemnavewavePage() {
         <TabsList>
           <TabsTrigger value="online" className="flex items-center gap-2">
             <Wifi className="h-4 w-4" />
-            Онлайн
+            {t("tabOnline")}
             {onlineStats && onlineStats.now > 0 && (
               <Badge variant="default" className="ml-1 bg-green-500">
                 {onlineStats.now}
@@ -270,11 +273,11 @@ export default function RemnavewavePage() {
           </TabsTrigger>
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
-            Пользователи
+            {t("tabUsers")}
           </TabsTrigger>
           <TabsTrigger value="analytics" className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4" />
-            Аналитика
+            {t("tabAnalytics")}
           </TabsTrigger>
         </TabsList>
 
@@ -283,11 +286,10 @@ export default function RemnavewavePage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Wifi className="h-5 w-5 text-green-500" />
-                Онлайн пользователи (Remnawave)
+                {t("onlineUsersTitle")}
               </CardTitle>
               <CardDescription>
-                Точная статистика онлайн из Remnawave API. 
-                Данные обновляются каждую минуту и более точны, чем статистика на основе логов.
+                {t("onlineUsersDesc")}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -295,23 +297,23 @@ export default function RemnavewavePage() {
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                 <div className="text-center p-3 bg-green-500/10 rounded-lg">
                   <div className="text-2xl font-bold text-green-500">{onlineStats?.now ?? 0}</div>
-                  <div className="text-xs text-muted-foreground">Сейчас (5 мин)</div>
+                  <div className="text-xs text-muted-foreground">{t("now5min")}</div>
                 </div>
                 <div className="text-center p-3 bg-muted/50 rounded-lg">
                   <div className="text-2xl font-bold">{onlineStats?.recent ?? 0}</div>
-                  <div className="text-xs text-muted-foreground">За 15 минут</div>
+                  <div className="text-xs text-muted-foreground">{t("last15min")}</div>
                 </div>
                 <div className="text-center p-3 bg-muted/50 rounded-lg">
                   <div className="text-2xl font-bold">{onlineStats?.lastHour ?? 0}</div>
-                  <div className="text-xs text-muted-foreground">За час</div>
+                  <div className="text-xs text-muted-foreground">{t("lastHour")}</div>
                 </div>
                 <div className="text-center p-3 bg-muted/50 rounded-lg">
                   <div className="text-2xl font-bold">{onlineStats?.last24h ?? 0}</div>
-                  <div className="text-xs text-muted-foreground">За 24 часа</div>
+                  <div className="text-xs text-muted-foreground">{t("last24h")}</div>
                 </div>
                 <div className="text-center p-3 bg-muted/50 rounded-lg">
                   <div className="text-2xl font-bold text-muted-foreground">{onlineStats?.neverOnline ?? 0}</div>
-                  <div className="text-xs text-muted-foreground">Никогда</div>
+                  <div className="text-xs text-muted-foreground">{t("neverOnline")}</div>
                 </div>
               </div>
 
@@ -322,10 +324,10 @@ export default function RemnavewavePage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Пользователь</TableHead>
-                      <TableHead>Статус</TableHead>
-                      <TableHead>Последняя активность</TableHead>
-                      <TableHead>Нода</TableHead>
+                      <TableHead>{t("userColumn")}</TableHead>
+                      <TableHead>{t("statusColumn")}</TableHead>
+                      <TableHead>{t("lastActivityColumn")}</TableHead>
+                      <TableHead>{t("nodeColumn")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -355,7 +357,7 @@ export default function RemnavewavePage() {
                           <div className="flex items-center gap-2">
                             <Clock className="h-3 w-3 text-muted-foreground" />
                             <span className="text-sm">
-                              {user.minutesAgo === 0 ? "Только что" : `${user.minutesAgo} мин назад`}
+                              {user.minutesAgo === 0 ? tCommon("justNow") : tCommon("minutesAgo", { count: user.minutesAgo })}
                             </span>
                           </div>
                         </TableCell>
@@ -384,7 +386,7 @@ export default function RemnavewavePage() {
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <Wifi className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Нет онлайн пользователей за последние 15 минут</p>
+                  <p>{t("noOnlineUsers")}</p>
                 </div>
               )}
             </CardContent>
@@ -396,11 +398,10 @@ export default function RemnavewavePage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                Пользователи Remnawave
+                {t("remnawaveUsers")}
               </CardTitle>
               <CardDescription>
-                Полный список пользователей с данными HWID, 
-                историей подключений и информацией из Note.
+                {t("remnawaveUsersDesc")}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -414,25 +415,25 @@ export default function RemnavewavePage() {
             {/* Traffic Stats */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Использование трафика</CardTitle>
+                <CardTitle className="text-lg">{t("trafficUsage")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Общий трафик</span>
+                    <span className="text-muted-foreground">{t("totalTraffic")}</span>
                     <span className="font-medium">
-                      {stats?.totalTrafficUsed 
+                      {stats?.totalTrafficUsed
                         ? `${(stats.totalTrafficUsed / (1024 * 1024 * 1024)).toFixed(2)} GB`
-                        : "N/A"
+                        : tCommon("notAvailable")
                       }
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Средний на пользователя</span>
+                    <span className="text-muted-foreground">{t("avgPerUser")}</span>
                     <span className="font-medium">
                       {stats?.totalTrafficUsed && stats?.activeUsers
                         ? `${(stats.totalTrafficUsed / stats.activeUsers / (1024 * 1024 * 1024)).toFixed(2)} GB`
-                        : "N/A"
+                        : tCommon("notAvailable")
                       }
                     </span>
                   </div>
@@ -443,7 +444,7 @@ export default function RemnavewavePage() {
             {/* Status Distribution */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Распределение статусов</CardTitle>
+                <CardTitle className="text-lg">{t("statusDistribution")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
@@ -470,24 +471,24 @@ export default function RemnavewavePage() {
             {/* Online Activity */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Активность онлайн</CardTitle>
+                <CardTitle className="text-lg">{t("onlineActivity")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">За последний час</span>
+                    <span className="text-muted-foreground">{t("lastHourLabel")}</span>
                     <span className="font-medium text-green-500">
                       {stats?.onlineLastHour ?? "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">За последние 24 часа</span>
+                    <span className="text-muted-foreground">{t("last24hLabel")}</span>
                     <span className="font-medium">
                       {stats?.onlineLast24h ?? "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Никогда не онлайн</span>
+                    <span className="text-muted-foreground">{t("neverOnlineLabel")}</span>
                     <span className="font-medium text-muted-foreground">
                       {stats?.neverOnline ?? "—"}
                     </span>
@@ -499,24 +500,24 @@ export default function RemnavewavePage() {
             {/* Device Limits */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Лимиты устройств</CardTitle>
+                <CardTitle className="text-lg">{t("deviceLimits")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">С HWID лимитом</span>
+                    <span className="text-muted-foreground">{t("withHwidLimit")}</span>
                     <span className="font-medium">
                       {stats?.usersWithHwidLimit ?? "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Всего устройств</span>
+                    <span className="text-muted-foreground">{t("totalDevices")}</span>
                     <span className="font-medium">
                       {stats?.hwidStats?.totalDevices ?? "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Ср. устройств</span>
+                    <span className="text-muted-foreground">{t("avgDevices")}</span>
                     <span className="font-medium">
                       {stats?.hwidStats?.totalDevices && stats?.hwidStats?.uniqueUsers
                         ? (stats.hwidStats.totalDevices / stats.hwidStats.uniqueUsers).toFixed(1)

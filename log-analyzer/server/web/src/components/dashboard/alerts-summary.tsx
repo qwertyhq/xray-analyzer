@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Bell, AlertTriangle, ShieldAlert, Info, X, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 
 export type AlertSeverity = "critical" | "high" | "medium" | "low" | "info";
@@ -58,6 +59,7 @@ const severityConfig: Record<AlertSeverity, {
 };
 
 export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSummaryProps) {
+  const t = useTranslations("alerts");
   const unreadCount = alerts.filter(a => !a.read).length;
   const criticalCount = alerts.filter(a => a.severity === "critical" && !a.read).length;
   const highCount = alerts.filter(a => a.severity === "high" && !a.read).length;
@@ -70,7 +72,7 @@ export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSumma
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Bell className="h-4 w-4 text-yellow-500" />
-            Alerts
+            {t("title")}
             {unreadCount > 0 && (
               <Badge variant="destructive" className="h-5 px-1.5 text-xs">
                 {unreadCount}
@@ -85,7 +87,7 @@ export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSumma
               onClick={onMarkAllRead}
             >
               <CheckCircle className="h-3 w-3 mr-1" />
-              Mark all read
+              {t("markAllRead")}
             </Button>
           )}
         </div>
@@ -110,8 +112,8 @@ export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSumma
         {alerts.length === 0 ? (
           <div className="text-center py-6 text-muted-foreground">
             <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-30 text-green-500" />
-            <p className="text-sm">No alerts</p>
-            <p className="text-xs mt-1">All systems running smoothly</p>
+            <p className="text-sm">{t("noAlerts")}</p>
+            <p className="text-xs mt-1">{t("allRunning")}</p>
           </div>
         ) : (
           <div className="space-y-2 max-h-[280px] overflow-y-auto scrollbar-thin pr-1">
@@ -174,7 +176,7 @@ export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSumma
         
         {alerts.length > 5 && (
           <p className="text-xs text-muted-foreground text-center mt-2">
-            +{alerts.length - 5} more alerts
+            +{alerts.length - 5} {t("title").toLowerCase()}
           </p>
         )}
       </CardContent>

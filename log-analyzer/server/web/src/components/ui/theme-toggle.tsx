@@ -3,8 +3,10 @@
 import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "./button";
+import { useTranslations } from "next-intl";
 
 export function ThemeToggle() {
+  const t = useTranslations("themeToggle");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [mounted, setMounted] = useState(false);
 
@@ -42,7 +44,7 @@ export function ThemeToggle() {
       size="icon"
       onClick={toggleTheme}
       className="h-9 w-9"
-      title={theme === "light" ? "Тёмная тема" : "Светлая тема"}
+      title={theme === "light" ? t("dark") : t("light")}
     >
       {theme === "light" ? (
         <Moon className="h-4 w-4" />
