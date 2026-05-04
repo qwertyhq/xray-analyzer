@@ -218,19 +218,19 @@ func (s *Storage) loadHourlyBlacklistStats(ctx context.Context, since time.Time,
 
 // GetUserBlacklistDetails returns detailed blacklist info for a user
 func (s *Storage) GetUserBlacklistDetails(ctx context.Context, userEmail string, since time.Time) ([]models.BlacklistMatchInfo, error) {
-	userUUID, err := uuid.Parse(userEmail)
-	if err != nil {
-		return nil, nil // non-UUID user, no results
+	searchUUIDs := s.buildBlacklistSearchUUIDs(ctx, userEmail)
+	if len(searchUUIDs) == 0 {
+		return nil, nil
 	}
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT n.node_id, bm.source_ip::text, bm.destination, bm.matched_rule, bm.timestamp
 		FROM blacklist_matches bm
 		JOIN nodes n ON n.id = bm.node_id
-		WHERE bm.user_email = $1 AND bm.timestamp > $2
+		WHERE bm.user_email = ANY($1) AND bm.timestamp > $2
 		ORDER BY bm.timestamp DESC
 		LIMIT 500
-	`, userUUID, since.UTC())
+	`, searchUUIDs, since.UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -265,30 +265,20 @@ func extractNumericPartBl(s string) string {
 	return ""
 }
 
-// buildBlacklistSearchUUIDs builds user UUID list to search for in blacklist_matches.
-// user_email is now uuid in the DB.
+// buildBlacklistSearchUUIDs resolves a user identifier to every plausible
+// canonical UUID for blacklist_matches lookups. Goes through the same
+// numeric-id / us_id / username / SHA-1 fallback chain as ResolveUserEmailToUUID
+// so a URL like /users/us_5478 also matches data keyed by the real user's UUID.
 func (s *Storage) buildBlacklistSearchUUIDs(ctx context.Context, userEmail string) []uuid.UUID {
+	seen := make(map[uuid.UUID]bool)
 	var uuids []uuid.UUID
-	// Try direct UUID parse first
-	if u, err := uuid.Parse(userEmail); err == nil {
+	for _, id := range buildUserSearchIDs(userEmail) {
+		u, err := s.ResolveUserEmailToUUID(ctx, id)
+		if err != nil || seen[u] {
+			continue
+		}
+		seen[u] = true
 		uuids = append(uuids, u)
-	}
-	// Try to find UUID via remna_users username
-	var remnaUUID uuid.UUID
-	if err := s.pool.QueryRow(ctx,
-		`SELECT uuid FROM remna_users WHERE username = $1 OR us_id = $1 LIMIT 1`,
-		userEmail,
-	).Scan(&remnaUUID); err == nil {
-		found := false
-		for _, u := range uuids {
-			if u == remnaUUID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			uuids = append(uuids, remnaUUID)
-		}
 	}
 	return uuids
 }

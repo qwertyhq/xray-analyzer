@@ -9,35 +9,21 @@ import (
 	"github.com/xray-log-analyzer/server/internal/models"
 )
 
-// buildDestSearchUUIDs resolves a user identifier (UUID string, username, or us_id)
-// to a list of uuid.UUID values for use in user_destinations queries.
+// buildDestSearchUUIDs resolves a user identifier to every plausible
+// canonical UUID for user_destinations lookups. Goes through the same
+// numeric-id / us_id / username / SHA-1 fallback chain as ResolveUserEmailToUUID
+// so a URL like /users/us_5478 also matches data keyed by the real user's UUID.
 func (s *Storage) buildDestSearchUUIDs(ctx context.Context, userEmail string) []uuid.UUID {
-	var uuids []uuid.UUID
 	seen := make(map[uuid.UUID]bool)
-	add := func(u uuid.UUID) {
-		if !seen[u] {
-			seen[u] = true
-			uuids = append(uuids, u)
+	var uuids []uuid.UUID
+	for _, id := range buildUserSearchIDs(userEmail) {
+		u, err := s.ResolveUserEmailToUUID(ctx, id)
+		if err != nil || seen[u] {
+			continue
 		}
+		seen[u] = true
+		uuids = append(uuids, u)
 	}
-
-	// Direct UUID parse.
-	if u, err := uuid.Parse(userEmail); err == nil {
-		add(u)
-	}
-
-	// Look up remna_users by username or us_id to get their UUID.
-	var remnaUUID string
-	_ = s.pool.QueryRow(ctx,
-		`SELECT COALESCE(uuid::text, '') FROM remna_users WHERE username = $1 OR us_id = $1 LIMIT 1`,
-		userEmail,
-	).Scan(&remnaUUID)
-	if remnaUUID != "" {
-		if u, err := uuid.Parse(remnaUUID); err == nil {
-			add(u)
-		}
-	}
-
 	return uuids
 }
 
