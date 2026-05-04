@@ -199,7 +199,7 @@ export default function UserDetailsPage() {
                           {t("noRecentMatches")}
                         </p>
                       ) : (
-                        <div className="overflow-x-auto">
+                        <div className="max-h-[400px] overflow-y-auto overflow-x-auto scrollbar-thin">
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -252,7 +252,7 @@ export default function UserDetailsPage() {
           <CardTitle className="text-base sm:text-lg">{t("activityByNode")}</CardTitle>
           <CardDescription className="text-xs sm:text-sm">{t("activityByNodeDesc")}</CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="max-h-[300px] overflow-y-auto overflow-x-auto scrollbar-thin">
           <Table>
             <TableHeader>
               <TableRow>

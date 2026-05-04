@@ -80,7 +80,7 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="max-h-[400px] overflow-y-auto overflow-x-auto scrollbar-thin">
       <Table>
         <TableHeader>
           <TableRow>
