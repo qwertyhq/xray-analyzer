@@ -22,6 +22,7 @@ import {
 import { ChevronLeft, ChevronRight, Globe } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { isValidDate } from "@/lib/utils/date";
+import { authFetch } from "@/contexts/auth-context";
 import { UserDestinationsResponse, TimeRange } from "@/lib/types";
 
 interface UserDestinationsTableProps {
@@ -38,7 +39,7 @@ export function UserDestinationsTable({ email }: UserDestinationsTableProps) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `/api/users/${encodeURIComponent(email)}/destinations?page=${page}&page_size=${pageSize}&period=${period}`
       );
       if (res.ok) {

@@ -22,6 +22,7 @@ import {
 import { ChevronLeft, ChevronRight, ShieldAlert } from "lucide-react";
 import { format } from "date-fns";
 import { isValidDate } from "@/lib/utils/date";
+import { authFetch } from "@/contexts/auth-context";
 import { BlacklistMatchInfo, TimeRange } from "@/lib/types";
 
 interface PaginatedBlacklistResponse {
@@ -46,7 +47,7 @@ export function UserBlacklistMatches({ email }: UserBlacklistMatchesProps) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `/api/users/${encodeURIComponent(email)}/blacklist?page=${page}&page_size=${pageSize}&period=${period}`
       );
       if (res.ok) {
