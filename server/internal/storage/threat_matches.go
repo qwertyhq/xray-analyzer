@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
@@ -271,6 +272,79 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 	}
 
 	return matches, nil
+}
+
+// GetUserThreatMatchesPaginated returns paginated threat_matches rows for a
+// single user filtered by threat_type, optionally by time window. Resolves
+// the user identifier through the same UUID chain as the destinations /
+// blacklist endpoints so URLs like /users/us_5478 work.
+func (s *Storage) GetUserThreatMatchesPaginated(
+	ctx context.Context,
+	userEmail, threatType string,
+	since time.Time,
+	page, pageSize int,
+) (*models.PaginatedUserThreatsResponse, error) {
+	offset := (page - 1) * pageSize
+	searchUUIDs := s.buildBlacklistSearchUUIDs(ctx, userEmail)
+	if len(searchUUIDs) == 0 {
+		return &models.PaginatedUserThreatsResponse{
+			Matches:    []models.UserThreatInfo{},
+			Total:      0,
+			Page:       page,
+			PageSize:   pageSize,
+			TotalPages: 1,
+		}, nil
+	}
+
+	var total int
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM threat_matches
+		WHERE user_email = ANY($1) AND threat_type = $2 AND matched_at > $3
+	`, searchUUIDs, threatType, since.UTC()).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT n.node_id, tm.destination, tm.threat_type, tm.source,
+		       tm.confidence,
+		       COALESCE(tm.description, '') AS description,
+		       COALESCE(host(tm.source_ip), '') AS source_ip,
+		       tm.matched_at
+		FROM threat_matches tm
+		JOIN nodes n ON n.id = tm.node_id
+		WHERE tm.user_email = ANY($1) AND tm.threat_type = $2 AND tm.matched_at > $3
+		ORDER BY tm.matched_at DESC
+		LIMIT $4 OFFSET $5
+	`, searchUUIDs, threatType, since.UTC(), pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	matches := []models.UserThreatInfo{}
+	for rows.Next() {
+		var m models.UserThreatInfo
+		if err := rows.Scan(&m.NodeID, &m.Destination, &m.ThreatType, &m.Source,
+			&m.Confidence, &m.Description, &m.SourceIP, &m.MatchedAt); err != nil {
+			return nil, err
+		}
+		matches = append(matches, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	totalPages := (total + pageSize - 1) / pageSize
+	if totalPages == 0 {
+		totalPages = 1
+	}
+	return &models.PaginatedUserThreatsResponse{
+		Matches:    matches,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+	}, nil
 }
 
 // CleanupOldThreatMatches removes threat matches older than the retention period

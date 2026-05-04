@@ -22,6 +22,7 @@ import { isValidDate } from "@/lib/utils/date";
 import { UserDestinationsTable } from "@/components/users/user-destinations-table";
 import { UserBlacklistMatches } from "@/components/users/user-blacklist-matches";
 import { UserIPHistoryTable } from "@/components/users/user-ip-history";
+import { UserThreatsTable } from "@/components/users/user-threats-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function UserDetailsPage() {
@@ -159,16 +160,12 @@ export default function UserDetailsPage() {
       </div>
 
       {details.threats_by_type && Object.keys(details.threats_by_type).length > 0 && (() => {
-        // Group threats by category. Aggregate counts come from
-        // threats_by_type (full history); recent_threats gives the last N matches
-        // per category (subject to the 1000/category recent-matches cap).
+        // Tab labels + counts come from threats_by_type (full aggregate).
+        // The detail rows for the active tab are loaded paginated by
+        // UserThreatsTable from /api/users/{email}/threats?type=...
         const sortedCats = Object.entries(details.threats_by_type)
           .sort(([, a], [, b]) => b - a)
           .map(([type]) => type);
-        const byCat: Record<string, typeof details.recent_threats> = {};
-        (details.recent_threats ?? []).forEach(threat => {
-          (byCat[threat.threat_type] ??= []).push(threat);
-        });
         return (
           <Card>
             <CardHeader>
@@ -190,57 +187,11 @@ export default function UserDetailsPage() {
                     </TabsTrigger>
                   ))}
                 </TabsList>
-                {sortedCats.map(cat => {
-                  const rows = byCat[cat] ?? [];
-                  return (
-                    <TabsContent key={cat} value={cat} className="mt-4">
-                      {rows.length === 0 ? (
-                        <p className="text-sm text-muted-foreground py-4">
-                          {t("noRecentMatches")}
-                        </p>
-                      ) : (
-                        <div className="max-h-[400px] overflow-y-auto overflow-x-auto scrollbar-thin">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="whitespace-nowrap">{t("threatTime")}</TableHead>
-                                <TableHead>{t("threatDestination")}</TableHead>
-                                <TableHead className="hidden md:table-cell">{t("threatSource")}</TableHead>
-                                <TableHead className="text-right hidden sm:table-cell">{t("threatConf")}</TableHead>
-                                <TableHead className="hidden lg:table-cell">{t("threatNode")}</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {rows.map((row, i) => (
-                                <TableRow key={i}>
-                                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                                    {isValidDate(row.matched_at)
-                                      ? formatDistanceToNow(new Date(row.matched_at), { addSuffix: true })
-                                      : "—"}
-                                  </TableCell>
-                                  <TableCell className="font-mono text-xs max-w-[260px] truncate" title={row.destination}>
-                                    {row.destination}
-                                  </TableCell>
-                                  <TableCell className="text-xs text-muted-foreground hidden md:table-cell">
-                                    {row.source}
-                                  </TableCell>
-                                  <TableCell className="text-right hidden sm:table-cell">
-                                    <span className={row.confidence >= 90 ? "text-destructive" : row.confidence >= 75 ? "text-orange-500" : ""}>
-                                      {row.confidence}
-                                    </span>
-                                  </TableCell>
-                                  <TableCell className="hidden lg:table-cell">
-                                    <Badge variant="outline" className="text-xs">{row.node_id}</Badge>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      )}
-                    </TabsContent>
-                  );
-                })}
+                {sortedCats.map(cat => (
+                  <TabsContent key={cat} value={cat} className="mt-4">
+                    <UserThreatsTable email={email} threatType={cat} />
+                  </TabsContent>
+                ))}
               </Tabs>
             </CardContent>
           </Card>

@@ -189,8 +189,78 @@ func (s *Server) handleUserRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for /api/users/{email}/threats
+	if strings.HasSuffix(path, "/threats") {
+		s.handleUserThreatMatches(w, r)
+		return
+	}
+
 	// Default: user details
 	s.handleUserDetails(w, r)
+}
+
+// handleUserThreatMatches returns paginated threat_matches for a user filtered
+// by threat_type. Required query: ?type=<threat_type>. Optional: page,
+// page_size, period (1h/6h/24h/7d/30d/all, default 24h).
+func (s *Server) handleUserThreatMatches(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	path := strings.TrimSuffix(r.URL.Path, "/threats")
+	prefix := "/api/users/"
+	if !strings.HasPrefix(path, prefix) || len(path) <= len(prefix) {
+		http.Error(w, "user email required", http.StatusBadRequest)
+		return
+	}
+	email, err := url.QueryUnescape(strings.TrimPrefix(path, prefix))
+	if err != nil {
+		http.Error(w, "invalid user email", http.StatusBadRequest)
+		return
+	}
+
+	threatType := r.URL.Query().Get("type")
+	if threatType == "" {
+		http.Error(w, "type query param required", http.StatusBadRequest)
+		return
+	}
+
+	page := 1
+	pageSize := 20
+	if p := r.URL.Query().Get("page"); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
+			pageSize = parsed
+		}
+	}
+
+	since := time.Now().Add(-24 * time.Hour)
+	switch r.URL.Query().Get("period") {
+	case "1h":
+		since = time.Now().Add(-1 * time.Hour)
+	case "6h":
+		since = time.Now().Add(-6 * time.Hour)
+	case "24h":
+		// default
+	case "7d":
+		since = time.Now().Add(-7 * 24 * time.Hour)
+	case "30d":
+		since = time.Now().Add(-30 * 24 * time.Hour)
+	case "all":
+		since = time.Time{}
+	}
+
+	resp, err := s.storage.GetUserThreatMatchesPaginated(ctx, email, threatType, since, page, pageSize)
+	if err != nil {
+		log.Printf("Error getting user threat matches: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // handleUserDetails returns detailed stats for a specific user

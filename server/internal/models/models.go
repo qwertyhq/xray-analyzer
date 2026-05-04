@@ -130,6 +130,16 @@ type UserThreatInfo struct {
 	MatchedAt   time.Time `json:"matched_at"`
 }
 
+// PaginatedUserThreatsResponse is a paginated slice of threat matches for a
+// single user filtered by threat_type.
+type PaginatedUserThreatsResponse struct {
+	Matches    []UserThreatInfo `json:"matches"`
+	Total      int              `json:"total"`
+	Page       int              `json:"page"`
+	PageSize   int              `json:"page_size"`
+	TotalPages int              `json:"total_pages"`
+}
+
 // UserNodeStats represents user stats per node
 type UserNodeStats struct {
 	NodeID              string    `json:"node_id"`
