@@ -201,6 +201,7 @@ export interface UserDestination {
   request_count: number;
   first_seen: string;
   last_seen: string;
+  categories: string[];
 }
 
 export interface PaginatedResponse<T> {

@@ -230,6 +230,9 @@ type UserDestination struct {
 	RequestCount int64     `json:"request_count"`
 	FirstSeen    time.Time `json:"first_seen"`
 	LastSeen     time.Time `json:"last_seen"`
+	// Categories aggregates distinct threat_type / blacklist labels for this
+	// destination across all of the user's records (e.g. ["ads", "tracking"]).
+	Categories []string `json:"categories"`
 }
 
 // UserDestinationsResponse represents paginated destinations response

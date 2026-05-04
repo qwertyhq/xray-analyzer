@@ -23,7 +23,10 @@ import { ChevronLeft, ChevronRight, Globe } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { isValidDate } from "@/lib/utils/date";
 import { authFetch } from "@/contexts/auth-context";
-import { UserDestinationsResponse, TimeRange } from "@/lib/types";
+import { UserDestinationsResponse, TimeRange, ThreatType } from "@/lib/types";
+import { threatTypeConfig } from "@/components/threatintel/config";
+
+const blacklistBadge = { color: "bg-red-700", label: "blacklist" };
 
 interface UserDestinationsTableProps {
   email: string;
@@ -107,6 +110,7 @@ export function UserDestinationsTable({ email }: UserDestinationsTableProps) {
           <TableHeader>
             <TableRow>
               <TableHead>Destination</TableHead>
+              <TableHead>Categories</TableHead>
               <TableHead>Node</TableHead>
               <TableHead className="text-right">Requests</TableHead>
               <TableHead>Last Visit</TableHead>
@@ -117,6 +121,23 @@ export function UserDestinationsTable({ email }: UserDestinationsTableProps) {
               <TableRow key={`${dest.destination}-${dest.node_id}-${idx}`}>
                 <TableCell className="font-mono text-sm max-w-[300px] truncate">
                   {dest.destination}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {(dest.categories ?? []).map((cat) => {
+                      const cfg = cat === "blacklist"
+                        ? blacklistBadge
+                        : threatTypeConfig[cat as ThreatType];
+                      return (
+                        <Badge
+                          key={cat}
+                          className={`${cfg?.color ?? "bg-gray-500"} text-white text-[10px] px-1.5 py-0`}
+                        >
+                          {cfg?.label ?? cat}
+                        </Badge>
+                      );
+                    })}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline">{dest.node_id}</Badge>

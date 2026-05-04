@@ -84,10 +84,28 @@ func (s *Storage) GetUserDestinations(ctx context.Context, userEmail string, sin
 	}
 
 	// Get paginated results; JOIN nodes to restore text node name.
+	// LEFT JOIN aggregates threat categories and blacklist hits per destination
+	// so each row carries its threat-intel labels (ads, tor, malware, ...).
 	rows, err := s.pool.Query(ctx, `
-		SELECT n.node_id, ud.destination, ud.request_count, ud.first_seen, ud.last_seen
+		WITH cats AS (
+			SELECT user_email, destination, ARRAY_AGG(DISTINCT threat_type) AS types
+			FROM threat_matches
+			WHERE user_email = ANY($1)
+			GROUP BY user_email, destination
+		),
+		bl AS (
+			SELECT user_email, destination, COUNT(*) > 0 AS hit
+			FROM blacklist_matches
+			WHERE user_email = ANY($1)
+			GROUP BY user_email, destination
+		)
+		SELECT n.node_id, ud.destination, ud.request_count, ud.first_seen, ud.last_seen,
+		       COALESCE(cats.types, ARRAY[]::text[]) AS threat_types,
+		       COALESCE(bl.hit, false) AS blacklisted
 		FROM user_destinations ud
 		JOIN nodes n ON n.id = ud.node_id
+		LEFT JOIN cats ON cats.user_email = ud.user_email AND cats.destination = ud.destination
+		LEFT JOIN bl   ON bl.user_email   = ud.user_email AND bl.destination   = ud.destination
 		WHERE ud.user_email = ANY($1) AND ud.last_seen > $2
 		ORDER BY ud.request_count DESC, ud.last_seen DESC
 		LIMIT $3 OFFSET $4
@@ -100,8 +118,15 @@ func (s *Storage) GetUserDestinations(ctx context.Context, userEmail string, sin
 	var destinations []models.UserDestination
 	for rows.Next() {
 		var d models.UserDestination
-		if err := rows.Scan(&d.NodeID, &d.Destination, &d.RequestCount, &d.FirstSeen, &d.LastSeen); err != nil {
+		var threatTypes []string
+		var blacklisted bool
+		if err := rows.Scan(&d.NodeID, &d.Destination, &d.RequestCount, &d.FirstSeen, &d.LastSeen,
+			&threatTypes, &blacklisted); err != nil {
 			return nil, err
+		}
+		d.Categories = threatTypes
+		if blacklisted {
+			d.Categories = append(d.Categories, "blacklist")
 		}
 		destinations = append(destinations, d)
 	}
