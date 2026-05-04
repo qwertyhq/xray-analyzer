@@ -484,9 +484,11 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		user.Nodes = append(user.Nodes, ns)
 	}
 
-	// Recent blacklist matches
+	// Recent blacklist matches. source_ip is inet — cast to text for the
+	// string scan target.
 	matchRows, err := s.pool.Query(ctx, `
-		SELECT node_id, source_ip, destination, matched_rule, timestamp
+		SELECT node_id, COALESCE(host(source_ip), '') AS source_ip,
+		       destination, matched_rule, timestamp
 		FROM blacklist_matches
 		WHERE user_email = ANY($1)
 		ORDER BY timestamp DESC
@@ -530,7 +532,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		WITH ranked AS (
 			SELECT node_id, destination, threat_type, source, confidence,
 			       COALESCE(description, '') as description,
-			       COALESCE(source_ip, '') as source_ip,
+			       COALESCE(host(source_ip), '') as source_ip,
 			       matched_at,
 			       ROW_NUMBER() OVER (PARTITION BY threat_type ORDER BY matched_at DESC) AS rn
 			FROM threat_matches
