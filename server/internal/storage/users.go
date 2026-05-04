@@ -285,7 +285,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 
 	// Try to find user in remna_users
 	var remnaUserExists bool
-	var uuid, username, status string
+	var remnaUUID, username, status string
 	var remnaID int64
 	var usedTraffic, trafficLimit int64
 	var hwidCount int
@@ -311,7 +311,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 			FROM remna_users WHERE id = $1
 		`, numericID)
 
-		err := row.Scan(&uuid, &remnaID, &username, &status, &usedTraffic, &trafficLimit,
+		err := row.Scan(&remnaUUID, &remnaID, &username, &status, &usedTraffic, &trafficLimit,
 			&hwidCount, &hwidLimit, &onlineAt, &expireAt, &telegramID, &description, &usID)
 		if err == nil {
 			remnaUserExists = true
@@ -334,7 +334,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 			FROM remna_users WHERE us_id = $1
 		`, userEmail)
 
-		err := row.Scan(&uuid, &remnaID, &username, &status, &usedTraffic, &trafficLimit,
+		err := row.Scan(&remnaUUID, &remnaID, &username, &status, &usedTraffic, &trafficLimit,
 			&hwidCount, &hwidLimit, &onlineAt, &expireAt, &telegramID, &description, &usID)
 		if err == nil {
 			remnaUserExists = true
@@ -357,7 +357,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 			FROM remna_users WHERE username = $1
 		`, userEmail)
 
-		err := row.Scan(&uuid, &remnaID, &username, &status, &usedTraffic, &trafficLimit,
+		err := row.Scan(&remnaUUID, &remnaID, &username, &status, &usedTraffic, &trafficLimit,
 			&hwidCount, &hwidLimit, &onlineAt, &expireAt, &telegramID, &description, &usID)
 		if err == nil {
 			remnaUserExists = true
@@ -397,7 +397,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 
 	// Populate user fields if found
 	if remnaUserExists {
-		user.RemnaUUID = uuid
+		user.RemnaUUID = remnaUUID
 		user.DisplayName = username
 		user.RemnaStatus = status
 		user.RemnaUsedTraffic = usedTraffic
@@ -435,7 +435,21 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		}
 	}
 
-	// All remaining queries use = ANY($1) via s.pool for []string array support
+	// Resolve every text identifier in searchIDs to its canonical UUID for
+	// querying the schema-v2 stat tables (user_stats, blacklist_matches,
+	// threat_matches, user_threat_stats, user_risk_profiles — all have
+	// user_email as uuid). Without this, a text array against a uuid column
+	// returns zero rows because Postgres does uuid::text = ANY(text[]).
+	seenUUID := make(map[uuid.UUID]bool, len(searchIDs))
+	searchUUIDs := make([]uuid.UUID, 0, len(searchIDs))
+	for _, id := range searchIDs {
+		u, err := s.ResolveUserEmailToUUID(ctx, id)
+		if err != nil || seenUUID[u] {
+			continue
+		}
+		seenUUID[u] = true
+		searchUUIDs = append(searchUUIDs, u)
+	}
 
 	// Per-node user stats
 	nodeRows, err := s.pool.Query(ctx, `
@@ -446,7 +460,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		FROM user_stats
 		WHERE user_email = ANY($1)
 		ORDER BY total_requests DESC
-	`, searchIDs)
+	`, searchUUIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +491,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		WHERE user_email = ANY($1)
 		ORDER BY timestamp DESC
 		LIMIT 50
-	`, searchIDs)
+	`, searchUUIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -498,7 +512,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		WHERE user_email = ANY($1)
 		GROUP BY threat_type
 		ORDER BY cnt DESC
-	`, searchIDs); err == nil {
+	`, searchUUIDs); err == nil {
 		user.ThreatsByType = map[string]int64{}
 		for aggRows.Next() {
 			var tt string
@@ -527,7 +541,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		FROM ranked
 		WHERE rn <= 30
 		ORDER BY matched_at DESC
-	`, searchIDs); err == nil {
+	`, searchUUIDs); err == nil {
 		for tRows.Next() {
 			var t models.UserThreatInfo
 			if err := tRows.Scan(&t.NodeID, &t.Destination, &t.ThreatType, &t.Source, &t.Confidence,
@@ -547,7 +561,7 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 		WHERE user_email = ANY($1)
 		ORDER BY risk_score DESC
 		LIMIT 1
-	`, searchIDs).Scan(&rl, &rs); err == nil {
+	`, searchUUIDs).Scan(&rl, &rs); err == nil {
 		if rl.Valid {
 			user.RiskLevel = rl.String
 		}
