@@ -12,7 +12,7 @@ import (
 // buildDestSearchUUIDs resolves a user identifier to every plausible
 // canonical UUID for user_destinations lookups. Goes through the same
 // numeric-id / us_id / username / SHA-1 fallback chain as ResolveUserEmailToUUID
-// so a URL like /users/us_5478 also matches data keyed by the real user's UUID.
+// so a URL like /users/us_<id> also matches data keyed by the real user's UUID.
 func (s *Storage) buildDestSearchUUIDs(ctx context.Context, userEmail string) []uuid.UUID {
 	seen := make(map[uuid.UUID]bool)
 	var uuids []uuid.UUID

@@ -277,7 +277,7 @@ func (s *Storage) GetThreatMatchesByType(ctx context.Context, threatType string,
 // GetUserThreatMatchesPaginated returns paginated threat_matches rows for a
 // single user filtered by threat_type, optionally by time window. Resolves
 // the user identifier through the same UUID chain as the destinations /
-// blacklist endpoints so URLs like /users/us_5478 work.
+// blacklist endpoints so URLs like /users/us_<id> work.
 func (s *Storage) GetUserThreatMatchesPaginated(
 	ctx context.Context,
 	userEmail, threatType string,
