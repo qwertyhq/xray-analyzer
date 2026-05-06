@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xray-log-analyzer/server/internal/remnawave"
 	"github.com/xray-log-analyzer/server/internal/storage"
 )
@@ -104,6 +105,11 @@ func (s *Service) UpdateUserAIProfile(ctx context.Context, userEmail string) err
 		ThreatCategories: make(map[string]int),
 	}
 
+	userUUID, err := s.storage.ResolveUserEmailToUUID(ctx, userEmail)
+	if err != nil {
+		return err
+	}
+
 	// Get fingerprints to calculate unique IPs/HWIDs
 	fingerprints, err := s.storage.GetUserFingerprints(ctx, userEmail)
 	if err == nil {
@@ -150,11 +156,11 @@ func (s *Service) UpdateUserAIProfile(ctx context.Context, userEmail string) err
 
 	// Get threat stats from user_threat_stats table
 	// (We'll aggregate this from existing data)
-	profile.TotalThreatMatches = s.getThreatMatchCount(ctx, userEmail)
-	profile.ThreatCategories = s.getThreatCategories(ctx, userEmail)
+	profile.TotalThreatMatches = s.getThreatMatchCount(ctx, userUUID)
+	profile.ThreatCategories = s.getThreatCategories(ctx, userUUID)
 
 	// Get activity stats from user_stats
-	profile.TotalRequests, profile.FirstSeen, profile.LastSeen = s.getActivityStats(ctx, userEmail)
+	profile.TotalRequests, profile.FirstSeen, profile.LastSeen = s.getActivityStats(ctx, userUUID)
 
 	// Calculate active days
 	if !profile.FirstSeen.IsZero() && !profile.LastSeen.IsZero() {
@@ -162,7 +168,7 @@ func (s *Service) UpdateUserAIProfile(ctx context.Context, userEmail string) err
 	}
 
 	// Get unique countries from user_locations
-	profile.UniqueCountries = s.getUniqueCountries(ctx, userEmail)
+	profile.UniqueCountries = s.getUniqueCountries(ctx, userUUID)
 
 	// Enrich with Remnawave data
 	if s.remnaSync != nil {
@@ -197,20 +203,20 @@ func (s *Service) UpdateUserAIProfile(ctx context.Context, userEmail string) err
 }
 
 // getThreatMatchCount gets total threat matches for a user
-func (s *Service) getThreatMatchCount(ctx context.Context, userEmail string) int {
+func (s *Service) getThreatMatchCount(ctx context.Context, userUUID uuid.UUID) int {
 	var count int
 	s.storage.DB().QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(match_count), 0) FROM user_threat_stats WHERE user_email = ?
-	`, userEmail).Scan(&count)
+		SELECT COALESCE(SUM(match_count), 0) FROM user_threat_stats WHERE user_email = $1
+	`, userUUID).Scan(&count)
 	return count
 }
 
 // getThreatCategories gets threat categories breakdown for a user
-func (s *Service) getThreatCategories(ctx context.Context, userEmail string) map[string]int {
+func (s *Service) getThreatCategories(ctx context.Context, userUUID uuid.UUID) map[string]int {
 	result := make(map[string]int)
 	rows, err := s.storage.DB().QueryContext(ctx, `
-		SELECT threat_type, match_count FROM user_threat_stats WHERE user_email = ?
-	`, userEmail)
+		SELECT threat_type, match_count FROM user_threat_stats WHERE user_email = $1
+	`, userUUID)
 	if err != nil {
 		return result
 	}
@@ -227,20 +233,20 @@ func (s *Service) getThreatCategories(ctx context.Context, userEmail string) map
 }
 
 // getActivityStats gets basic activity stats from user_stats
-func (s *Service) getActivityStats(ctx context.Context, userEmail string) (totalRequests int, firstSeen, lastSeen time.Time) {
+func (s *Service) getActivityStats(ctx context.Context, userUUID uuid.UUID) (totalRequests int, firstSeen, lastSeen time.Time) {
 	s.storage.DB().QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(total_requests), 0), MIN(last_seen), MAX(last_seen)
-		FROM user_stats WHERE user_email = ?
-	`, userEmail).Scan(&totalRequests, &firstSeen, &lastSeen)
+		FROM user_stats WHERE user_email = $1
+	`, userUUID).Scan(&totalRequests, &firstSeen, &lastSeen)
 	return
 }
 
 // getUniqueCountries gets count of unique countries for a user
-func (s *Service) getUniqueCountries(ctx context.Context, userEmail string) int {
+func (s *Service) getUniqueCountries(ctx context.Context, userUUID uuid.UUID) int {
 	var count int
 	s.storage.DB().QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT country_code) FROM user_locations WHERE user_email = ?
-	`, userEmail).Scan(&count)
+		SELECT COUNT(DISTINCT country_code) FROM user_locations WHERE user_email = $1
+	`, userUUID).Scan(&count)
 	return count
 }
 
