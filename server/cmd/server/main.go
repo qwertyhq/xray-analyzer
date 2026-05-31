@@ -50,7 +50,6 @@ func main() {
 	// Start partition manager — creates today+2 future partitions and drops
 	// expired ones on startup, then re-runs every 6 hours.
 	pm := partitions.NewManager(store.Pool(), []partitions.Table{
-		{Name: "bridged_flows", RetentionDays: 14},
 		{Name: "alerts", RetentionDays: 30},
 		{Name: "blacklist_matches", RetentionDays: 30},
 		{Name: "threat_matches", RetentionDays: 30},
@@ -111,33 +110,31 @@ func main() {
 		cfg.SuspiciousRequestCount,
 		cfg.SuspiciousTimeWindow,
 	)
-	if err := anal.SetBridgeInboundPattern(cfg.BridgeInboundPattern); err != nil {
-		log.Fatalf("invalid BRIDGE_INBOUND_PATTERN %q: %v", cfg.BridgeInboundPattern, err)
-	}
-	if cfg.BridgeInboundPattern != "" {
-		log.Printf("analyzer: bridge inbound filter active: %q", cfg.BridgeInboundPattern)
-	}
-	if len(cfg.BridgeNodeIDs) > 0 {
-		anal.SetBridgeCorrelation(cfg.BridgeNodeIDs, cfg.BridgeCorrelationWindow)
-		log.Printf("analyzer: bridge correlation active: nodes=%v window=%s", cfg.BridgeNodeIDs, cfg.BridgeCorrelationWindow)
-	}
 
 	// Initialize IP info service for geo lookups
 	ipInfoSvc := ipinfo.NewService()
 	anal.SetIPInfo(ipInfoSvc)
 
-	// Initialize threat intelligence service
-	threatIntelSvc := threatintel.NewService(store, ipInfoSvc)
-	if err := threatIntelSvc.Start(ctx); err != nil {
-		log.Printf("threatintel: failed to start (continuing without): %v", err)
+	// Initialize threat intelligence service (gated by THREATINTEL_ENABLED).
+	// When disabled we skip feed loading entirely so no threat alerts fire and
+	// only the curated blacklist drives alerts. threatIntelSvc stays nil, which
+	// every consumer (analyzer, server handlers, websocket) already guards.
+	var threatIntelSvc *threatintel.Service
+	if cfg.ThreatIntelEnabled {
+		threatIntelSvc = threatintel.NewService(store, ipInfoSvc)
+		if err := threatIntelSvc.Start(ctx); err != nil {
+			log.Printf("threatintel: failed to start (continuing without): %v", err)
+		} else {
+			anal.SetThreatIntel(threatIntelSvc)
+			log.Printf("threatintel: started with %d indicators", threatIntelSvc.GetIndicatorCount())
+		}
 	} else {
-		anal.SetThreatIntel(threatIntelSvc)
-		log.Printf("threatintel: started with %d indicators", threatIntelSvc.GetIndicatorCount())
+		log.Println("threatintel: disabled (THREATINTEL_ENABLED=false)")
 	}
 
 	// Initialize Telegram bot if enabled
 	if cfg.TelegramEnabled && cfg.TelegramToken != "" && cfg.TelegramChatID != "" {
-		bot := telegram.New(cfg.TelegramToken, cfg.TelegramChatID, alertCh)
+		bot := telegram.New(cfg.TelegramToken, cfg.TelegramChatID, cfg.TelegramTopics, cfg.TelegramDefaultTopic, alertCh)
 		go bot.Start(ctx)
 
 		// Send test message
@@ -210,16 +207,20 @@ func main() {
 	var remnaClient *remnawave.Client
 	if cfg.RemnawaveEnabled && cfg.RemnawaveURL != "" && cfg.RemnawaveAPIToken != "" {
 		remnaClient = remnawave.NewClient(cfg.RemnawaveURL, cfg.RemnawaveAPIToken)
-		remnaSvc = remnawave.NewSyncService(remnaClient, cfg.RemnawaveSyncInterval)
+		remnaSvc = remnawave.NewSyncService(remnaClient, cfg.RemnawaveSyncInterval, cfg.RemnawaveFullSyncInterval)
 		remnaSvc.SetIDCacheRedis(redisClient)
 		remnaSvc.SetStorage(store) // Persist data to SQLite
+		// On-demand numeric-id → UUID resolution for the per-write storage path,
+		// so users missing from the (now infrequent) full sweep still map to a
+		// real username instead of a synthetic hash.
+		store.SetUserResolver(remnaSvc)
 		// Warm cache after each sync for fast page loads
 		remnaSvc.OnSyncComplete(func() {
 			store.WarmCache(ctx)
 		})
 		srv.SetRemnawave(remnaSvc)
 		go remnaSvc.Start(ctx)
-		log.Printf("remnawave: enabled, sync interval: %v, storage: enabled", cfg.RemnawaveSyncInterval)
+		log.Printf("remnawave: enabled, node sync: %v, full sync: %v, storage: enabled", cfg.RemnawaveSyncInterval, cfg.RemnawaveFullSyncInterval)
 	} else {
 		log.Println("remnawave: disabled (no URL/token configured)")
 	}
@@ -325,8 +326,10 @@ func main() {
 	log.Println("shutting down...")
 	cancel()
 
-	// Stop threat intelligence service
-	threatIntelSvc.Stop()
+	// Stop threat intelligence service (nil when THREATINTEL_ENABLED=false)
+	if threatIntelSvc != nil {
+		threatIntelSvc.Stop()
+	}
 
 	// Give goroutines time to cleanup
 	time.Sleep(2 * time.Second)

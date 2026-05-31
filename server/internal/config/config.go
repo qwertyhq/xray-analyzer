@@ -24,10 +24,24 @@ type Config struct {
 	BlacklistReload    time.Duration
 	BlacklistRemoteURL string // URL to fetch additional blocked domains
 
+	// ThreatIntelEnabled gates the threat-intelligence feeds (malware/crypto/
+	// phishing/… from BlockList Project etc.). When false the feeds are not
+	// fetched and no threat alerts are produced — only the curated blacklist
+	// drives alerts. Default true for backward compatibility.
+	ThreatIntelEnabled bool
+
 	// Telegram settings
 	TelegramEnabled bool
 	TelegramToken   string
 	TelegramChatID  string
+	// TelegramTopics routes alert categories to Telegram forum topics
+	// (message_thread_id) inside the chat. Format: "category=threadid" pairs,
+	// e.g. "threat=12,blacklist=34,scan=56". Categories: see models.AlertCategory*.
+	// Empty = all alerts go to one chat (no topic routing).
+	TelegramTopics map[string]int
+	// TelegramDefaultTopic is the forum topic id used for alerts whose category
+	// has no explicit mapping (and for the startup test message). 0 = General.
+	TelegramDefaultTopic int
 
 	// Thresholds
 	SuspiciousRequestCount int           // Requests to blacklisted sites to trigger alert
@@ -37,31 +51,17 @@ type Config struct {
 	RemnawaveEnabled      bool
 	RemnawaveURL          string
 	RemnawaveAPIToken     string
-	RemnawaveSyncInterval time.Duration // Interval for syncing data from Remnawave
+	RemnawaveSyncInterval time.Duration // Interval for the light node sync (online counts)
+	// RemnawaveFullSyncInterval bounds the heavy full user+hwid sweep. The
+	// per-minute full sweep 500'd the panel (A024) and left remna_users empty;
+	// numeric ids are resolved on-demand between full sweeps instead.
+	RemnawaveFullSyncInterval time.Duration
 
 	// AI assistant settings — OpenAI-compatible chat-completions endpoint.
 	// Works with OpenAI, Aleria, Together, OpenRouter, local llama.cpp/vLLM.
 	OpenAIAPIKey  string
 	OpenAIBaseURL string
 	OpenAIModel   string
-
-	// Bridge filtering: regex matching inbound tags whose source IP is an
-	// infrastructure hop (another Xray bridge node), not a real client.
-	// When matched, the source IP is suppressed for IP-history / correlation
-	// tables. Empty string disables the filter.
-	BridgeInboundPattern string
-
-	// BridgeNodeIDs is the list of node_id values that act as bridge ingress
-	// (the upstream side of the BRIDGE_*_IN tunnel). Used to resolve the
-	// real client IP for an exit-node bridged flow. Empty disables Layer-3
-	// correlation.
-	BridgeNodeIDs []string
-
-	// BridgeCorrelationWindow is the ± time window used to match an exit-node
-	// bridged entry against bridge-node user_ip_history rows. Should stay in
-	// the single-digit-seconds range — NTP-synced nodes have sub-second drift,
-	// and a wider window fans each destination out to too many candidates.
-	BridgeCorrelationWindow time.Duration
 
 	// Redis for persistent L2 cache. Empty RedisAddr disables it (the
 	// in-memory L1 still works; startup just means a cold warm-up from SQL).
@@ -88,23 +88,24 @@ func Load() *Config {
 		BlacklistPath:          getEnv("BLACKLIST_PATH", "./blacklist.txt"),
 		BlacklistReload:        getDurationEnv("BLACKLIST_RELOAD", 5*time.Minute),
 		BlacklistRemoteURL:     getEnv("BLACKLIST_REMOTE_URL", ""),
+		ThreatIntelEnabled:     getBoolEnv("THREATINTEL_ENABLED", true),
 		TelegramEnabled:        getBoolEnv("TELEGRAM_ENABLED", false),
 		TelegramToken:          getEnv("TELEGRAM_TOKEN", ""),
 		TelegramChatID:         getEnv("TELEGRAM_CHAT_ID", ""),
+		TelegramTopics:         getIntMapEnv("TELEGRAM_TOPICS", nil),
+		TelegramDefaultTopic:   getIntEnv("TELEGRAM_DEFAULT_TOPIC", 0),
 		SuspiciousRequestCount: getIntEnv("SUSPICIOUS_REQUEST_COUNT", 5),
 		SuspiciousTimeWindow:   getDurationEnv("SUSPICIOUS_TIME_WINDOW", 1*time.Hour),
 		RemnawaveEnabled:       getBoolEnv("REMNAWAVE_ENABLED", false),
 		RemnawaveURL:           getEnv("REMNAWAVE_URL", ""),
 		RemnawaveAPIToken:      getEnv("REMNAWAVE_API_TOKEN", ""),
-		RemnawaveSyncInterval:  getDurationEnv("REMNAWAVE_SYNC_INTERVAL", 1*time.Minute), // More frequent for accurate online stats
+		RemnawaveSyncInterval:     getDurationEnv("REMNAWAVE_SYNC_INTERVAL", 1*time.Minute),      // light node sync (online stats)
+		RemnawaveFullSyncInterval: getDurationEnv("REMNAWAVE_FULL_SYNC_INTERVAL", 6*time.Hour), // heavy full user+hwid sweep
 		// OPENAI_* are the canonical env names; ALERIA_API_KEY is kept as
 		// a back-compat fallback so existing deployments don't break.
 		OpenAIAPIKey:           getEnv("OPENAI_API_KEY", getEnv("ALERIA_API_KEY", "")),
 		OpenAIBaseURL:          getEnv("OPENAI_BASE_URL", ""),
 		OpenAIModel:            getEnv("OPENAI_MODEL", ""),
-		BridgeInboundPattern:    getEnv("BRIDGE_INBOUND_PATTERN", `^BRIDGE_.*_IN(_\d+)?$`),
-		BridgeNodeIDs:           getStringSliceEnv("BRIDGE_NODE_IDS", []string{"ru-white", "ru-bride", "ru-whitelist"}),
-		BridgeCorrelationWindow: getDurationEnv("BRIDGE_CORRELATION_WINDOW", 15*time.Second),
 		RedisAddr:               getEnv("REDIS_ADDR", ""),
 		RedisPassword:           getEnv("REDIS_PASSWORD", ""),
 		RedisKeyPrefix:          getEnv("REDIS_KEY_PREFIX", "analyzer:"),
@@ -137,6 +138,31 @@ func getMapEnv(key string, defaultValue map[string]string) map[string]string {
 		k := strings.TrimSpace(kv[0])
 		v := strings.TrimSpace(kv[1])
 		if k != "" && v != "" {
+			out[k] = v
+		}
+	}
+	if len(out) == 0 {
+		return defaultValue
+	}
+	return out
+}
+
+// getIntMapEnv parses a "k1=v1,k2=v2" env var into a map[string]int, skipping
+// pairs whose value is not a valid integer.
+func getIntMapEnv(key string, defaultValue map[string]int) map[string]int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return defaultValue
+	}
+	out := make(map[string]int)
+	for _, pair := range strings.Split(raw, ",") {
+		kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		k := strings.TrimSpace(kv[0])
+		v, err := strconv.Atoi(strings.TrimSpace(kv[1]))
+		if k != "" && err == nil {
 			out[k] = v
 		}
 	}

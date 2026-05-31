@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"regexp"
 	"sync"
 	"time"
 
@@ -29,20 +28,6 @@ type Analyzer struct {
 	recentAlerts      map[string]time.Time // Prevent duplicate alerts
 	recentAlertsMu    sync.RWMutex
 	alertDedupeWindow time.Duration
-
-	// bridgeInboundRegex matches inbound tags whose source IP is an
-	// infrastructure hop (another Xray bridge node), not a real client.
-	// nil disables the filter — see SetBridgeInboundPattern.
-	bridgeInboundRegex *regexp.Regexp
-
-	// bridgeNodeIDs lists node_ids that ingest real-client traffic into the
-	// bridge tunnel. Used to look up the real client IP when correlating an
-	// exit-node bridged flow. Empty disables correlation.
-	bridgeNodeIDs []string
-
-	// bridgeCorrelationWindow is the ± window we accept between the exit-node
-	// entry timestamp and the bridge user_ip_history record.
-	bridgeCorrelationWindow time.Duration
 }
 
 // New creates a new Analyzer
@@ -73,43 +58,6 @@ func (a *Analyzer) SetCorrelation(c *correlation.Service) {
 	a.correlation = c
 }
 
-// SetBridgeInboundPattern compiles a regex matching inbound tags that
-// belong to bridged tunnels (e.g. "BRIDGE_DE_IN", "BRIDGE_DE_IN_2"). For
-// matched entries the source IP is suppressed everywhere it would be
-// recorded as a "client IP" — because it's actually the other Xray node.
-// Empty pattern disables the filter; an invalid regex is returned as-is.
-func (a *Analyzer) SetBridgeInboundPattern(pattern string) error {
-	if pattern == "" {
-		a.bridgeInboundRegex = nil
-		return nil
-	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return err
-	}
-	a.bridgeInboundRegex = re
-	return nil
-}
-
-// isInfrastructureSource reports whether the entry's inbound tag matches
-// the configured bridge pattern (i.e. source IP belongs to our own infra).
-func (a *Analyzer) isInfrastructureSource(inbound string) bool {
-	return a.bridgeInboundRegex != nil && a.bridgeInboundRegex.MatchString(inbound)
-}
-
-// SetBridgeCorrelation enables Layer-3 correlation. For each entry whose
-// inbound matches the bridge pattern, the analyzer looks up the real client
-// IP in user_ip_history on any of `nodeIDs`, as long as it was seen within
-// `maxAge` of the entry timestamp, and records a row in bridged_flows.
-// Empty nodeIDs disables correlation entirely.
-func (a *Analyzer) SetBridgeCorrelation(nodeIDs []string, maxAge time.Duration) {
-	a.bridgeNodeIDs = append(a.bridgeNodeIDs[:0], nodeIDs...)
-	if maxAge <= 0 {
-		maxAge = 24 * time.Hour
-	}
-	a.bridgeCorrelationWindow = maxAge
-}
-
 // ProcessBatch processes a batch of log entries
 func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (processed int, blacklistHits int, err error) {
 	if batch.NodeID == "" {
@@ -122,6 +70,7 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 	userLastIP := make(map[string]string)                // user -> last source IP
 	userDestinations := make(map[string]map[string]bool) // user -> set of destinations
 	threatHits := 0
+	var threatMatches []*threatintel.ThreatMatch
 
 	for _, entry := range batch.Entries {
 		processed++
@@ -129,11 +78,8 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 		// Count user requests
 		userRequests[entry.UserEmail]++
 
-		// Track last IP for user. For bridged inbounds the source is the
-		// upstream bridge node (e.g. RU-White), not the real client — skip
-		// so user_ip_history / ip_user_map / user_locations stay clean.
-		// The destination is still correct and is recorded below.
-		if entry.SourceIP != "" && !a.isInfrastructureSource(entry.Inbound) {
+		// Track last IP for user.
+		if entry.SourceIP != "" {
 			userLastIP[entry.UserEmail] = entry.SourceIP
 		}
 
@@ -168,16 +114,24 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 			a.checkAndAlert(ctx, batch.NodeID, entry, matchedRule)
 		}
 
-		// Check threat intelligence (only if not already blocked by blacklist)
+		// Check threat intelligence (only if not already blocked by blacklist).
+		// Matches are accumulated and persisted once per batch (see below) so the
+		// per-match stat upserts collapse into aggregated writes.
 		if matchedRule == "" && a.threatIntel != nil {
-			if threatMatch := a.threatIntel.CheckAndRecord(ctx, entry.UserEmail, batch.NodeID, entry.SourceIP, entry.Destination); threatMatch != nil {
+			if threatMatch := a.threatIntel.Check(entry.UserEmail, batch.NodeID, entry.SourceIP, entry.Destination); threatMatch != nil {
 				threatHits++
+				threatMatches = append(threatMatches, threatMatch)
 				// Generate alert for high confidence threats
 				if threatMatch.Confidence >= 80 {
 					a.generateThreatAlert(ctx, batch.NodeID, entry, threatMatch)
 				}
 			}
 		}
+	}
+
+	// Flush accumulated threat matches as one aggregated batch.
+	if a.threatIntel != nil && len(threatMatches) > 0 {
+		a.threatIntel.RecordMatches(ctx, threatMatches)
 	}
 
 	// Update aggregated stats
@@ -246,88 +200,7 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 		_ = err
 	}
 
-	// Layer-3 correlation: for each bridged entry, resolve real client IP
-	// via user_ip_history on any of bridgeNodeIDs and persist the link in
-	// bridged_flows. One lookup per user, then a row per destination.
-	a.correlateBridgedFlows(ctx, batch)
-
 	return processed, blacklistHits, nil
-}
-
-// correlateBridgedFlows resolves real-client candidates for every bridged
-// entry and fans them out into bridged_flows: one row per candidate. That
-// way "who was the scanner" reduces to a GROUP BY real_client_ip against
-// the suspicious destinations — the user seen in most flows is the most
-// likely culprit even though the exit-node log collapsed their identity
-// into a synthetic bridge account.
-//
-// Entries are grouped into ~window-sized time buckets so we do one DB
-// lookup per bucket instead of one per entry (batch with 100 bridged
-// entries arriving inside a second would otherwise be 100 queries).
-func (a *Analyzer) correlateBridgedFlows(ctx context.Context, batch *models.LogBatch) {
-	if len(a.bridgeNodeIDs) == 0 || a.bridgeInboundRegex == nil {
-		return
-	}
-
-	// Collect bridged entries up-front.
-	var bridged []models.LogEntry
-	for _, e := range batch.Entries {
-		if !a.isInfrastructureSource(e.Inbound) || e.Destination == "" {
-			continue
-		}
-		bridged = append(bridged, e)
-	}
-	if len(bridged) == 0 {
-		return
-	}
-
-	// Bucket entries by window-sized slots so each slot gets one lookup.
-	windowSec := int64(a.bridgeCorrelationWindow / time.Second)
-	if windowSec <= 0 {
-		windowSec = 15
-	}
-	type bucket struct {
-		anchor  time.Time
-		entries []models.LogEntry
-	}
-	buckets := make(map[int64]*bucket)
-	for _, e := range bridged {
-		slot := e.Timestamp.Unix() / windowSec
-		b, ok := buckets[slot]
-		if !ok {
-			b = &bucket{anchor: e.Timestamp}
-			buckets[slot] = b
-		} else if e.Timestamp.After(b.anchor) {
-			b.anchor = e.Timestamp
-		}
-		b.entries = append(b.entries, e)
-	}
-
-	for _, b := range buckets {
-		candidates, err := a.storage.LookupBridgeCandidates(ctx, b.anchor, a.bridgeCorrelationWindow, a.bridgeNodeIDs)
-		if err != nil || len(candidates) == 0 {
-			continue
-		}
-		// Build Cartesian product once, then commit in a single batched INSERT.
-		// With 100 entries × 5 candidates that's 500 rows in one round-trip
-		// instead of 500 sequential round-trips — DB cost goes from O(N·M) to O(1).
-		flows := make([]*storage.BridgedFlow, 0, len(b.entries)*len(candidates))
-		for _, e := range b.entries {
-			for _, c := range candidates {
-				flows = append(flows, &storage.BridgedFlow{
-					UserEmail:    c.UserEmail,
-					RealClientIP: c.IPAddress,
-					BridgeNodeID: c.BridgeNodeID,
-					ExitNodeID:   batch.NodeID,
-					Destination:  e.Destination,
-					Timestamp:    e.Timestamp,
-				})
-			}
-		}
-		if err := a.storage.RecordBridgedFlows(ctx, flows); err != nil {
-			_ = err
-		}
-	}
 }
 
 // checkAndAlert checks if an alert should be generated
@@ -354,6 +227,7 @@ func (a *Analyzer) checkAndAlert(ctx context.Context, nodeID string, entry model
 	if count >= a.suspiciousCount {
 		alert := &models.Alert{
 			Type:        "blacklist_threshold",
+			Category:    models.AlertCategoryBlacklist,
 			NodeID:      nodeID,
 			UserEmail:   entry.UserEmail,
 			SourceIP:    entry.SourceIP,
@@ -428,6 +302,7 @@ func (a *Analyzer) generateThreatAlert(ctx context.Context, nodeID string, entry
 
 	alert := &models.Alert{
 		Type:        "threat_intel",
+		Category:    models.AlertCategoryThreat,
 		NodeID:      nodeID,
 		UserEmail:   entry.UserEmail,
 		SourceIP:    entry.SourceIP,

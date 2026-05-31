@@ -119,6 +119,39 @@ func (c *IDCache) fetchAndCache(ctx context.Context, id string) string {
 	return id
 }
 
+// IsNotFound reports whether id is in the negative cache (L1, then Redis L2),
+// so callers can skip a known-absent panel lookup on the hot path.
+func (c *IDCache) IsNotFound(id string) bool {
+	c.mu.RLock()
+	nf := c.notFound[id]
+	c.mu.RUnlock()
+	if nf {
+		return true
+	}
+	if c.redis != nil {
+		var v bool
+		if ok, err := c.redis.GetJSON(context.Background(), c.redisNFKey(id), &v); err == nil && ok && v {
+			c.mu.Lock()
+			c.notFound[id] = true
+			c.mu.Unlock()
+			return true
+		}
+	}
+	return false
+}
+
+// MarkNotFound records id as absent in both cache layers (Redis with the
+// shorter not-found TTL) so a parade of requests for a deleted user doesn't
+// batter the panel API.
+func (c *IDCache) MarkNotFound(ctx context.Context, id string) {
+	c.mu.Lock()
+	c.notFound[id] = true
+	c.mu.Unlock()
+	if c.redis != nil {
+		_ = c.redis.SetJSON(ctx, c.redisNFKey(id), true, c.notFoundTTL)
+	}
+}
+
 // PreloadFromUsers clears and optionally warms the cache. Redis is left
 // alone — stale Redis entries fall off on their own TTL.
 func (c *IDCache) PreloadFromUsers(users []User) {

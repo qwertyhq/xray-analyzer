@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
@@ -37,8 +38,22 @@ type Storage struct {
 	nodeIDCacheMu sync.RWMutex
 	nodeIDCache   map[string]NodeID
 
+	// userResolver resolves numeric xray-email ids → Remnawave UUID on demand
+	// (see email_resolve.go step 3d). nil disables on-demand resolution.
+	userResolver UserResolver
+
+	// userUUIDCache memoizes raw xray-email → resolved UUID so the per-write
+	// ResolveUserEmailToUUID isn't a DB round-trip for hot users. Bounded by
+	// userUUIDCacheMax (cleared wholesale when exceeded — entries are cheap to
+	// re-resolve and users churn slowly).
+	userUUIDCacheMu sync.RWMutex
+	userUUIDCache   map[string]uuid.UUID
+
 	closeOnce sync.Once
 }
+
+// userUUIDCacheMax caps the positive email→uuid cache.
+const userUUIDCacheMax = 50000
 
 // New opens a pgx pool at dsn, applies schema.sql, returns Storage.
 func New(ctx context.Context, dsn string) (*Storage, error) {
@@ -66,7 +81,8 @@ func New(ctx context.Context, dsn string) (*Storage, error) {
 		pool:        pool,
 		db:          sqlDB,
 		cache:       cache.New(),
-		nodeIDCache: make(map[string]NodeID),
+		nodeIDCache:   make(map[string]NodeID),
+		userUUIDCache: make(map[string]uuid.UUID),
 	}
 	if err := s.migrate(ctx); err != nil {
 		s.Close()

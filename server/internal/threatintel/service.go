@@ -23,6 +23,7 @@ type Service struct {
 // Storage interface for threat intel persistence
 type Storage interface {
 	SaveThreatMatch(ctx context.Context, match *ThreatMatch) error
+	SaveThreatMatchesBatch(ctx context.Context, matches []*ThreatMatch) error
 	GetThreatMatches(ctx context.Context, limit int) ([]*ThreatMatch, error)
 	GetThreatMatchesByUser(ctx context.Context, userEmail string, limit int) ([]*ThreatMatch, error)
 	GetThreatMatchesByType(ctx context.Context, threatType string, limit int) ([]*ThreatMatch, error)
@@ -248,6 +249,56 @@ func (s *Service) CheckAndRecord(ctx context.Context, userEmail, nodeID, sourceI
 	}
 
 	return match
+}
+
+// Check looks up a destination and returns a ThreatMatch if it hits an
+// indicator (confidence >= 70), WITHOUT persisting. The caller accumulates
+// matches across a log batch and flushes them via RecordMatches, so the
+// expensive per-match stat upserts collapse into batched aggregate writes.
+func (s *Service) Check(userEmail, nodeID, sourceIP, destination string) *ThreatMatch {
+	indicator := s.loader.CheckDestination(destination)
+	if indicator == nil || indicator.Confidence < 70 {
+		return nil
+	}
+	return &ThreatMatch{
+		UserEmail:   userEmail,
+		NodeID:      nodeID,
+		SourceIP:    sourceIP,
+		Destination: destination,
+		ThreatType:  indicator.ThreatType,
+		Source:      indicator.Source,
+		Confidence:  indicator.Confidence,
+		Description: indicator.Description,
+		MatchedAt:   time.Now(),
+	}
+}
+
+// RecordMatches persists a batch of matches (aggregated) and fires async geo
+// enrichment per match. Safe to call with an empty slice.
+func (s *Service) RecordMatches(ctx context.Context, matches []*ThreatMatch) {
+	if s.storage == nil || len(matches) == 0 {
+		return
+	}
+	if err := s.storage.SaveThreatMatchesBatch(ctx, matches); err != nil {
+		log.Printf("threatintel: failed to save match batch (%d): %v", len(matches), err)
+	}
+	if s.ipInfo == nil {
+		return
+	}
+	for _, m := range matches {
+		if m.SourceIP == "" {
+			continue
+		}
+		mm := m
+		go func() {
+			geoCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if ipData, err := s.ipInfo.Lookup(geoCtx, mm.SourceIP); err == nil && ipData != nil {
+				s.storage.SaveGeoStats(geoCtx, ipData.CountryCode, ipData.Country, string(mm.ThreatType), mm.UserEmail)
+				s.storage.SaveUserLocation(geoCtx, mm.UserEmail, ipData.CountryCode, ipData.Country, ipData.City, ipData.Lat, ipData.Lon)
+			}
+		}()
+	}
 }
 
 // GetStats returns threat intelligence statistics

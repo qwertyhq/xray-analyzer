@@ -35,6 +35,14 @@ var warmupPaths = []string{
 	"/api/threatintel/reports",
 	"/api/remnawave/users",
 	"/api/correlation/stats",
+	// Correlation tab content — query strings must match the dashboard's
+	// defaults (see correlation/page.tsx) so the warmed cache key is the one
+	// the UI actually reads.
+	"/api/correlation/profiles?limit=100&min_risk=0",
+	"/api/correlation/shared-ips?limit=50",
+	"/api/correlation/shared-hwids?limit=50",
+	"/api/blacklist/abuse",
+	"/api/remnawave/abuse",
 }
 
 // startCacheWarmupJob preloads the HTTP cache for the hot dashboard paths.
@@ -134,6 +142,11 @@ func (s *Server) warmupMux() *http.ServeMux {
 	wrap("/api/threatintel/reports", s.handleReports)
 	wrap("/api/remnawave/users", s.handleRemnawaveUsers)
 	wrap("/api/correlation/stats", s.handleCorrelationStats)
+	wrap("/api/correlation/profiles", s.handleCorrelationProfiles)
+	wrap("/api/correlation/shared-ips", s.handleCorrelationSharedIPs)
+	wrap("/api/correlation/shared-hwids", s.handleCorrelationSharedHWIDs)
+	wrap("/api/blacklist/abuse", s.handleSubscriptionAbuse)
+	wrap("/api/remnawave/abuse", s.handleRemnawaveAbuse)
 	return m
 }
 

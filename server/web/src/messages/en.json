@@ -37,7 +37,6 @@
     "threatIntel": "Threat Intel",
     "remnawave": "Remnawave",
     "correlation": "Correlation",
-    "bridgeUsers": "Bridge Users",
     "logout": "Logout",
     "appName": "Xray Analyzer",
     "appNameFull": "Xray Analyzer"
@@ -194,29 +193,6 @@
     "visitedDesc": "Resources visited by this user (sorted by request count)",
     "blacklistMatches": "Blacklist Matches",
     "blacklistMatchesDesc": "Blocked requests for this user"
-  },
-  "bridgeUsersPage": {
-    "title": "Bridge Users",
-    "description": "Users currently routed through bridge nodes (RU entry → DE exit)",
-    "refresh": "Refresh",
-    "bridge": "Bridge",
-    "window": "Window",
-    "totalUsers": "Users",
-    "totalFlows": "Flows",
-    "uniqueIPs": "Unique IPs",
-    "uniqueDests": "Unique dst",
-    "usersOnBridge": "Users on {node}",
-    "usersDesc": "Aggregated over {window}",
-    "user": "User",
-    "status": "Status",
-    "lastSeen": "Last seen",
-    "flows": "Flows",
-    "realIP": "RU IP",
-    "topDestinations": "Top dst",
-    "devices": "Devices",
-    "traffic": "Traffic",
-    "empty": "No users in this window",
-    "loadError": "Failed to load"
   },
   "nodesPage": {
     "title": "Nodes",

@@ -502,7 +502,7 @@ docker compose up -d analyzer-server
 
 - Docker уже работает (на Remnawave-нодах он есть)
 - Xray пишет access log (по умолчанию `/var/log/remnanode/access.log` для Remnawave-нод; для vanilla Xray путь другой — см. ниже)
-- **NTP** (system clock sync) — обязательно если используешь bridge correlation (она работает в окне ±15s, расхождение времени между нодами ломает атрибуцию). Проверка: `timedatectl` должен показать `System clock synchronized: yes`. Если нет — `sudo systemctl enable --now systemd-timesyncd` или `sudo apt install -y chrony`.
+- **NTP** (system clock sync) — рекомендуется, чтобы timestamps в логах были консистентны между нодами. Проверка: `timedatectl` должен показать `System clock synchronized: yes`. Если нет — `sudo systemctl enable --now systemd-timesyncd` или `sudo apt install -y chrony`.
 
 #### Если у тебя НЕ Remnawave-нода (чистый Xray)
 
@@ -623,7 +623,7 @@ curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts
        bash
 ```
 
-`NODE_ID` должен быть **уникальным на каждой ноде** (`germany-1`, `est-1`, `poland-1`, `ru-bridge`, ...). Скрипт автоматически:
+`NODE_ID` должен быть **уникальным на каждой ноде** (`germany-1`, `est-1`, `poland-1`, `finland-1`, ...). Скрипт автоматически:
 - Проверит ОС, поставит Docker если нет
 - Клонирует репо в `/opt/xray-analyzer`
 - Создаст `.env` для агента (mode 600)
@@ -786,17 +786,6 @@ docker compose build analyzer-server
 docker compose up -d analyzer-server
 ```
 
-### Bridge architecture
-
-Если у тебя моста-схема (RU-bridge → Germany-exit), укажи node_id мостов:
-
-```bash
-BRIDGE_NODE_IDS=ru-white,ru-bride
-BRIDGE_CORRELATION_WINDOW=15s
-```
-
-Это включит time-based fan-out: для каждого bridged exit-flow analyzer резолвит реальный client IP через `user_ip_history` на bridge-нодах.
-
 ---
 
 ## Часть 4 — Обновление
@@ -950,7 +939,7 @@ df -h /
 docker exec analyzer-postgres psql -U xray_analyzer -d xray_analyzer -c "\dt+" | sort -k7 -h -r | head -10
 ```
 
-Если `bridged_flows` >25 GB — partition manager не работает, проверь `/health`:
+Если любая hot table >25 GB — partition manager не работает, проверь `/health`:
 
 ```bash
 curl https://analyzer.example.com/health

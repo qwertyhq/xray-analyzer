@@ -37,7 +37,6 @@
     "threatIntel": "Threat Intel",
     "remnawave": "Remnawave",
     "correlation": "Корреляция",
-    "bridgeUsers": "Юзеры моста",
     "logout": "Выход",
     "appName": "Xray Analyzer",
     "appNameFull": "Xray Analyzer"
@@ -194,29 +193,6 @@
     "visitedDesc": "Ресурсы, посещённые пользователем (отсортировано по количеству запросов)",
     "blacklistMatches": "Совпадения блоклиста",
     "blacklistMatchesDesc": "Заблокированные запросы для этого пользователя"
-  },
-  "bridgeUsersPage": {
-    "title": "Пользователи моста",
-    "description": "Активность юзеров, сидящих на bridge-нодах (RU entry → DE exit)",
-    "refresh": "Обновить",
-    "bridge": "Мост",
-    "window": "Окно",
-    "totalUsers": "Юзеров",
-    "totalFlows": "Соединений",
-    "uniqueIPs": "Уник. IP",
-    "uniqueDests": "Уник. dst",
-    "usersOnBridge": "Юзеры на {node}",
-    "usersDesc": "Агрегировано за {window}",
-    "user": "Юзер",
-    "status": "Статус",
-    "lastSeen": "Активен",
-    "flows": "Flows",
-    "realIP": "RU IP",
-    "topDestinations": "Топ dst",
-    "devices": "Устр.",
-    "traffic": "Трафик",
-    "empty": "Никого нет в этом окне",
-    "loadError": "Ошибка загрузки"
   },
   "nodesPage": {
     "title": "Ноды",

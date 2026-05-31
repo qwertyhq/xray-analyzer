@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
@@ -143,6 +144,170 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 	`, userUUID, string(match.ThreatType), MaxThreatMatchesPerUserCategory)
 
 	return err
+}
+
+// SaveThreatMatchesBatch persists many threat matches with aggregated counter
+// writes, sent as a single pipelined pgx.Batch. The per-match SaveThreatMatch
+// ran ~10 statements each — including two `unique_users = (SELECT COUNT(*) …)`
+// recomputes and a DELETE-trim — which pegged postgres CPU under load. Here the
+// counters are summed in Go and written once per distinct key, the unique-user
+// recompute runs once per (period, threat_type) instead of once per match, and
+// the trim runs once per (user, threat_type). Behaviour-equivalent, far fewer
+// statements, one round trip.
+func (s *Storage) SaveThreatMatchesBatch(ctx context.Context, matches []*threatintel.ThreatMatch) error {
+	if len(matches) == 0 {
+		return nil
+	}
+	now := time.Now()
+	hourKey := now.Format("2006-01-02T15")
+	dayKey := now.Format("2006-01-02")
+
+	type utKey struct {
+		u uuid.UUID
+		t string
+	}
+	type udKey struct {
+		u uuid.UUID
+		t string
+		d string
+	}
+	type resolvedRow struct {
+		userUUID uuid.UUID
+		nodeID   int16
+		m        *threatintel.ThreatMatch
+	}
+
+	resolved := make([]resolvedRow, 0, len(matches))
+	typeCount := map[string]int{}
+	userType := map[utKey]int{}
+	userDomain := map[udKey]int{}
+	hourUsers := map[utKey]struct{}{}
+	dayUsers := map[utKey]struct{}{}
+
+	for _, m := range matches {
+		if m == nil {
+			continue
+		}
+		uu, err := s.ResolveUserEmailToUUID(ctx, m.UserEmail)
+		if err != nil {
+			continue
+		}
+		nid, err := s.LookupNodeID(ctx, m.NodeID, "exit")
+		if err != nil {
+			continue
+		}
+		tt := string(m.ThreatType)
+		resolved = append(resolved, resolvedRow{uu, int16(nid), m})
+		typeCount[tt]++
+		userType[utKey{uu, tt}]++
+		if d := extractDomain(m.Destination); d != "" {
+			userDomain[udKey{uu, tt, d}]++
+		}
+		hourUsers[utKey{uu, tt}] = struct{}{}
+		dayUsers[utKey{uu, tt}] = struct{}{}
+	}
+	if len(resolved) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+
+	// 1. Recent-matches rows (one per match — inherent).
+	for _, r := range resolved {
+		batch.Queue(`
+			INSERT INTO threat_matches (
+				user_email, node_id, source_ip, destination,
+				threat_type, source, confidence, description, matched_at, ts
+			) VALUES ($1,$2,$3::inet,$4,$5,$6,$7,$8,$9,$10)`,
+			r.userUUID, r.nodeID, r.m.SourceIP, r.m.Destination,
+			string(r.m.ThreatType), string(r.m.Source), r.m.Confidence,
+			r.m.Description, now, now)
+	}
+
+	// 2. Global total (one update for the whole batch).
+	batch.Queue(`UPDATE threat_stats_agg SET total_matches = total_matches + $1, last_updated = $2 WHERE id = 1`,
+		len(resolved), now)
+
+	// 3. Per-type counter (summed).
+	for tt, c := range typeCount {
+		batch.Queue(`
+			INSERT INTO threat_type_stats (threat_type, match_count, last_match)
+			VALUES ($1,$2,$3)
+			ON CONFLICT (threat_type) DO UPDATE SET
+				match_count = threat_type_stats.match_count + EXCLUDED.match_count,
+				last_match = EXCLUDED.last_match`, tt, c, now)
+	}
+
+	// 4. Per-(user,type) counter (summed).
+	for k, c := range userType {
+		batch.Queue(`
+			INSERT INTO user_threat_stats (user_email, threat_type, match_count, last_match)
+			VALUES ($1,$2,$3,$4)
+			ON CONFLICT (user_email, threat_type) DO UPDATE SET
+				match_count = user_threat_stats.match_count + EXCLUDED.match_count,
+				last_match = EXCLUDED.last_match`, k.u, k.t, c, now)
+	}
+
+	// 5. Per-(user,type,domain) counter (summed).
+	for k, c := range userDomain {
+		batch.Queue(`
+			INSERT INTO user_threat_domains (user_email, threat_type, domain, hit_count, last_seen)
+			VALUES ($1,$2,$3,$4,$5)
+			ON CONFLICT (user_email, threat_type, domain) DO UPDATE SET
+				hit_count = user_threat_domains.hit_count + EXCLUDED.hit_count,
+				last_seen = EXCLUDED.last_seen`, k.u, k.t, k.d, c, now)
+	}
+
+	// 6. Unique-user membership (dedup per batch) — must precede the stats
+	//    recompute below so the COUNT(*) sees this batch's users.
+	for k := range hourUsers {
+		batch.Queue(`INSERT INTO threat_hourly_users (hour, threat_type, user_email)
+			VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, hourKey, k.t, k.u)
+	}
+	for k := range dayUsers {
+		batch.Queue(`INSERT INTO threat_daily_users (day, threat_type, user_email)
+			VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, dayKey, k.t, k.u)
+	}
+
+	// 7. Hourly/daily stats — one upsert per type, unique_users recomputed once.
+	for tt, c := range typeCount {
+		batch.Queue(`
+			INSERT INTO threat_hourly_stats (hour, threat_type, match_count, unique_users)
+			VALUES ($1,$2,$3,(SELECT COUNT(*) FROM threat_hourly_users WHERE hour=$1 AND threat_type=$2))
+			ON CONFLICT (hour, threat_type) DO UPDATE SET
+				match_count = threat_hourly_stats.match_count + EXCLUDED.match_count,
+				unique_users = (SELECT COUNT(*) FROM threat_hourly_users WHERE hour=$1 AND threat_type=$2)`,
+			hourKey, tt, c)
+		batch.Queue(`
+			INSERT INTO threat_daily_stats (day, threat_type, match_count, unique_users)
+			VALUES ($1,$2,$3,(SELECT COUNT(*) FROM threat_daily_users WHERE day=$1 AND threat_type=$2))
+			ON CONFLICT (day, threat_type) DO UPDATE SET
+				match_count = threat_daily_stats.match_count + EXCLUDED.match_count,
+				unique_users = (SELECT COUNT(*) FROM threat_daily_users WHERE day=$1 AND threat_type=$2)`,
+			dayKey, tt, c)
+	}
+
+	// 8. Trim recent matches once per (user,type).
+	for k := range userType {
+		batch.Queue(`
+			DELETE FROM threat_matches
+			WHERE user_email = $1 AND threat_type = $2
+			  AND id NOT IN (
+				SELECT id FROM threat_matches
+				WHERE user_email = $1 AND threat_type = $2
+				ORDER BY matched_at DESC LIMIT $3)`,
+			k.u, k.t, MaxThreatMatchesPerUserCategory)
+	}
+
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	var firstErr error
+	for i := 0; i < batch.Len(); i++ {
+		if _, err := br.Exec(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 // extractDomain extracts domain from destination (removes port)

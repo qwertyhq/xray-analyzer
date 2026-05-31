@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { Activity, ShieldAlert, LogOut, Menu, X, Smartphone, Network, Route } from "lucide-react";
+import { Activity, ShieldAlert, LogOut, Menu, X, Smartphone, Network } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -25,7 +25,6 @@ export function Header() {
     { href: "/threatintel", label: t("threatIntel"), icon: ShieldAlert },
     { href: "/remnawave", label: t("remnawave"), icon: Smartphone },
     { href: "/correlation", label: t("correlation"), icon: Network },
-    { href: "/bridge-users", label: t("bridgeUsers"), icon: Route },
   ];
 
   // Don't show header on login page

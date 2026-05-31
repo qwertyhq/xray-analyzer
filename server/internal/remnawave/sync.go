@@ -89,7 +89,15 @@ type RemnaNodeData struct {
 type SyncService struct {
 	client       *Client
 	syncInterval time.Duration
-	storage      StorageWriter
+	// fullSyncInterval gates the heavy full-fleet user+hwid sweep (hundreds of
+	// /api/users pages on a 400k-user panel). The lightweight node sync still
+	// runs every syncInterval; users/hwid only run this often. Numeric IDs seen
+	// in logs are resolved on-demand via idCache between full syncs, so the
+	// mapping stays fresh without hammering the panel API (which 500s — A024 —
+	// under the per-minute full sweep that left remna_users empty).
+	fullSyncInterval time.Duration
+	lastFullSync     time.Time
+	storage          StorageWriter
 
 	// ID Cache for resolving numeric IDs to usernames
 	idCache *IDCache
@@ -107,16 +115,19 @@ type SyncService struct {
 	onSyncComplete func()
 }
 
-// NewSyncService creates a new sync service
-func NewSyncService(client *Client, syncInterval time.Duration) *SyncService {
+// NewSyncService creates a new sync service. fullSyncInterval bounds the heavy
+// users+hwid sweep; pass <= 0 to keep the legacy behaviour of running it on
+// every syncInterval tick.
+func NewSyncService(client *Client, syncInterval, fullSyncInterval time.Duration) *SyncService {
 	svc := &SyncService{
-		client:          client,
-		syncInterval:    syncInterval,
-		users:           make(map[string]*User),
-		usersByEmail:    make(map[string]*User),
-		usersByUsername: make(map[string]*User),
-		usersByID:       make(map[int64]*User),
-		hwidDevices:     make(map[string][]HwidDevice),
+		client:           client,
+		syncInterval:     syncInterval,
+		fullSyncInterval: fullSyncInterval,
+		users:            make(map[string]*User),
+		usersByEmail:     make(map[string]*User),
+		usersByUsername:  make(map[string]*User),
+		usersByID:        make(map[int64]*User),
+		hwidDevices:      make(map[string][]HwidDevice),
 	}
 	svc.idCache = NewIDCache(client)
 	return svc
@@ -173,29 +184,44 @@ func (s *SyncService) Start(ctx context.Context) {
 	}
 }
 
-// sync performs a full synchronization
+// sync runs the lightweight per-tick pass (nodes — for live online counts) and
+// triggers the heavy full user+hwid sweep only when fullSyncInterval has
+// elapsed. Between full sweeps, numeric IDs seen in logs are resolved
+// on-demand via the id cache / storage resolver, so user→username mapping stays
+// fresh without re-paging hundreds of thousands of users every minute (which
+// 500s the panel and left remna_users empty).
 func (s *SyncService) sync(ctx context.Context) {
-	log.Println("[remnawave] starting sync...")
 	start := time.Now()
 
-	// Sync users
-	if err := s.syncUsers(ctx); err != nil {
-		log.Printf("[remnawave] failed to sync users: %v", err)
-	}
+	s.mu.RLock()
+	lastFull := s.lastFullSync
+	s.mu.RUnlock()
+	due := s.fullSyncInterval <= 0 || lastFull.IsZero() ||
+		time.Since(lastFull) >= s.fullSyncInterval
 
-	// Sync HWID devices
-	if err := s.syncHwidDevices(ctx); err != nil {
-		log.Printf("[remnawave] failed to sync HWID devices: %v", err)
-	}
+	if due {
+		log.Println("[remnawave] starting full sync (users + hwid + nodes)...")
 
-	// Update HWID counts in user table after syncing devices
-	if s.storage != nil {
-		if err := s.storage.UpdateRemnaUserHwidCounts(ctx); err != nil {
-			log.Printf("[remnawave] failed to update HWID counts: %v", err)
+		if err := s.syncUsers(ctx); err != nil {
+			log.Printf("[remnawave] failed to sync users: %v", err)
 		}
+
+		if err := s.syncHwidDevices(ctx); err != nil {
+			log.Printf("[remnawave] failed to sync HWID devices: %v", err)
+		}
+
+		if s.storage != nil {
+			if err := s.storage.UpdateRemnaUserHwidCounts(ctx); err != nil {
+				log.Printf("[remnawave] failed to update HWID counts: %v", err)
+			}
+		}
+
+		s.mu.Lock()
+		s.lastFullSync = time.Now()
+		s.mu.Unlock()
 	}
 
-	// Sync nodes
+	// Nodes are cheap (one page) and drive live online counts — always refresh.
 	if err := s.syncNodes(ctx); err != nil {
 		log.Printf("[remnawave] failed to sync nodes: %v", err)
 	}
@@ -204,12 +230,62 @@ func (s *SyncService) sync(ctx context.Context) {
 	s.lastSync = time.Now()
 	s.mu.Unlock()
 
-	log.Printf("[remnawave] sync completed in %v, users: %d, hwid records: %d",
-		time.Since(start), len(s.users), s.countHwidDevices())
-
-	if s.onSyncComplete != nil {
-		s.onSyncComplete()
+	if due {
+		log.Printf("[remnawave] full sync completed in %v, users: %d, hwid records: %d",
+			time.Since(start), len(s.users), s.countHwidDevices())
+		if s.onSyncComplete != nil {
+			s.onSyncComplete()
+		}
 	}
+}
+
+// userToData maps an API User into the storage RemnaUserData row, including
+// parsed-note fields. SyncedAt is left zero for the caller to stamp. Shared by
+// the full sweep (syncUsers) and the on-demand path (ResolveNumericID).
+func userToData(user *User) *RemnaUserData {
+	d := &RemnaUserData{
+		UUID:                 user.UUID,
+		ID:                   user.ID,
+		ShortUUID:            user.ShortUUID,
+		Username:             user.Username,
+		Email:                user.Email,
+		Status:               user.Status,
+		TrafficLimitBytes:    user.TrafficLimitBytes,
+		UsedTrafficBytes:     user.UsedTrafficBytes,
+		LifetimeTrafficBytes: user.LifetimeUsedTraffic,
+		TrafficLimitStrategy: user.TrafficLimitStrategy,
+		ExpireAt:             &user.ExpireAt,
+		OnlineAt:             user.OnlineAt,
+		FirstConnectedAt:     user.FirstConnectedAt,
+		HwidDeviceLimit:      user.HwidDeviceLimit,
+		HwidDeviceCount:      0, // Updated after HWID sync
+		TelegramID:           user.TelegramID,
+		Description:          user.Description,
+		Tag:                  user.Tag,
+		CreatedAt:            user.CreatedAt,
+		UpdatedAt:            user.UpdatedAt,
+	}
+	if user.ParsedNote != nil {
+		if user.ParsedNote.RealName != "" {
+			d.RealName = &user.ParsedNote.RealName
+		}
+		if user.ParsedNote.Phone != "" {
+			d.Phone = &user.ParsedNote.Phone
+		}
+		if user.ParsedNote.TelegramUser != "" {
+			d.TelegramUser = &user.ParsedNote.TelegramUser
+		}
+		if user.ParsedNote.PaymentInfo != "" {
+			d.PaymentInfo = &user.ParsedNote.PaymentInfo
+		}
+		if user.ParsedNote.Plan != "" {
+			d.Plan = &user.ParsedNote.Plan
+		}
+		if user.ParsedNote.USID != "" {
+			d.USID = &user.ParsedNote.USID
+		}
+	}
+	return d
 }
 
 // syncUsers fetches and caches all users
@@ -250,52 +326,8 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 
 		// Persist to storage if configured
 		if s.storage != nil {
-			userData := &RemnaUserData{
-				UUID:                 user.UUID,
-				ID:                   user.ID,
-				ShortUUID:            user.ShortUUID,
-				Username:             user.Username,
-				Email:                user.Email,
-				Status:               user.Status,
-				TrafficLimitBytes:    user.TrafficLimitBytes,
-				UsedTrafficBytes:     user.UsedTrafficBytes,
-				LifetimeTrafficBytes: user.LifetimeUsedTraffic,
-				TrafficLimitStrategy: user.TrafficLimitStrategy,
-				ExpireAt:             &user.ExpireAt,
-				OnlineAt:             user.OnlineAt,
-				FirstConnectedAt:     user.FirstConnectedAt,
-				HwidDeviceLimit:      user.HwidDeviceLimit,
-				HwidDeviceCount:      0, // Updated after HWID sync
-				TelegramID:           user.TelegramID,
-				Description:          user.Description,
-				Tag:                  user.Tag,
-				CreatedAt:            user.CreatedAt,
-				UpdatedAt:            user.UpdatedAt,
-				SyncedAt:             now,
-			}
-
-			// Add parsed note fields
-			if user.ParsedNote != nil {
-				if user.ParsedNote.RealName != "" {
-					userData.RealName = &user.ParsedNote.RealName
-				}
-				if user.ParsedNote.Phone != "" {
-					userData.Phone = &user.ParsedNote.Phone
-				}
-				if user.ParsedNote.TelegramUser != "" {
-					userData.TelegramUser = &user.ParsedNote.TelegramUser
-				}
-				if user.ParsedNote.PaymentInfo != "" {
-					userData.PaymentInfo = &user.ParsedNote.PaymentInfo
-				}
-				if user.ParsedNote.Plan != "" {
-					userData.Plan = &user.ParsedNote.Plan
-				}
-				if user.ParsedNote.USID != "" {
-					userData.USID = &user.ParsedNote.USID
-				}
-			}
-
+			userData := userToData(user)
+			userData.SyncedAt = now
 			if err := s.storage.UpsertRemnaUser(ctx, userData); err != nil {
 				log.Printf("[remnawave] failed to persist user %s: %v", user.Username, err)
 			}
@@ -504,6 +536,77 @@ func (s *SyncService) GetUserByIDOrUsername(idOrUsername string) *User {
 
 	// Try as username
 	return s.usersByUsername[idOrUsername]
+}
+
+// ResolveNumericID maps a numeric xray-email id (e.g. "791947") to the
+// Remnawave user UUID, resolving on-demand against the panel when the user
+// isn't in the in-memory cache and persisting the freshly fetched user into
+// remna_users so the storage-side resolver and dashboard can join on it.
+// Returns (uuid, true) on success; (\"\", false) when the id can't be resolved
+// (not numeric, panel 404/error, or storage unavailable) so the caller can
+// fall back to its deterministic hash.
+//
+// This is the per-log-line hot path between full syncs, so it leans on the
+// id cache's not-found guard to avoid re-hitting the panel for unknown ids.
+func (s *SyncService) ResolveNumericID(ctx context.Context, id string) (string, bool) {
+	if !isNumericID(id) {
+		return "", false
+	}
+
+	// In-memory cache (warm from the last full sync).
+	if n, err := strconv.ParseInt(id, 10, 64); err == nil {
+		s.mu.RLock()
+		u := s.usersByID[n]
+		s.mu.RUnlock()
+		if u != nil {
+			return u.UUID, true
+		}
+	}
+
+	// Skip ids already known to be absent (cheap negative cache).
+	if s.idCache != nil && s.idCache.IsNotFound(id) {
+		return "", false
+	}
+
+	if s.client == nil || !s.client.IsConfigured() {
+		return "", false
+	}
+
+	user, err := s.client.GetUserByID(ctx, id)
+	if err != nil || user == nil || user.UUID == "" {
+		if s.idCache != nil {
+			s.idCache.MarkNotFound(ctx, id)
+		}
+		return "", false
+	}
+
+	user.PopulateFromTraffic()
+	if user.Description != nil && *user.Description != "" {
+		user.ParsedNote = ParseNote(*user.Description)
+	}
+
+	// Warm in-memory caches.
+	s.mu.Lock()
+	s.users[user.UUID] = user
+	if user.ID > 0 {
+		s.usersByID[user.ID] = user
+	}
+	if user.Username != "" {
+		s.usersByUsername[user.Username] = user
+	}
+	if user.Email != nil && *user.Email != "" {
+		s.usersByEmail[normalizeEmail(*user.Email)] = user
+	}
+	s.mu.Unlock()
+
+	// Persist so the storage resolver and dashboard can join on remna_users.
+	if s.storage != nil {
+		if err := s.storage.UpsertRemnaUser(ctx, userToData(user)); err != nil {
+			log.Printf("[remnawave] on-demand persist user %s failed: %v", user.UUID, err)
+		}
+	}
+
+	return user.UUID, true
 }
 
 // ResolveUsername resolves a numeric ID or username to the actual username

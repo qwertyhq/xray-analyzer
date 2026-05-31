@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -103,62 +103,70 @@ export default function CorrelationPage() {
   const [minRiskScore, setMinRiskScore] = useState(0);
   const [statsLoaded, setStatsLoaded] = useState(false);
 
-  // Progressive loading: stats first, then heavy data
+  // Guards against overlapping fetches: the 10s auto-refresh must not stack a
+  // new full batch on top of one that's still in flight, or requests pile up
+  // and the UI thrashes.
+  const inFlightRef = useRef(false);
+
+  // Progressive loading: every dataset is fetched and committed to state
+  // independently, so a single slow endpoint can't keep the other tabs empty.
   const fetchData = useCallback(async (isRefresh = false) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
-    
-    try {
-      const token = localStorage.getItem("auth_token");
-      const headers: HeadersInit = {};
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
 
-      // Phase 1: Load stats first (fast, shows immediately)
-      const statsRes = await authFetch("/api/correlation/stats", { headers });
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
-        setStats(statsData);
+    const token = localStorage.getItem("auth_token");
+    const headers: HeadersInit = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    // Each tab's data lands as soon as its own request resolves — no tab waits
+    // on the slowest endpoint. Stats also flips off the full-page skeleton.
+    const loadJSON = async (url: string, apply: (data: any) => void) => {
+      try {
+        const res = await authFetch(url, { headers });
+        if (res.ok) apply(await res.json());
+      } catch (err) {
+        console.error(`Failed to fetch ${url}:`, err);
+      }
+    };
+
+    const tasks = [
+      loadJSON("/api/correlation/stats", (d) => {
+        setStats(d);
         setStatsLoaded(true);
         setLoading(false); // Show page immediately with stats
-      }
+      }),
+      loadJSON(`/api/correlation/profiles?limit=100&min_risk=${minRiskScore}`, (d) =>
+        setProfiles(d.profiles || [])
+      ),
+      loadJSON("/api/correlation/shared-ips?limit=50", (d) =>
+        setSharedIPs(d.shared_ips || [])
+      ),
+      loadJSON("/api/correlation/shared-hwids?limit=50", (d) =>
+        setSharedHWIDs(d.shared_hwids || [])
+      ),
+      loadJSON("/api/blacklist/abuse", (d) => setIpAbuseUsers(d || [])),
+      loadJSON("/api/remnawave/abuse", (d) => setHwidAbuseUsers(d.users || [])),
+    ];
 
-      // Phase 2: Load heavy data in parallel (background)
-      const [profilesRes, sharedIPsRes, sharedHWIDsRes, ipAbuseRes, hwidAbuseRes] = await Promise.all([
-        authFetch(`/api/correlation/profiles?limit=100&min_risk=${minRiskScore}`, { headers }),
-        authFetch("/api/correlation/shared-ips?limit=50", { headers }),
-        authFetch("/api/correlation/shared-hwids?limit=50", { headers }),
-        authFetch("/api/blacklist/abuse", { headers }),
-        authFetch("/api/remnawave/abuse", { headers })
-      ]);
+    await Promise.allSettled(tasks);
 
-      const [profilesData, sharedIPsData, sharedHWIDsData, ipAbuseData, hwidAbuseData] = await Promise.all([
-        profilesRes.ok ? profilesRes.json() : { profiles: [] },
-        sharedIPsRes.ok ? sharedIPsRes.json() : { shared_ips: [] },
-        sharedHWIDsRes.ok ? sharedHWIDsRes.json() : { shared_hwids: [] },
-        ipAbuseRes.ok ? ipAbuseRes.json() : [],
-        hwidAbuseRes.ok ? hwidAbuseRes.json() : { enabled: false, users: [] }
-      ]);
-
-      setProfiles(profilesData.profiles || []);
-      setSharedIPs(sharedIPsData.shared_ips || []);
-      setSharedHWIDs(sharedHWIDsData.shared_hwids || []);
-      setIpAbuseUsers(ipAbuseData || []);
-      setHwidAbuseUsers(hwidAbuseData.users || []);
-    } catch (err) {
-      console.error("Failed to fetch correlation data:", err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    setLoading(false);
+    setRefreshing(false);
+    inFlightRef.current = false;
   }, [minRiskScore]);
 
   useEffect(() => {
     fetchData();
     
-    // Auto-refresh every 10 seconds (instant from cache)
+    // Auto-refresh every 10 seconds (instant from cache). Skip while the page
+    // is hidden so we don't re-render the heavy tables in a background tab.
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       fetchData(true);
     }, 10000);
     

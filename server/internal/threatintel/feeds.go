@@ -240,31 +240,25 @@ func (f *FeedLoader) LoadAllFeeds(ctx context.Context) error {
 		{SourceAlienVaultOTX, f.loadAlienVaultOTX},
 		{SourcePhishTank, f.loadPhishTank},
 		{SourceSpamhaus, f.loadSpamhausDROP},
-		// Content category blocklists (StevenBlack extensions — categories without BlockList Project equivalents)
-		{SourceGambling, f.loadGamblingBlocklist},
-		{SourceSocial, f.loadSocialBlocklist},
-		{SourceFakeNews, f.loadFakeNewsBlocklist},
-		// P2P / Anonymization
-		{SourceTorrent, f.loadTorrentTrackers},
+		// NOTE: content/policy categories are intentionally NOT loaded for a VPN
+		// exit. They match ordinary user traffic (ads on every page, TikTok,
+		// social, tracking, porn, gambling, piracy, torrent, redirect, fakenews,
+		// drugs) — that is not an abuse signal but produced the bulk of
+		// threat_matches and hammered postgres with per-row stat upserts.
+		// Torrents are handled node-side by torrent_blocker. Only abuse-risk
+		// lists are loaded below.
+		// Anonymization (kept — useful abuse/risk signal)
 		{SourceTor, f.loadTorExitNodes},
 		{SourceTorRelays, f.loadTorRelays},
 		// Cryptomining pools (hardcoded list)
 		{SourceMiningPools, f.loadMiningPools},
-		// BlockList Project — comprehensive category blocklists
+		// BlockList Project — security categories only
 		{SourceBlockListAbuse, f.loadBlockListAbuse},
-		{SourceBlockListAds, f.loadBlockListAds},
 		{SourceBlockListCrypto, f.loadBlockListCrypto},
-		{SourceBlockListDrugs, f.loadBlockListDrugs},
 		{SourceBlockListFraud, f.loadBlockListFraud},
 		{SourceBlockListMalware, f.loadBlockListMalware},
 		{SourceBlockListPhishing, f.loadBlockListPhishing},
-		{SourceBlockListPiracy, f.loadBlockListPiracy},
-		{SourceBlockListPorn, f.loadBlockListPorn},
 		{SourceBlockListScam, f.loadBlockListScam},
-		{SourceBlockListRedirect, f.loadBlockListRedirect},
-		{SourceBlockListTikTok, f.loadBlockListTikTok},
-		{SourceBlockListTorrent, f.loadBlockListTorrent},
-		{SourceBlockListTracking, f.loadBlockListTracking},
 		{SourceBlockListRansomware, f.loadBlockListRansomware},
 	}
 

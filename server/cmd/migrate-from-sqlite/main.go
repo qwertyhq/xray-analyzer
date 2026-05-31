@@ -60,7 +60,6 @@ func main() {
 		"hwid_user_map",
 		"user_fingerprints",
 		"user_locations",
-		"bridged_flows",
 		"online_snapshots",
 	} {
 		migrateFull(ctx, sqliteDB, pg, t)
@@ -92,7 +91,6 @@ func main() {
 		{"user_fingerprints", "id"},
 		{"user_sessions", "id"},
 		{"remna_hwid_devices", "id"},
-		{"bridged_flows", "id"},
 		{"ai_chat_messages", "id"},
 	}
 	for _, t := range identityTables {

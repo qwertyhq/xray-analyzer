@@ -22,9 +22,8 @@ Real-time analytics для Xray-core access logs c интеграцией с Rem
 ## Возможности
 
 - **Real-time ingest** — агенты на каждой ноде читают access.log через `inotify` и стримят батчи (gzip, WebSocket) на сервер
-- **Postgres storage** с partitioning по дням для hot tables (`bridged_flows`, `alerts`, `threat_matches`...). Daily DROP PARTITION → ноль bloat
+- **Postgres storage** с partitioning по дням для hot tables (`alerts`, `threat_matches`, `anomalies`...). Daily DROP PARTITION → ноль bloat
 - **Threat intel** — 1.5M+ indicators (ads, malware, casino, social, tor, blocklist-fraud), алерты при превышении порогов
-- **Bridge correlation** — time-based fan-out для bridge-фронтированных exit-нод (RU bridge → German exit), резолвит синтетические email-IDs обратно к настоящим Remnawave UUID через `remna_users` lookup
 - **Remnawave sync** — каждые 1-5 мин подтягивает users / nodes / hwid devices / online stats из panel API, держит дашборд в sync с panel
 - **Web UI** на Next.js (RU + EN, dark theme, language switcher) — dashboard, threat intel breakdown, per-user details, abuse analytics, geo map
 - **Telegram alerts** — threat alerts с категориями + контекстом
@@ -153,7 +152,6 @@ sudo bash scripts/install-server.sh
 | `REMNAWAVE_URL` | URL твоей Remnawave panel (`https://panel.example.com`) |
 | `REMNAWAVE_API_TOKEN` | Bearer token из panel → Settings → API |
 | `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | бот для алертов |
-| `BRIDGE_NODE_IDS` | список node_id мостов через запятую (если используешь bridge architecture) |
 | `NODE_REMNA_MAP` | mapping `agent_node_id=remnawave_name`, например `est-1=Estonia,germany-1=Germany 2` |
 
 После правок:
@@ -236,11 +234,6 @@ REMNAWAVE_ENABLED=true
 REMNAWAVE_URL=https://panel.example.com
 REMNAWAVE_API_TOKEN=<bearer>
 REMNAWAVE_SYNC_INTERVAL=1m
-
-# Bridge architecture (если используешь moscow→germany туннель)
-BRIDGE_NODE_IDS=ru-white,ru-bride       # node_id мостов
-BRIDGE_CORRELATION_WINDOW=15s            # окно для time-based fan-out
-BRIDGE_INBOUND_PATTERN=^BRIDGE_.*_IN(_\d+)?$
 
 # Node mapping (sync agent NODE_ID с Remnawave node names)
 NODE_REMNA_MAP=est-1=Estonia,germany-1=Germany 2,poland-1=Poland
@@ -346,9 +339,9 @@ docker compose -f docker-compose.agent.yml up -d --force-recreate
 
 ### Retention
 
-Hot tables (`bridged_flows`, `alerts`, `blacklist_matches`, `threat_matches`, `anomalies`) партиционированы по дням. Partition manager в analyzer-server:
+Hot tables (`alerts`, `blacklist_matches`, `threat_matches`, `anomalies`) партиционированы по дням. Partition manager в analyzer-server:
 - Каждые 6 часов создаёт партиции на сегодня + 2 дня вперёд
-- Дропает партиции старше retention (`bridged_flows: 14d, остальное: 30d`)
+- Дропает партиции старше retention (30d)
 
 `/health` сигнализирует если today's партиция отсутствует ИЛИ default partition не пустая (обе ситуации = partition manager пропустил окно).
 
@@ -396,7 +389,7 @@ docker exec analyzer-postgres psql -U xray_analyzer -d xray_analyzer \
   -c "\dt+" | sort -k7 -h -r | head -15
 ```
 
-Если bridged_flows >25 GB — partition manager не работает. Проверь `/health`:
+Если любая hot table >25 GB — partition manager не работает. Проверь `/health`:
 ```bash
 curl http://localhost:8237/health
 ```

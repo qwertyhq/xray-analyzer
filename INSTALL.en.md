@@ -502,7 +502,7 @@ Run on **every** Xray node that should ship access logs to the analyzer.
 
 - Docker is already running (Remnawave nodes have it)
 - Xray writes an access log (default `/var/log/remnanode/access.log` for Remnawave nodes; vanilla Xray uses a different path — see below)
-- **NTP** (system clock sync) — mandatory if you use bridge correlation (it works in a ±15s window; time drift between nodes breaks attribution). Check: `timedatectl` should show `System clock synchronized: yes`. If not — `sudo systemctl enable --now systemd-timesyncd` or `sudo apt install -y chrony`.
+- **NTP** (system clock sync) — recommended so log timestamps stay consistent across nodes. Check: `timedatectl` should show `System clock synchronized: yes`. If not — `sudo systemctl enable --now systemd-timesyncd` or `sudo apt install -y chrony`.
 
 #### If you're NOT on a Remnawave node (plain Xray)
 
@@ -623,7 +623,7 @@ curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts
        bash
 ```
 
-`NODE_ID` must be **unique on every node** (`germany-1`, `est-1`, `poland-1`, `ru-bridge`, ...). The script automatically:
+`NODE_ID` must be **unique on every node** (`germany-1`, `est-1`, `poland-1`, `finland-1`, ...). The script automatically:
 - Checks the OS, installs Docker if missing
 - Clones the repo into `/opt/xray-analyzer`
 - Creates an agent `.env` (mode 600)
@@ -786,17 +786,6 @@ docker compose build analyzer-server
 docker compose up -d analyzer-server
 ```
 
-### Bridge architecture
-
-If you run a bridge setup (RU-bridge → Germany-exit), specify the bridge node_ids:
-
-```bash
-BRIDGE_NODE_IDS=ru-white,ru-bride
-BRIDGE_CORRELATION_WINDOW=15s
-```
-
-This enables time-based fan-out: for each bridged exit flow, the analyzer resolves the real client IP via `user_ip_history` on the bridge nodes.
-
 ---
 
 ## Part 4 — Updating
@@ -950,7 +939,7 @@ df -h /
 docker exec analyzer-postgres psql -U xray_analyzer -d xray_analyzer -c "\dt+" | sort -k7 -h -r | head -10
 ```
 
-If `bridged_flows` >25 GB — the partition manager isn't running; check `/health`:
+If any hot table >25 GB — the partition manager isn't running; check `/health`:
 
 ```bash
 curl https://analyzer.example.com/health

@@ -1714,97 +1714,6 @@ func (s *Server) handleDebugUsers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleBridgedFlows returns correlated bridge → exit flows.
-//
-// Query params (all optional):
-//   user   = exact user_email
-//   ip     = exact real_client_ip
-//   dest   = substring match against destination
-//   since  = duration like "1h", "30m" — flows newer than now-since
-//   limit  = max rows (default 200, max 1000)
-func (s *Server) handleBridgedFlows(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-
-	filter := storage.BridgedFlowsFilter{
-		UserEmail:    q.Get("user"),
-		RealClientIP: q.Get("ip"),
-		Destination:  q.Get("dest"),
-	}
-	if v := q.Get("since"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			filter.Since = time.Now().Add(-d)
-		}
-	}
-	if v := q.Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			filter.Limit = n
-		}
-	}
-
-	flows, err := s.storage.GetBridgedFlows(r.Context(), filter)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"count": len(flows),
-		"flows": flows,
-	})
-}
-
-// handleBridgeUsers returns aggregated activity per (user × bridge) for users
-// active on bridge nodes within the requested time window. Powers the
-// /bridge-users dashboard tab — shows who's currently routed through the
-// whitelist bridge (RU entry → DE exit), with their real RU client IP, top
-// destinations, device count, and Remnawave traffic info.
-//
-// Query params:
-//
-//	node   = csv of bridge node_ids (default: "ru-white"). Empty = all bridges.
-//	since  = duration window like "1h", "30m" (default "1h")
-//	limit  = max rows, 1..500 (default 100)
-func (s *Server) handleBridgeUsers(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-
-	nodes := []string{"ru-whitelist"}
-	if v := q.Get("node"); v != "" {
-		nodes = nodes[:0]
-		for _, p := range strings.Split(v, ",") {
-			if t := strings.TrimSpace(p); t != "" {
-				nodes = append(nodes, t)
-			}
-		}
-	}
-
-	since := time.Hour
-	if v := q.Get("since"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			since = d
-		}
-	}
-
-	limit := 100
-	if v := q.Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			limit = n
-		}
-	}
-
-	users, err := s.storage.GetBridgeUsers(r.Context(), nodes, since, limit)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"count": len(users),
-		"users": users,
-		"node":  nodes,
-		"since": since.String(),
-	})
-}
-
 // handleAttackAnomalies returns only attack-type anomalies (port_scan,
 // abuse_port_flood) enriched with the resolved username — for the
 // dedicated Attacks tab in Threat Intel.
@@ -1846,16 +1755,32 @@ func (s *Server) handleAttackAnomalies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve numeric user_email → Remnawave username for the UI.
+	// Resolve user_email (Remnawave UUID) → username for the UI. Anomalies are
+	// keyed by UUID, so resolve straight from remna_users (authoritative,
+	// populated on-demand) in one batch query; fall back to the in-memory
+	// resolver only for ids the DB doesn't know.
+	ids := make([]string, 0, len(anomalies))
+	for _, a := range anomalies {
+		if a.UserEmail != "" {
+			ids = append(ids, a.UserEmail)
+		}
+	}
+	nameByID, err := s.storage.ResolveUUIDUsernames(r.Context(), ids)
+	if err != nil {
+		nameByID = map[string]string{}
+	}
+
 	type enriched struct {
 		*threatintel.Anomaly
 		Username string `json:"username,omitempty"`
 	}
 	out := make([]enriched, 0, len(anomalies))
 	for _, a := range anomalies {
-		username := ""
-		if s.remnawave != nil && a.UserEmail != "" {
-			username = s.remnawave.ResolveUsername(r.Context(), a.UserEmail)
+		username := nameByID[a.UserEmail]
+		if username == "" && s.remnawave != nil && a.UserEmail != "" {
+			if resolved := s.remnawave.ResolveUsername(r.Context(), a.UserEmail); resolved != a.UserEmail {
+				username = resolved
+			}
 		}
 		out = append(out, enriched{Anomaly: a, Username: username})
 	}

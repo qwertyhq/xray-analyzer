@@ -31,6 +31,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { PaginationControls, usePagination } from "@/components/ui/data-table";
 import {
   Collapsible,
   CollapsibleContent,
@@ -580,6 +581,10 @@ export function SubscriptionAbuseAnalytics({
     return result;
   }, [combinedAbusers, search, riskFilter, hwidFilter, sortBy]);
 
+  // Paginate so the list never renders thousands of expensive collapsible rows
+  // at once (that was freezing the tab on large datasets).
+  const abusersPagination = usePagination(filteredAbusers, 20);
+
   const toggleExpanded = (email: string) => {
     setExpandedUsers(prev => {
       const next = new Set(prev);
@@ -874,7 +879,7 @@ export function SubscriptionAbuseAnalytics({
             </div>
           ) : (
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
-              {filteredAbusers.map((user) => {
+              {abusersPagination.paginatedData.map((user) => {
                 const riskLevel = getRiskLevel(user.abuse_score);
                 const isExpanded = expandedUsers.has(user.user_email);
 
@@ -1184,6 +1189,7 @@ export function SubscriptionAbuseAnalytics({
               })}
             </div>
           )}
+          <PaginationControls {...abusersPagination} />
         </CardContent>
       </Card>
     </div>

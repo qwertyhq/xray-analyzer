@@ -22,9 +22,8 @@ Real-time analytics for Xray-core access logs with Remnawave panel integration. 
 ## Features
 
 - **Real-time ingest** — agents on every node tail `access.log` via `inotify` and stream batches (gzip, WebSocket) to the server
-- **Postgres storage** with daily partitioning for hot tables (`bridged_flows`, `alerts`, `threat_matches`, ...). Daily DROP PARTITION → zero bloat
+- **Postgres storage** with daily partitioning for hot tables (`alerts`, `threat_matches`, `anomalies`, ...). Daily DROP PARTITION → zero bloat
 - **Threat intel** — 1.5M+ indicators (ads, malware, casino, social, tor, blocklist-fraud), alerts when thresholds are exceeded
-- **Bridge correlation** — time-based fan-out for bridge-fronted exit nodes (RU bridge → German exit); resolves synthetic email IDs back to real Remnawave UUIDs through the `remna_users` lookup
 - **Remnawave sync** — every 1–5 min pulls users / nodes / hwid devices / online stats from the panel API, keeping the dashboard in sync with the panel
 - **Web UI** built with Next.js (RU + EN, dark theme, language switcher) — dashboard, threat-intel breakdown, per-user details, abuse analytics, geo map
 - **Telegram alerts** — threat alerts enriched with categories and context
@@ -153,7 +152,6 @@ Edit `/opt/xray-analyzer/.env`:
 | `REMNAWAVE_URL` | URL of your Remnawave panel (`https://panel.example.com`) |
 | `REMNAWAVE_API_TOKEN` | Bearer token from panel → Settings → API |
 | `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | bot for alerts |
-| `BRIDGE_NODE_IDS` | comma-separated list of bridge `node_id`s (if you use bridge architecture) |
 | `NODE_REMNA_MAP` | mapping `agent_node_id=remnawave_name`, e.g. `est-1=Estonia,germany-1=Germany 2` |
 
 After edits:
@@ -236,11 +234,6 @@ REMNAWAVE_ENABLED=true
 REMNAWAVE_URL=https://panel.example.com
 REMNAWAVE_API_TOKEN=<bearer>
 REMNAWAVE_SYNC_INTERVAL=1m
-
-# Bridge architecture (if you use a moscow→germany tunnel)
-BRIDGE_NODE_IDS=ru-white,ru-bride       # bridge node_ids
-BRIDGE_CORRELATION_WINDOW=15s            # window for time-based fan-out
-BRIDGE_INBOUND_PATTERN=^BRIDGE_.*_IN(_\d+)?$
 
 # Node mapping (sync agent NODE_ID with Remnawave node names)
 NODE_REMNA_MAP=est-1=Estonia,germany-1=Germany 2,poland-1=Poland
@@ -346,9 +339,9 @@ Roll agents out one node at a time, checking `nodes_connected` in `/api/stats` a
 
 ### Retention
 
-Hot tables (`bridged_flows`, `alerts`, `blacklist_matches`, `threat_matches`, `anomalies`) are partitioned by day. The partition manager in analyzer-server:
+Hot tables (`alerts`, `blacklist_matches`, `threat_matches`, `anomalies`) are partitioned by day. The partition manager in analyzer-server:
 - Every 6 hours, creates partitions for today + 2 days ahead
-- Drops partitions older than retention (`bridged_flows: 14d`, others: `30d`)
+- Drops partitions older than retention (30d)
 
 `/health` signals if today's partition is missing OR the default partition is non-empty (either situation = the partition manager missed a window).
 
@@ -396,7 +389,7 @@ docker exec analyzer-postgres psql -U xray_analyzer -d xray_analyzer \
   -c "\dt+" | sort -k7 -h -r | head -15
 ```
 
-If `bridged_flows` >25 GB — the partition manager isn't running. Check `/health`:
+If any hot table >25 GB — the partition manager isn't running. Check `/health`:
 ```bash
 curl http://localhost:8237/health
 ```

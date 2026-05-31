@@ -10,8 +10,8 @@
 --         the lookup itself and node_stats)
 --       severity TEXT (bounded enum-like)    -> smallint
 --       threat_type TEXT (bounded enum-like) -> kept as TEXT (used as PK/join key in stats tables)
---   - 5 hot time-series tables partitioned PARTITION BY RANGE (ts):
---       bridged_flows, alerts, blacklist_matches, threat_matches, anomalies
+--   - 4 hot time-series tables partitioned PARTITION BY RANGE (ts):
+--       alerts, blacklist_matches, threat_matches, anomalies
 --   - Daily partitions are managed at runtime by internal/storage/partitions/Manager.
 --     Only the parent + DEFAULT partition are created here.
 --   - All other tables keep existing structure with v2 types applied.
@@ -45,26 +45,6 @@ CREATE TABLE IF NOT EXISTS nodes (
 -- =============================================================================
 -- HOT TABLES — PARTITION BY RANGE (ts)
 -- =============================================================================
-
--- bridged_flows: bridge-node ingress <-> exit-node egress correlation
-CREATE TABLE IF NOT EXISTS bridged_flows (
-    id              bigint        GENERATED ALWAYS AS IDENTITY,
-    user_email      uuid          NOT NULL,
-    real_client_ip  inet          NOT NULL,
-    bridge_node_id  smallint      NOT NULL REFERENCES nodes(id),
-    exit_node_id    smallint      NOT NULL REFERENCES nodes(id),
-    destination     text          NOT NULL,
-    ts              timestamptz   NOT NULL,
-    created_at      timestamptz   NOT NULL DEFAULT now(),
-    PRIMARY KEY (id, ts)
-) PARTITION BY RANGE (ts);
-
-CREATE INDEX IF NOT EXISTS bridged_flows_ts_brin   ON bridged_flows USING BRIN (ts);
-CREATE INDEX IF NOT EXISTS bridged_flows_user_idx  ON bridged_flows (user_email);
-CREATE INDEX IF NOT EXISTS bridged_flows_ip_idx    ON bridged_flows (real_client_ip);
-CREATE INDEX IF NOT EXISTS bridged_flows_dest_idx  ON bridged_flows (destination);
-
-CREATE TABLE IF NOT EXISTS bridged_flows_default PARTITION OF bridged_flows DEFAULT;
 
 -- alerts
 CREATE TABLE IF NOT EXISTS alerts (
@@ -328,11 +308,10 @@ CREATE TABLE IF NOT EXISTS user_ip_history (
 
 CREATE INDEX IF NOT EXISTS idx_user_ip_email    ON user_ip_history(user_email);
 CREATE INDEX IF NOT EXISTS idx_user_ip_lastseen ON user_ip_history(user_email, last_seen DESC);
--- Bridge correlation hot-path: LookupBridgeCandidates filters by node_id IN (...)
--- AND last_seen BETWEEN ... ORDER BY last_seen DESC LIMIT 200. Without this
--- index, Postgres falls back to seq-scan or to the user_email-leading index
--- (which doesn't match this predicate shape). On a multi-million-row hot
--- table this can dominate batch latency.
+-- Per-node recency lookups: filter by node_id ORDER BY last_seen DESC. Without
+-- this index, Postgres falls back to seq-scan or to the user_email-leading index
+-- (which doesn't match this predicate shape). On a multi-million-row hot table
+-- this can dominate batch latency.
 CREATE INDEX IF NOT EXISTS idx_user_ip_node_lastseen ON user_ip_history(node_id, last_seen DESC);
 
 -- =============================================================================

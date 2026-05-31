@@ -30,10 +30,22 @@ type ServerMessage struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// Alert categories group alert Types into themes so they can be routed to
+// dedicated Telegram forum topics (message_thread_id). Several alert Types may
+// share one category — e.g. port scans and brute-force both map to "scan".
+const (
+	AlertCategoryBlacklist = "blacklist" // user exceeded blacklist-request threshold
+	AlertCategoryThreat    = "threat"    // threat-intel match (malware/c2/phishing/botnet/…)
+	AlertCategoryScan      = "scan"      // port scan / brute-force activity
+)
+
 // Alert represents an alert to be sent
 type Alert struct {
-	ID          int64     `json:"id"`
-	Type        string    `json:"type"`
+	ID    int64  `json:"id"`
+	Type  string `json:"type"`
+	// Category groups the alert Type into a theme for Telegram topic routing.
+	// One of AlertCategory*. Empty falls back to the default topic/chat.
+	Category    string    `json:"category,omitempty"`
 	NodeID      string    `json:"node_id"`
 	UserEmail   string    `json:"user_email"`
 	SourceIP    string    `json:"source_ip"`
