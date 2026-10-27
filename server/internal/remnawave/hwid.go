@@ -20,7 +20,7 @@ func (c *Client) GetAllHwidDevices(ctx context.Context, start, size int) (*HwidD
 
 // GetUserHwidDevices fetches HWID devices for a specific user
 func (c *Client) GetUserHwidDevices(ctx context.Context, userUUID string) (*HwidDevicesResponse, error) {
-	data, err := c.doRequest(ctx, "GET", fmt.Sprintf("/api/hwid/devices/%s", userUUID), nil)
+	data, err := c.doRequest(ctx, "GET", fmt.Sprintf("/api/hwid/devices/%s", c.userRef(userUUID)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,10 @@ func (c *Client) GetHwidStats(ctx context.Context) (*HwidStats, error) {
 
 // DeleteAllUserHwidDevices deletes all HWID devices for a specific user
 func (c *Client) DeleteAllUserHwidDevices(ctx context.Context, userUUID string) (*HwidDevicesResponse, error) {
-	payload := map[string]string{"userUuid": userUUID}
+	var payload any = map[string]string{"userUuid": userUUID}
+	if id, ok := c.userID(userUUID); ok {
+		payload = map[string]int64{"userId": id} // Remnawave 3.x
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal payload: %w", err)
