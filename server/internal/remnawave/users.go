@@ -23,6 +23,10 @@ func (c *Client) GetUsers(ctx context.Context) (*UsersResponse, error) {
 			return nil, err
 		}
 
+		for i := range resp.Users {
+			resp.Users[i].NormalizeV3()
+			c.rememberUser(&resp.Users[i])
+		}
 		allUsers = append(allUsers, resp.Users...)
 
 		// If we got less than pageSize, we've reached the end
@@ -39,11 +43,24 @@ func (c *Client) GetUsers(ctx context.Context) (*UsersResponse, error) {
 
 // GetUserByUUID fetches a specific user by UUID
 func (c *Client) GetUserByUUID(ctx context.Context, uuid string) (*User, error) {
-	data, err := c.doRequest(ctx, "GET", fmt.Sprintf("/api/users/%s", uuid), nil)
+	data, err := c.doRequest(ctx, "GET", fmt.Sprintf("/api/users/%s", c.userRef(uuid)), nil)
 	if err != nil {
 		return nil, err
 	}
-	return parseResponse[*User](data)
+	return c.parseUser(data)
+}
+
+// parseUser decodes a single-user response and normalizes it for 3.x.
+func (c *Client) parseUser(data []byte) (*User, error) {
+	u, err := parseResponse[*User](data)
+	if err != nil {
+		return nil, err
+	}
+	if u != nil {
+		u.NormalizeV3()
+		c.rememberUser(u)
+	}
+	return u, nil
 }
 
 // GetUserByEmail fetches users by email
@@ -65,14 +82,18 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User,
 	if err != nil {
 		return nil, err
 	}
-	return parseResponse[*User](data)
+	return c.parseUser(data)
 }
 
-// GetUserByID fetches a user by numeric ID (the ID used in xray logs)
+// GetUserByID fetches a user by numeric ID (the ID used in xray logs).
+// Remnawave 3.x serves it at /api/users/{id}; 2.x at /api/users/by-id/{id}.
 func (c *Client) GetUserByID(ctx context.Context, id string) (*User, error) {
-	data, err := c.doRequest(ctx, "GET", fmt.Sprintf("/api/users/by-id/%s", id), nil)
+	data, err := c.doRequest(ctx, "GET", fmt.Sprintf("/api/users/%s", id), nil)
 	if err != nil {
-		return nil, err
+		data, err = c.doRequest(ctx, "GET", fmt.Sprintf("/api/users/by-id/%s", id), nil)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return parseResponse[*User](data)
+	return c.parseUser(data)
 }

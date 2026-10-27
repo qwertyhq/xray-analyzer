@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -16,6 +17,42 @@ type Client struct {
 	apiToken   string
 	httpClient *http.Client
 	mu         sync.RWMutex
+
+	// userIDs maps user key (UUID, or vlessUuid on 3.x) to the numeric ID.
+	// Remnawave 3.x addresses users only by ID, so per-user endpoints go
+	// through userRef. Filled by GetUsers and single-user lookups.
+	idMu    sync.RWMutex
+	userIDs map[string]int64
+}
+
+// rememberUser records the key→ID mapping of a fetched user.
+func (c *Client) rememberUser(u *User) {
+	if u == nil || u.UUID == "" || u.ID <= 0 {
+		return
+	}
+	c.idMu.Lock()
+	if c.userIDs == nil {
+		c.userIDs = make(map[string]int64)
+	}
+	c.userIDs[u.UUID] = u.ID
+	c.idMu.Unlock()
+}
+
+// userID returns the numeric ID for a user key, if known.
+func (c *Client) userID(key string) (int64, bool) {
+	c.idMu.RLock()
+	defer c.idMu.RUnlock()
+	id, ok := c.userIDs[key]
+	return id, ok
+}
+
+// userRef returns the path segment addressing a user: the numeric ID when
+// known (Remnawave 3.x), otherwise the key itself (2.x uuid).
+func (c *Client) userRef(key string) string {
+	if id, ok := c.userID(key); ok {
+		return strconv.FormatInt(id, 10)
+	}
+	return key
 }
 
 // NewClient creates a new Remnawave API client

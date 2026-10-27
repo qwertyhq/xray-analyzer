@@ -26,7 +26,7 @@ func (c *Client) GetSubscriptionHistoryStats(ctx context.Context) (*Subscription
 
 // GetUserSubscriptionHistory fetches subscription history for a specific user
 func (c *Client) GetUserSubscriptionHistory(ctx context.Context, userUUID string) ([]SubscriptionRequest, error) {
-	data, err := c.doRequest(ctx, "GET", fmt.Sprintf("/api/users/%s/subscription-request-history", userUUID), nil)
+	data, err := c.doRequest(ctx, "GET", fmt.Sprintf("/api/users/%s/subscription-request-history", c.userRef(userUUID)), nil)
 	if err != nil {
 		return nil, err
 	}

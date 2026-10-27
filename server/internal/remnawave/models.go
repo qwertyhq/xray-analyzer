@@ -4,9 +4,13 @@ import "time"
 
 // User represents a Remnawave user
 type User struct {
-	UUID                   string          `json:"uuid"`
-	ID                     int64           `json:"id"`
-	ShortUUID              string          `json:"shortUuid"`
+	UUID      string `json:"uuid"`
+	ID        int64  `json:"id"`
+	ShortUUID string `json:"shortUuid"`
+	// VlessUUID is present in Remnawave 3.x, which dropped the user uuid in
+	// favour of the numeric ID. NormalizeV3 promotes it to UUID so the rest of
+	// the code (and the uuid-typed storage columns) keep a stable user key.
+	VlessUUID              string          `json:"vlessUuid"`
 	Username               string          `json:"username"`
 	Status                 string          `json:"status"` // ACTIVE, DISABLED, LIMITED, EXPIRED
 	TrafficLimitBytes      int64           `json:"trafficLimitBytes"`
@@ -40,6 +44,14 @@ type User struct {
 
 	// Parsed metadata from Description/Note field
 	ParsedNote *ParsedNote `json:"-"`
+}
+
+// NormalizeV3 fills UUID from VlessUUID for Remnawave 3.x responses, where
+// the user uuid no longer exists. No-op on 2.x.
+func (u *User) NormalizeV3() {
+	if u.UUID == "" && u.VlessUUID != "" {
+		u.UUID = u.VlessUUID
+	}
 }
 
 // UserTraffic represents the nested traffic data in user response
@@ -98,6 +110,7 @@ type UsersResponse struct {
 type HwidDevice struct {
 	Hwid        string    `json:"hwid"`
 	UserUUID    string    `json:"userUuid"`
+	UserID      int64     `json:"userId"`   // Remnawave 3.x; UserUUID is resolved from it during sync
 	Platform    *string   `json:"platform"` // iOS, Android, Windows, etc.
 	OSVersion   *string   `json:"osVersion"`
 	DeviceModel *string   `json:"deviceModel"`

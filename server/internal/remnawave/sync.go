@@ -345,6 +345,16 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 		}
 
 		for _, d := range resp.Devices {
+			if d.UserUUID == "" && d.UserID > 0 {
+				s.mu.RLock()
+				if user, ok := s.usersByID[d.UserID]; ok {
+					d.UserUUID = user.UUID
+				}
+				s.mu.RUnlock()
+			}
+			if d.UserUUID == "" {
+				continue // owner not in the user snapshot (deleted or not synced yet)
+			}
 			devices[d.UserUUID] = append(devices[d.UserUUID], d)
 			userDeviceCounts[d.UserUUID]++
 
